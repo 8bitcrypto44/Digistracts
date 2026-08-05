@@ -399,6 +399,8 @@
     state.sectorsCleared = 0;
     state.scorePops = [];
     state.lastClear = null;
+    state.tipQ = [];
+    state.onboardDone = false;
   }
 
   function formatRunSummary() {
@@ -419,16 +421,25 @@
   }
 
   const DIFFS = {
-    easy: { id: "easy", label: "EASY", lives: 5, timeMult: 1.3, spawnMult: 1.4 },
-    normal: { id: "normal", label: "NORMAL", lives: 3, timeMult: 1, spawnMult: 1 },
-    hard: { id: "hard", label: "HARD", lives: 2, timeMult: 0.75, spawnMult: 0.65 }
+    easy: {
+      id: "easy", label: "EASY", lives: 5, timeMult: 1.3, spawnMult: 1.55,
+      hpMult: 0.8, bulletSpd: 0.85, invuln: 170, hitPad: 8
+    },
+    normal: {
+      id: "normal", label: "NORMAL", lives: 3, timeMult: 1.05, spawnMult: 1.12,
+      hpMult: 0.92, bulletSpd: 0.92, invuln: 150, hitPad: 6
+    },
+    hard: {
+      id: "hard", label: "HARD", lives: 2, timeMult: 0.75, spawnMult: 0.65,
+      hpMult: 1.12, bulletSpd: 1.1, invuln: 100, hitPad: 3
+    }
   };
   const DIFF_ORDER = ["easy", "normal", "hard"];
   const MID_BOSS_LEVEL = 2; // after MEGA SPIRE
   const SECRET_FROM_LEVEL = 5; // VOID MARKET
 
   const LEVELS = [
-    { name: "NEON DOCKS", theme: "docks", ground: 425, len: 14500, enemyRate: 0.36, enemySpeed: 1.85, qrCount: 14, platforms: 40 },
+    { name: "NEON DOCKS", theme: "docks", ground: 425, len: 14500, enemyRate: 0.48, enemySpeed: 1.65, qrCount: 14, platforms: 40 },
     { name: "DATA TUNNEL", theme: "tunnel", ground: 415, len: 15200, enemyRate: 0.28, enemySpeed: 2.35, qrCount: 16, platforms: 46 },
     { name: "MEGA SPIRE", theme: "spire", ground: 418, len: 15800, enemyRate: 0.24, enemySpeed: 2.85, qrCount: 18, platforms: 54 },
     { name: "CIRCUIT SLUMS", theme: "slums", ground: 395, len: 16400, enemyRate: 0.18, enemySpeed: 3.35, qrCount: 20, platforms: 58 },
@@ -545,7 +556,9 @@
     secretCleared: false,
     secretPortal: null,
     returnLevel: 0,
-    godMode: GOD_QS
+    godMode: GOD_QS,
+    tipQ: [],
+    onboardDone: false
   };
 
   const CREDIT_LINES = ["DIGISTRACTS","by 8bitcrypto_44","","THANKS WEB3 COMMUNITY","OpenSea · Amazon","Technocade / Soundimage.org","","THANK YOU FOR PLAYING"];
@@ -564,16 +577,17 @@
       vx: 0, vy: 0, facing: 1, onGround: false,
       shootCD: 0, run: 0, crouch: false, platformCamp: 0,
       airSupers: 0, weapon: 0, beamFuel: 0, beamTick: 0, beaming: false, beamAim: 0, fireHeld: false,
-      safeX: 80, speedT: 0, goldT: 0, charge: 0
+      safeX: 80, speedT: 0, goldT: 0, charge: 0,
+      coyote: 0, jumpWasDown: false
     };
   }
 
   const WEAPON_DEFS = {
-    RIFLE: { kind: "beam", rows: 1, cd: 8, color: "#00e5ff", ammo: 220, dmg: 2, label: "RIFLE" },
-    SPREAD: { kind: "beam", rows: 4, cd: 10, color: "#ffd400", ammo: 160, dmg: 2, label: "SPREAD" },
-    MAXI: { kind: "beam", rows: 8, cd: 12, color: "#ff2bd6", ammo: 120, dmg: 3, label: "MAXI" },
-    HOMING: { kind: "proj", color: "#a78bfa", ammo: 48, cd: 13, dmg: 2, label: "HOMING" },
-    RICOCHET: { kind: "proj", color: "#34d399", ammo: 42, cd: 11, dmg: 2, label: "RICO" }
+    RIFLE: { kind: "beam", rows: 1, cd: 8, color: "#00e5ff", ammo: 220, dmg: 2, label: "RIFLE", hint: "HOLD FIRE · BEAM" },
+    SPREAD: { kind: "beam", rows: 4, cd: 10, color: "#ffd400", ammo: 160, dmg: 2, label: "SPREAD", hint: "WIDE BEAM" },
+    MAXI: { kind: "beam", rows: 8, cd: 12, color: "#ff2bd6", ammo: 120, dmg: 3, label: "MAXI", hint: "MEGA BEAM" },
+    HOMING: { kind: "proj", color: "#a78bfa", ammo: 48, cd: 13, dmg: 2, label: "HOMING", hint: "AUTO-TRACK SHOTS" },
+    RICOCHET: { kind: "proj", color: "#34d399", ammo: 42, cd: 11, dmg: 2, label: "RICO", hint: "BOUNCES OFF WALLS" }
   };
 
   function weaponDef(type) {
@@ -593,6 +607,29 @@
     p.beamFuel = Math.max(p.weapon === type ? p.beamFuel : 0, Math.floor(d.ammo * (ammoScale || 1)));
     p.beamTick = 0;
     p.charge = 0;
+  }
+
+  function announceWeapon(type) {
+    const d = weaponDef(type);
+    if (!d) return;
+    state.banner = "★ " + d.label + " · " + (d.hint || "ARMED") + " ★";
+    state.messageTimer = 95;
+    state.flash = Math.max(state.flash, 10);
+  }
+
+  function queueTips(lines) {
+    state.tipQ = (lines || []).slice();
+  }
+
+  function tickTips() {
+    if (state.talkQ || state.messageTimer > 0 || !state.tipQ || !state.tipQ.length) return;
+    state.banner = state.tipQ.shift();
+    state.messageTimer = 95;
+    sfxUi();
+  }
+
+  function hitInvuln() {
+    return (currentDiff().invuln || 135);
   }
 
   function clearWeapon() {
@@ -661,14 +698,25 @@
     if (state.bossMode && state.boss) {
       state.boss.vulnerable = true;
       state.boss.timer = 40;
-      state.invuln = 135;
+      state.invuln = hitInvuln();
       state.banner = "FIGHT! LOOT CACHE!";
       state.messageTimer = 110;
       sfxArenaClear();
+    } else if (state.level === 0 && !state.inSecret && !state.onboardDone) {
+      state.onboardDone = true;
+      state.invuln = hitInvuln();
+      queueTips([
+        "JUMP ×2 = SUPER JUMP",
+        "HOLD FIRE TO CHARGE PISTOL",
+        "GUN PICKUPS LAST UNTIL YOU GET HIT"
+      ]);
+      state.banner = "GO! LEARN THE CONTROLS";
+      state.messageTimer = 90;
+      sfxUi();
     } else {
       state.banner = "GO! JUMP×2=SUPER";
       state.messageTimer = 90;
-      state.invuln = 135;
+      state.invuln = hitInvuln();
       sfxUi();
     }
   }
@@ -1010,9 +1058,9 @@
     state.playerHP = 0;
     state.platforms = [];
     state.particles = [];
-    state.spawnTimer = goingSecret ? 160 : 220;
-    state.grace = skipTalk ? 120 : 0;
-    state.invuln = 135;
+    state.spawnTimer = goingSecret ? 160 : (idx === 0 ? 300 : 220);
+    state.grace = skipTalk ? 120 : (idx === 0 && !goingSecret ? 40 : 0);
+    state.invuln = hitInvuln();
     const prevGun = keepGun && state.player && state.player.weapon && state.player.beamFuel > 0
       ? { weapon: state.player.weapon, ammo: state.player.beamFuel } : null;
     state.player = makePlayer();
@@ -1032,6 +1080,7 @@
       secret: "EMBER VAULT · CLAIM THE RELIC"
     };
     state.banner = L.name + " · " + (tips[L.theme] || "GO!");
+    state.tipQ = [];
     state.antiCampCD = 0;
     state.levelTime = Math.floor(sectorTimeBudget() * (goingSecret ? 0.85 : 1));
     state.levelTick = performance.now();
@@ -1055,9 +1104,9 @@
 
     buildSectorLayout(goingSecret ? 7 : idx, L);
 
-    const waves = goingSecret ? 30 : (16 + idx * 6);
+    const waves = goingSecret ? 30 : (idx === 0 ? 10 : 14 + idx * 5);
     for (let i = 0; i < waves; i++) {
-      spawnEnemy((goingSecret ? 700 : 1500) + i * (goingSecret ? 150 : 190) + Math.random() * 80, i % 4 === 0 || i % 6 === 0);
+      spawnEnemy((goingSecret ? 700 : 1500) + i * (goingSecret ? 150 : 210) + Math.random() * 80, i % 4 === 0 || i % 6 === 0);
     }
   }
 
@@ -1170,7 +1219,8 @@
       : Math.round(h * 0.55);
     const flying = !!def.flying;
     const baseY = 95 + Math.random() * 160;
-    const hp = def.hp + Math.floor(state.level / 2) + (def.heavy ? Math.floor(state.level / 2) : 0);
+    const rawHp = def.hp + Math.floor(state.level / 2) + (def.heavy ? Math.floor(state.level / 2) : 0);
+    const hp = Math.max(1, Math.round(rawHp * (currentDiff().hpMult || 1)));
     state.enemies.push({
       x: x, y: flying ? baseY : GROUND - h, w: w, h: h, type: type, kind: def.kind,
       role: role, vx: -L.enemySpeed * def.spd, baseSpd: L.enemySpeed * def.spd,
@@ -1185,9 +1235,10 @@
   function spawnDrone() {
     const fromRight = Math.random() > 0.5;
     const spd = 1.7 + state.level * 0.25;
+    const hp = Math.max(1, Math.round((2 + Math.floor(state.level / 2)) * (currentDiff().hpMult || 1)));
     state.enemies.push({
       x: state.camX + (fromRight ? W + 45 : 30), y: 38, w: 54, h: 30,
-      vx: fromRight ? -spd : spd, vy: 0, hp: 2 + Math.floor(state.level / 2), maxHp: 2,
+      vx: fromRight ? -spd : spd, vy: 0, hp: hp, maxHp: hp,
       shootCD: 28, facing: fromRight ? -1 : 1, alive: true, flash: 0,
       bob: Math.random() * 20, walk: 0, flying: true, drone: true,
       role: "drone", kind: 5, type: 0, baseY: 38, scoreValue: 150 + state.level * 20
@@ -1199,7 +1250,8 @@
     const dir = p.x < e.x ? -1 : 1;
     const muzzle = { x: e.x + (dir < 0 ? 2 : e.w - 10), y: e.y + (opts.heavy ? 28 : 22) };
     const aimY = e.flying ? Math.max(-3.4, Math.min(3.4, (p.y + 25 - muzzle.y) / 50)) : (opts.arc || 0);
-    const spd = opts.heavy ? 2.6 + state.level * 0.2 : 3.6 + state.level * 0.35;
+    const spdMul = currentDiff().bulletSpd || 1;
+    const spd = (opts.heavy ? 2.6 + state.level * 0.2 : 3.6 + state.level * 0.35) * spdMul;
     state.bullets.push({
       x: muzzle.x, y: muzzle.y, w: opts.heavy ? 14 : 9, h: opts.heavy ? 10 : 6,
       vx: dir * spd, vy: aimY, life: opts.heavy ? 110 : 90, from: "enemy",
@@ -1540,7 +1592,7 @@
     p.charge = 0;
     if (state.bossMode && state.playerHP > 1) {
       state.playerHP--;
-      state.invuln = 100;
+      state.invuln = hitInvuln();
       state.flash = 14;
       p.vx = -p.facing * 4;
       sfxHurt();
@@ -1570,7 +1622,7 @@
     p.onGround = false;
     state.camX = Math.max(0, Math.min(p.x - 180, state.endX - W));
     if (state.bossMode) state.playerHP = state.boss && state.boss.midBoss ? 2 : 3;
-    state.invuln = 135;
+    state.invuln = hitInvuln();
     state.banner = "CHECKPOINT — " + state.lives + " LEFT";
     state.messageTimer = 70;
     updateHUD();
@@ -1720,7 +1772,7 @@
       state.camX = Math.max(0, Math.min(state.player.x - 180, state.endX - W));
       state.checkpointX = state.player.x;
     }
-    state.invuln = 135;
+    state.invuln = hitInvuln();
     state.banner = "TIME UP — " + state.lives + " LEFT";
     state.messageTimer = 90;
     updateHUD();
@@ -2135,11 +2187,11 @@
       if (q.type === "health") {
         state.playerHP = 4;
         state.banner = "ENERGY SHIELD: 4 HITS!";
+        state.messageTimer = 80;
       } else {
         grantWeapon("MAXI", 1.25);
-        state.banner = "MAXI GUN ARMED!";
+        announceWeapon("MAXI");
       }
-      state.messageTimer = 80;
       sfxPickup(q.type === "health" ? "life" : "weapon");
     }
 
@@ -2728,10 +2780,22 @@
     if (ix) p.facing = ix > 0 ? 1 : -1;
     if (ix) p.run += 0.25; else p.run = 0;
 
-    if (inputJump() && p.onGround && !state.talkQ) {
-      p.vy = -8.6;
-      p.onGround = false;
-      sfxJump();
+    const jumpDown = inputJump();
+    const jumpPressed = jumpDown && !p.jumpWasDown;
+    p.jumpWasDown = jumpDown;
+    if (p.onGround) p.coyote = 8;
+    else if (p.coyote > 0) p.coyote--;
+    if (!state.talkQ) {
+      if (jumpDown && p.onGround) {
+        p.vy = -8.6;
+        p.onGround = false;
+        p.coyote = 0;
+        sfxJump();
+      } else if (jumpPressed && p.coyote > 0) {
+        p.vy = -8.6;
+        p.coyote = 0;
+        sfxJump();
+      }
     }
 
     p.vy += 0.42;
@@ -2858,6 +2922,7 @@
     }
     if (state.flash > 0) state.flash--;
     if (state.messageTimer > 0) state.messageTimer--;
+    else tickTips();
 
     state.camX = Math.max(0, Math.min(state.endX - W, p.x - 180));
 
@@ -3022,7 +3087,8 @@
           enemyFire(e, p, { heavy: e.role === "tank", arc: e.role === "tank" ? -0.4 : 0 });
         }
       }
-      if (rectsOverlap({ x: p.x + 6, y: p.y + 8, w: p.w - 12, h: p.h - 10 }, e) && state.invuln <= 0) hurtPlayer();
+      const pad = currentDiff().hitPad || 6;
+      if (rectsOverlap({ x: p.x + pad, y: p.y + pad + 2, w: Math.max(8, p.w - pad * 2), h: Math.max(12, p.h - pad * 2 - 2) }, e) && state.invuln <= 0) hurtPlayer();
     }
 
     for (let i = 0; i < state.bullets.length; i++) {
@@ -3109,8 +3175,7 @@
         s.taken = true;
         grantWeapon(s.type);
         addScore(100);
-        state.banner = s.type + " ARMED · UNTIL DEATH!";
-        state.messageTimer = 55;
+        announceWeapon(s.type);
         sfxPickup("weapon");
       }
     }
