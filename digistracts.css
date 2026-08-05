@@ -59,6 +59,15 @@ body.dg-embed #digistracts-root.dg-menu .dg-help{position:absolute}
   padding:10px 16px;font-family:inherit;font-weight:700;cursor:pointer;min-height:48px
 }
 #digistracts-root #dg-daily:active{transform:scale(.97);background:#0c4a6e}
+#digistracts-root #dg-assist{
+  background:#111827;color:#a78bfa;border:2px solid #a78bfa;border-radius:8px;
+  padding:10px 16px;font-family:inherit;font-weight:700;cursor:pointer;min-height:48px
+}
+#digistracts-root #dg-assist[aria-pressed="false"]{border-color:#64748b;color:#94a3b8}
+#digistracts-root #dg-assist:active{transform:scale(.97);background:#2e1065}
+#digistracts-root #dg-swap{
+  border-color:#a78bfa;color:#c4b5fd;min-width:72px
+}
 #digistracts-root #dg-share{
   background:#111827;color:#39ff14;border:2px solid #39ff14;border-radius:8px;
   padding:10px 16px;font-family:inherit;font-weight:700;cursor:pointer;min-height:48px
@@ -187,10 +196,13 @@ body.dg-embed #digistracts-root.dg-phone.dg-fs{
   /* larger invisible grab area for thumbs */
 }
 #digistracts-root.dg-phone .dg-knob{width:56px;height:56px}
-#digistracts-root.dg-phone .dg-actions{gap:16px;padding-bottom:4px}
+#digistracts-root.dg-phone .dg-actions{gap:12px;padding-bottom:4px}
 #digistracts-root.dg-phone .dg-actions button{
-  position:relative;min-width:104px;min-height:86px;font-size:18px;padding:12px;border-width:3px;
+  position:relative;min-width:88px;min-height:78px;font-size:16px;padding:10px;border-width:3px;
   touch-action:manipulation;-webkit-tap-highlight-color:transparent
+}
+#digistracts-root.dg-phone #dg-swap{
+  min-width:72px;min-height:64px;font-size:14px;border-width:2px
 }
 #digistracts-root.dg-phone .dg-actions button::before{
   content:"";position:absolute;inset:-14px -12px

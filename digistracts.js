@@ -46,13 +46,15 @@
     mute: ROOT.querySelector("#dg-mute"),
     fxBtn: ROOT.querySelector("#dg-fx"),
     pauseBtn: ROOT.querySelector("#dg-pause"),
+    assistBtn: ROOT.querySelector("#dg-assist"),
     diffBtn: ROOT.querySelector("#dg-diff"),
     dailyBtn: ROOT.querySelector("#dg-daily"),
     shareBtn: ROOT.querySelector("#dg-share"),
     medalsEl: ROOT.querySelector("#dg-medals"),
     godBtn: ROOT.querySelector("#dg-god"),
     levels: ROOT.querySelector("#dg-levels"),
-    fs: ROOT.querySelector("#dg-fs")
+    fs: ROOT.querySelector("#dg-fs"),
+    swapBtn: ROOT.querySelector("#dg-swap")
   };
 
   function loadImg(src) {
@@ -82,8 +84,19 @@
     const fxSaved = localStorage.getItem("dg-fx");
     if (fxSaved === "0") fxOn = false;
   } catch (e) {}
+  let assistOn = true;
+  try {
+    const aSaved = localStorage.getItem("dg-assist");
+    if (aSaved === "0") assistOn = false;
+    else if (aSaved === "1") assistOn = true;
+  } catch (e) {}
   let musicTimer = null, musicStep = 0, noiseBuf = null;
   let lastSpaceTap = 0;
+  let titleIdleAt = performance.now();
+  let musicUrgent = false;
+  const demoAI = { x: 1, jump: false, shoot: false, up: false, down: false, think: 0 };
+  const GUN_BAG_MAX = 2;
+  const ATTRACT_IDLE_MS = 9000;
 
   function ensureAudio() {
     if (audioCtx) {
@@ -138,6 +151,39 @@
     if (!hud.fxBtn) return;
     hud.fxBtn.textContent = fxOn ? "FX: ON" : "FX: OFF";
     hud.fxBtn.setAttribute("aria-pressed", fxOn ? "true" : "false");
+  }
+
+  function setAssist(on) {
+    assistOn = !!on;
+    try { localStorage.setItem("dg-assist", assistOn ? "1" : "0"); } catch (e) {}
+    syncAssistBtn();
+  }
+
+  function syncAssistBtn() {
+    if (!hud.assistBtn) return;
+    hud.assistBtn.textContent = assistOn ? "AIM: ON" : "AIM: OFF";
+    hud.assistBtn.setAttribute("aria-pressed", assistOn ? "true" : "false");
+  }
+
+  function bumpTitleIdle() {
+    titleIdleAt = performance.now();
+  }
+
+  function syncMusicUrgency() {
+    const urgent = state.mode === "play" && !state.demo &&
+      ((state.levelTime > 0 && state.levelTime < 30000) || (state.lives <= 1 && !state.bossMode));
+    if (urgent === musicUrgent) {
+      if (urgent && musicOn && !musicFallback) {
+        try { musicTrack.playbackRate = 1.12; } catch (e) {}
+      }
+      return;
+    }
+    musicUrgent = urgent;
+    if (!musicOn || musicFallback) return;
+    try {
+      musicTrack.playbackRate = urgent ? 1.12 : 1;
+      musicTrack.volume = muted ? 0 : volume * (urgent ? 0.85 : 0.7);
+    } catch (e) {}
   }
 
   function beep(freq, dur, type, gain, when, dest) {
@@ -330,9 +376,10 @@
   }
 
   function stopMusic() {
-    try { musicTrack.pause(); } catch (e) {}
+    try { musicTrack.pause(); musicTrack.playbackRate = 1; } catch (e) {}
     stopFallbackMusic();
     musicOn = false;
+    musicUrgent = false;
   }
 
   function startFallbackMusic() {
@@ -367,10 +414,12 @@
     ensureAudio();
     stopMusic();
     musicOn = true;
+    musicUrgent = false;
     if (musicFallback) {
       startFallbackMusic();
       return;
     }
+    try { musicTrack.playbackRate = 1; } catch (e) {}
     musicTrack.currentTime = 0;
     musicTrack.volume = muted ? 0 : volume * 0.7;
     const trackPromise = musicTrack.play();
@@ -399,6 +448,7 @@
   }
 
   function saveHiScore(score) {
+    if (state.demo) return false;
     if (score <= state.hiScore) return false;
     state.hiScore = score;
     try { localStorage.setItem(HS_KEY, String(score)); } catch (e) {}
@@ -416,7 +466,7 @@
   }
 
   function saveDailyBest(score) {
-    if (!state.daily) return false;
+    if (!state.daily || state.demo) return false;
     const id = state.dailyKey || dailyId();
     const cur = loadDailyBest();
     if (cur.date === id && score <= cur.score) return false;
@@ -442,6 +492,7 @@
   }
 
   function saveSectorPB(levelIdx, remainSec) {
+    if (state.demo) return { best: false, prev: 0, now: remainSec };
     const key = state.inSecret ? ("sec:" + (state.activeSecret || state.secretKind || "x")) : String(levelIdx);
     const book = loadSectorPBs();
     const prev = book[key] | 0;
@@ -634,7 +685,7 @@
   }
 
   function awardMedal(id, quiet) {
-    if (!id) return false;
+    if (!id || state.demo) return false;
     if (!state.runMedals) state.runMedals = [];
     if (state.runMedals.indexOf(id) < 0) state.runMedals.push(id);
     const book = loadMedalBook();
@@ -1070,7 +1121,9 @@
     grazeScore: 0,
     deathCause: null,
     overclockUsed: false,
-    shareKind: null
+    shareKind: null,
+    demo: false,
+    demoAt: 0
   };
 
   const CREDIT_LINES = ["DIGISTRACTS","by 8bitcrypto_44","","THANKS WEB3 COMMUNITY","OpenSea · Amazon","Technocade / Soundimage.org","","THANK YOU FOR PLAYING"];
@@ -1089,6 +1142,7 @@
       vx: 0, vy: 0, facing: 1, onGround: false,
       shootCD: 0, run: 0, crouch: false, platformCamp: 0,
       airSupers: 0, weapon: 0, beamFuel: 0, beamTick: 0, beaming: false, beamAim: 0, fireHeld: false,
+      gunBag: [],
       safeX: 80, speedT: 0, goldT: 0, charge: 0, overclockT: 0,
       coyote: 0, jumpWasDown: false
     };
@@ -1115,10 +1169,29 @@
     const p = state.player;
     const d = weaponDef(type);
     if (!p || !d) return;
-    p.weapon = type;
-    p.beamFuel = Math.max(p.weapon === type ? p.beamFuel : 0, Math.floor(d.ammo * (ammoScale || 1)));
+    let ammo = Math.floor(d.ammo * (ammoScale || 1));
+    if (!p.gunBag) p.gunBag = [];
+    if (p.weapon === type) {
+      p.beamFuel = Math.max(p.beamFuel || 0, ammo);
+    } else {
+      // Merge any existing bag copy of this type
+      for (let i = p.gunBag.length - 1; i >= 0; i--) {
+        if (p.gunBag[i].type === type) {
+          ammo = Math.max(ammo, p.gunBag[i].ammo | 0);
+          p.gunBag.splice(i, 1);
+        }
+      }
+      if (p.weapon && p.beamFuel > 0) {
+        p.gunBag = p.gunBag.filter(function (g) { return g.type !== p.weapon; });
+        p.gunBag.unshift({ type: p.weapon, ammo: p.beamFuel });
+        while (p.gunBag.length > GUN_BAG_MAX) p.gunBag.pop();
+      }
+      p.weapon = type;
+      p.beamFuel = ammo;
+    }
     p.beamTick = 0;
     p.charge = 0;
+    p.beaming = false;
   }
 
   function announceWeapon(type) {
@@ -1151,6 +1224,66 @@
     p.beamFuel = 0;
     p.beaming = false;
     p.charge = 0;
+    if (p.gunBag && p.gunBag.length) {
+      const next = p.gunBag.shift();
+      p.weapon = next.type;
+      p.beamFuel = next.ammo | 0;
+      const d = weaponDef(next.type);
+      state.banner = "AUTO → " + (d ? d.label : next.type);
+      state.messageTimer = 50;
+    }
+  }
+
+  function swapWeapon() {
+    const p = state.player;
+    if (!p || state.mode !== "play" || state.demo) return;
+    if (!p.gunBag || !p.gunBag.length) {
+      state.banner = "NO BACKUP GUN";
+      state.messageTimer = 40;
+      beep(140, 0.06, "square", 0.04);
+      return;
+    }
+    if (p.weapon && p.beamFuel > 0) {
+      p.gunBag.push({ type: p.weapon, ammo: p.beamFuel });
+    }
+    const next = p.gunBag.shift();
+    p.weapon = next.type;
+    p.beamFuel = next.ammo | 0;
+    p.beaming = false;
+    p.charge = 0;
+    p.beamTick = 0;
+    const d = weaponDef(next.type);
+    state.banner = "SWAP → " + (d ? d.label : next.type) + " ×" + p.beamFuel;
+    state.messageTimer = 55;
+    sfxUi();
+    beep(520, 0.05, "square", 0.05);
+    beep(780, 0.05, "triangle", 0.04, 0.04);
+    updateHUD();
+  }
+
+  function assistSoftAim(p, aim) {
+    if (!assistOn || !p || aim !== 0) return aim;
+    if (p.aimUp || p.crouch) return aim;
+    const tip = gunPose(p, 0);
+    const e = nearestEnemy(tip.x, tip.y, 0);
+    if (!e) return aim;
+    const ex = e.x + e.w / 2, ey = e.y + e.h / 2;
+    const dx = ex - tip.x, dy = ey - tip.y;
+    if (Math.abs(dx) < 28) return aim;
+    const slope = dy / Math.abs(dx);
+    if (slope < -0.42) return -1;
+    if (slope > 0.55) return 1;
+    return aim;
+  }
+
+  function assistFacing(p) {
+    if (!assistOn || !p) return;
+    if (inputX()) return;
+    const tip = gunPose(p, 0);
+    const e = nearestEnemy(tip.x, tip.y, 0);
+    if (!e) return;
+    const dx = (e.x + e.w / 2) - tip.x;
+    if (Math.abs(dx) > 48) p.facing = dx > 0 ? 1 : -1;
   }
 
   function muzzleSparks(tip, color) {
@@ -1220,7 +1353,8 @@
       queueTips([
         "JUMP ×2 = SUPER JUMP",
         "HOLD FIRE TO CHARGE PISTOL",
-        "GUN PICKUPS LAST UNTIL YOU GET HIT"
+        "PICK UP GUNS · Q / SWAP TO CYCLE",
+        "AIM ASSIST HELPS ON TITLE MENU"
       ]);
       state.banner = "GO! LEARN THE CONTROLS";
       state.messageTimer = 90;
@@ -1684,12 +1818,20 @@
     state.spawnTimer = goingSecret ? 160 : (idx === 0 ? 300 : 220);
     state.grace = skipTalk ? 120 : (idx === 0 && !goingSecret ? 40 : 0);
     state.invuln = hitInvuln();
-    const prevGun = keepGun && state.player && state.player.weapon && state.player.beamFuel > 0
-      ? { weapon: state.player.weapon, ammo: state.player.beamFuel } : null;
+    const prevGun = keepGun && state.player && (
+      (state.player.weapon && state.player.beamFuel > 0) ||
+      (state.player.gunBag && state.player.gunBag.length)
+    )
+      ? {
+          weapon: state.player.weapon,
+          ammo: state.player.beamFuel,
+          bag: (state.player.gunBag || []).slice()
+        } : null;
     state.player = makePlayer();
     if (prevGun) {
-      state.player.weapon = prevGun.weapon;
-      state.player.beamFuel = prevGun.ammo;
+      state.player.weapon = prevGun.weapon || 0;
+      state.player.beamFuel = prevGun.ammo || 0;
+      state.player.gunBag = prevGun.bag || [];
     }
     state.messageTimer = 100;
     const tips = {
@@ -1960,6 +2102,8 @@
   function shootGun(aim) {
     const p = state.player;
     if (!p || p.shootCD > 0) return false;
+    assistFacing(p);
+    aim = assistSoftAim(p, aim);
     const tip = gunPose(p, aim);
     const def = weaponDef(p.weapon);
     const clock = p.overclockT > 0;
@@ -2059,11 +2203,20 @@
 
     // Default pistol burst
     p.shootCD = clock ? 5 : 10;
+    let assistVy = 0;
+    if (assistOn && !aim) {
+      const e = nearestEnemy(tip.x, tip.y, p.facing);
+      if (e) {
+        const dy = (e.y + e.h / 2) - tip.y;
+        const dx = Math.abs((e.x + e.w / 2) - tip.x) || 1;
+        assistVy = Math.max(-2.4, Math.min(2.4, dy / dx * 2.2));
+      }
+    }
     for (let i = -1; i <= 1; i++) {
       if (aim) {
         state.bullets.push({ x: tip.x - 4 + i * 6, y: tip.y - 4, w: 6, h: 10, vx: i * 1.1, vy: aim * 11, life: 55, from: "player", slug: true, dmg: 1 });
       } else {
-        state.bullets.push({ x: tip.x - (p.facing < 0 ? 10 : 0), y: tip.y - 2 + i * 5, w: 10, h: 4, vx: p.facing * 11, vy: i * 0.9, life: 80, from: "player", slug: true, dmg: 1 });
+        state.bullets.push({ x: tip.x - (p.facing < 0 ? 10 : 0), y: tip.y - 2 + i * 5, w: 10, h: 4, vx: p.facing * 11, vy: i * 0.9 + assistVy, life: 80, from: "player", slug: true, dmg: 1 });
       }
     }
     muzzleSparks(tip, "#cbd5e1");
@@ -2199,7 +2352,7 @@
     state.playerHP = mid ? 2 : 3;
     state.grace = 0;
     p.x = 55; p.y = GROUND - p.h; p.vx = 0; p.vy = 0; p.safeX = 55;
-    p.weapon = 0; p.beamFuel = 0; p.speedT = 0; p.goldT = 0; p.charge = 0;
+    p.weapon = 0; p.beamFuel = 0; p.gunBag = []; p.speedT = 0; p.goldT = 0; p.charge = 0;
     const hp = mid ? Math.floor(58 * (state.diff === "easy" ? 0.85 : state.diff === "hard" ? 1.2 : 1))
       : Math.floor(120 * (state.diff === "easy" ? 0.85 : state.diff === "hard" ? 1.15 : 1));
     state.boss = {
@@ -2333,6 +2486,10 @@
   }
 
   function failTeam() {
+    if (state.demo) {
+      stopAttract();
+      return;
+    }
     state.mode = "failed";
     state.failAt = performance.now() + 4200;
     addJuice({ shake: 16, flash: 24, flashColor: "rgba(255,40,40,0.5)" });
@@ -2425,7 +2582,7 @@
   }
 
   function pauseGame() {
-    if (state.mode !== "play") return;
+    if (state.mode !== "play" || state.demo) return;
     state.mode = "paused";
     state.pauseMusicWasOn = musicOn;
     if (musicOn) {
@@ -2445,7 +2602,7 @@
         " · " + ((state.combo >= 8 || state.maxCombo >= 8) ? "COMBO" : "combo…") +
         " · " + (state.levelTime > sectorTimeBudget() * 0.45 ? "SPEED" : "speed…") +
         "\n" + sectorPbLine(state.level) +
-        "\nP / ESC resume · R retry sector",
+        "\nQ / SWAP backup gun · P resume · R retry",
       "RESUME",
       { keepPlaying: true }
     );
@@ -2571,6 +2728,10 @@
     if (onTitle) renderMedalsUI(true, null, true);
     else renderMedalsUI(shareable, opts.medals || state.lastMedals || state.runMedals, false);
     if (hud.dailyBtn) hud.dailyBtn.style.display = onTitle ? "" : "none";
+    if (hud.assistBtn) {
+      hud.assistBtn.style.display = onTitle ? "" : "none";
+      if (onTitle) syncAssistBtn();
+    }
     if (hud.diffBtn) {
       hud.diffBtn.style.display = onTitle ? "" : "none";
       if (onTitle) syncDiffBtn();
@@ -2605,6 +2766,103 @@
     renderMedalsUI(false);
     ROOT.classList.remove("dg-menu");
     fit();
+  }
+
+  function titleBootSub() {
+    let bootHint = "";
+    try {
+      if (localStorage.getItem("dg-secret") === "1") bootHint += "\n★ Ember Vault discovered";
+      if (localStorage.getItem("dg-secret-storm") === "1") bootHint += "\n★ Storm Spire discovered";
+      if (localStorage.getItem("dg-secret-signal") === "1") bootHint += "\n★ Signal Crypt discovered";
+    } catch (e) {}
+    if (GOD_QS) {
+      if (state.godMode) bootHint += "\nGOD MODE ready · press G anytime";
+      return wantsTouchUI()
+        ? "by 8bitcrypto_44 · TEST BUILD\nHI " + state.hiScore + bootHint +
+          "\nGOD + level buttons · stick + JUMP / FIRE"
+        : "by 8bitcrypto_44 · TEST / GOD MODE\nHI " + state.hiScore + bootHint +
+          "\nToggle GOD · pick a level · G key in-game";
+    }
+    return wantsTouchUI()
+      ? "by 8bitcrypto_44\nHI " + state.hiScore + " · " + dailyBestLine() + bootHint +
+        "\nDAILY · AIM assist · stick + JUMP / FIRE / SWAP"
+      : "by 8bitcrypto_44\nHI " + state.hiScore + " · " + dailyBestLine() + bootHint +
+        "\nPRESS START or DAILY · Q swap guns · idle = demo";
+  }
+
+  function startAttract() {
+    if (state.mode !== "title" || GOD_QS) return;
+    ensureAudio();
+    hideOverlay();
+    state.demo = true;
+    state.demoAt = performance.now();
+    state.score = 0;
+    state.lives = 5;
+    state.level = 0;
+    state.combo = 0;
+    state.comboTimer = 0;
+    state.checkpointX = 80;
+    state.inSecret = false;
+    state.secretKey = false;
+    state.daily = false;
+    resetRunStats();
+    state.mode = "play";
+    buildLevel(0, true, false);
+    if (state.player) {
+      grantWeapon("SPREAD", 0.7);
+      grantWeapon("RIFLE", 0.5);
+    }
+    demoAI.x = 1;
+    demoAI.jump = false;
+    demoAI.shoot = true;
+    demoAI.up = false;
+    demoAI.down = false;
+    demoAI.think = 0;
+    state.banner = "DEMO · PRESS START";
+    state.messageTimer = 99999;
+    startTechno();
+    updateHUD();
+    postParent({ type: "dg-chrome", inGame: false });
+  }
+
+  function stopAttract() {
+    if (!state.demo) return;
+    state.demo = false;
+    stopMusic();
+    state.mode = "title";
+    state.player = null;
+    state.enemies = [];
+    state.bullets = [];
+    state.bossMode = false;
+    state.boss = null;
+    state.messageTimer = 0;
+    demoAI.x = 0;
+    demoAI.jump = false;
+    demoAI.shoot = false;
+    bumpTitleIdle();
+    showOverlay("DIGISTRACTS", titleBootSub(), "PRESS START");
+    updateHUD();
+    postParent({ type: "dg-chrome", inGame: false });
+  }
+
+  function tickDemoAI() {
+    if (!state.demo || !state.player) return;
+    const p = state.player;
+    demoAI.think++;
+    demoAI.x = 1;
+    demoAI.shoot = true;
+    demoAI.up = false;
+    demoAI.down = false;
+    const ahead = p.x + p.facing * 50;
+    const hole = isHoleAt(ahead) || isHoleAt(p.x + p.w / 2 + 28);
+    demoAI.jump = !!(hole || (demoAI.think % 95 < 8) || (!p.onGround && p.vy > 2));
+    const foe = nearestEnemy(p.x + p.w / 2, p.y + 20, 0);
+    if (foe) {
+      const dx = (foe.x + foe.w / 2) - (p.x + p.w / 2);
+      if (Math.abs(dx) < 220) demoAI.x = dx >= 0 ? 1 : -1;
+      if (foe.y + foe.h < p.y + 10) demoAI.up = true;
+    }
+    if (p.x > 2200 || performance.now() - state.demoAt > 42000) stopAttract();
   }
 
   function beginTestRun(opts) {
@@ -2727,6 +2985,10 @@
 
   function startGame(opts) {
     opts = opts || {};
+    if (state.demo) {
+      state.demo = false;
+      stopMusic();
+    }
     ensureAudio();
     if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
     if (!opts.keepDaily) {
@@ -2803,6 +3065,10 @@
   }
 
   function onLevelComplete() {
+    if (state.demo) {
+      stopAttract();
+      return;
+    }
     const leftover = state.qrs.filter(function (q) { return !q.taken; }).length;
     const clearPts = Math.max(0, 500 - leftover * 20);
     const timePts = Math.ceil(state.levelTime / 1000) * 10;
@@ -3227,7 +3493,8 @@
       else if (state.player.speedT > 0) gun = "SPD " + Math.ceil(state.player.speedT / 60) + "s";
       else if (state.player.weapon) {
         const d = weaponDef(state.player.weapon);
-        gun = (d ? d.label : state.player.weapon) + " ×" + state.player.beamFuel;
+        const bagN = (state.player.gunBag && state.player.gunBag.length) || 0;
+        gun = (d ? d.label : state.player.weapon) + " ×" + state.player.beamFuel + (bagN ? (" +" + bagN) : "");
       } else if (state.player.charge >= 10) {
         gun = state.player.charge >= 28 ? "CHARGE!" : "CHG " + Math.floor(state.player.charge / 28 * 100) + "%";
       }
@@ -3242,9 +3509,11 @@
     } else {
       hud.msg.style.opacity = "0";
     }
+    syncMusicUrgency();
   }
 
   function inputX() {
+    if (state.demo) return demoAI.x;
     if (Math.abs(touch.jx) > 0.28) return touch.jx > 0 ? 1 : -1;
     let x = 0;
     if (keys.ArrowLeft || keys.a || keys.A || touch.left) x -= 1;
@@ -3252,15 +3521,19 @@
     return x;
   }
   function inputJump() {
+    if (state.demo) return !!demoAI.jump;
     return !!(keys[" "] || touch.jump);
   }
   function inputUp() {
+    if (state.demo) return !!demoAI.up;
     return !!(keys.ArrowUp || keys.w || keys.W || touch.up || touch.jy < -0.36);
   }
   function inputDown() {
+    if (state.demo) return !!demoAI.down;
     return !!(keys.ArrowDown || keys.s || keys.S || touch.down || touch.jy > 0.42);
   }
   function inputShoot() {
+    if (state.demo) return !!demoAI.shoot;
     return !!(keys.z || keys.Z || keys.x || keys.X || keys.Control || keys.Enter || keys.j || keys.J || touch.shoot);
   }
 
@@ -5007,7 +5280,12 @@
 
   function loop() {
     tickJuice();
+    if (state.mode === "title" && !GOD_QS && !state.demo &&
+        performance.now() - titleIdleAt > ATTRACT_IDLE_MS) {
+      startAttract();
+    }
     if (state.mode === "play") {
+      if (state.demo) tickDemoAI();
       if (state.hitStop > 0) state.hitStop--;
       else updatePlay();
     }
@@ -5021,6 +5299,13 @@
     } else if (state.mode === "play" || state.mode === "paused" || state.mode === "clear" || state.mode === "failed" || state.mode === "dead" || state.mode === "win") {
       if (state.player) drawPlay();
       else drawCity();
+      if (state.demo) {
+        ctx.fillStyle = "rgba(2,6,23,0.35)";
+        ctx.fillRect(0, 0, W, 28);
+        ctx.fillStyle = "#67e8f9";
+        ctx.font = "bold 14px monospace";
+        ctx.fillText("DEMO · PRESS START", W / 2 - 78, 20);
+      }
     } else {
       drawCity();
       const t = performance.now() / 200;
@@ -5034,6 +5319,11 @@
   }
 
   function handleStartAction() {
+    if (state.demo) {
+      startGame();
+      return;
+    }
+    bumpTitleIdle();
     if (state.mode === "paused") resumeGame();
     else if (state.mode === "clear") advanceFromClear();
     else if (state.mode === "failed") {
@@ -5049,9 +5339,25 @@
   }
 
   window.addEventListener("keydown", function (e) {
+    if (state.demo) {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        handleStartAction();
+        return;
+      }
+      stopAttract();
+      keys[e.key] = true;
+      return;
+    }
     keys[e.key] = true;
+    if (state.mode === "title") bumpTitleIdle();
     if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " "].indexOf(e.key) >= 0) e.preventDefault();
     const key = e.key;
+    if ((key === "q" || key === "Q" || key === "Tab") && !e.repeat && state.mode === "play") {
+      e.preventDefault();
+      swapWeapon();
+      return;
+    }
     if ((key === "p" || key === "P" || key === "Escape") && !e.repeat) {
       if (state.mode === "play") {
         e.preventDefault();
@@ -5103,6 +5409,25 @@
       sfxUi();
     });
   }
+  if (hud.assistBtn) {
+    hud.assistBtn.addEventListener("click", function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      bumpTitleIdle();
+      ensureAudio();
+      setAssist(!assistOn);
+      sfxUi();
+    });
+  }
+  if (hud.swapBtn) {
+    hud.swapBtn.addEventListener("click", function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      ensureAudio();
+      if (state.demo) { handleStartAction(); return; }
+      swapWeapon();
+    });
+  }
   if (hud.pauseBtn) {
     hud.pauseBtn.addEventListener("click", function (ev) {
       ev.preventDefault();
@@ -5116,6 +5441,7 @@
     hud.diffBtn.addEventListener("click", function (ev) {
       ev.preventDefault();
       ev.stopPropagation();
+      bumpTitleIdle();
       ensureAudio();
       if (state.mode === "title" || state.mode === "credits") cycleDiff();
     });
@@ -5124,6 +5450,7 @@
     hud.dailyBtn.addEventListener("click", function (ev) {
       ev.preventDefault();
       ev.stopPropagation();
+      bumpTitleIdle();
       ensureAudio();
       if (state.mode === "title" || state.mode === "credits") startDailyRun();
     });
@@ -5457,6 +5784,10 @@
     });
   }
   ROOT.addEventListener("touchstart", function () {
+    if (state.demo) {
+      handleStartAction();
+      return;
+    }
     if (!ROOT.classList.contains("dg-phone")) return;
     if (isFullscreen()) return;
     // Nudge into fullscreen on first touch while playing
@@ -5464,28 +5795,10 @@
   }, { passive: true });
   fit();
 
-  let bootHint = "";
-  try {
-    if (localStorage.getItem("dg-secret") === "1") bootHint += "\n★ Ember Vault discovered";
-    if (localStorage.getItem("dg-secret-storm") === "1") bootHint += "\n★ Storm Spire discovered";
-    if (localStorage.getItem("dg-secret-signal") === "1") bootHint += "\n★ Signal Crypt discovered";
-  } catch (e) {}
-  let bootSub;
   if (GOD_QS) {
-    if (state.godMode) bootHint += "\nGOD MODE ready · press G anytime";
-    bootSub = wantsTouchUI()
-      ? "by 8bitcrypto_44 · TEST BUILD\nHI " + state.hiScore + bootHint +
-        "\nGOD + level buttons · stick + JUMP / FIRE"
-      : "by 8bitcrypto_44 · TEST / GOD MODE\nHI " + state.hiScore + bootHint +
-        "\nToggle GOD · pick a level · G key in-game";
     buildLevelSelect();
     if (state.godMode) setGodMode(true);
   } else {
-    bootSub = wantsTouchUI()
-      ? "by 8bitcrypto_44\nHI " + state.hiScore + " · " + dailyBestLine() + bootHint +
-        "\nDAILY challenge · stick + JUMP / FIRE"
-      : "by 8bitcrypto_44\nHI " + state.hiScore + " · " + dailyBestLine() + bootHint +
-        "\nPRESS START or DAILY · medals unlock as you play";
     if (hud.godBtn) hud.godBtn.style.display = "none";
     if (hud.levels) {
       hud.levels.innerHTML = "";
@@ -5494,7 +5807,9 @@
   }
   syncDiffBtn();
   syncFxBtn();
-  showOverlay("DIGISTRACTS", bootSub, "PRESS START");
+  syncAssistBtn();
+  bumpTitleIdle();
+  showOverlay("DIGISTRACTS", titleBootSub(), "PRESS START");
   updateHUD();
   fit();
   loop();

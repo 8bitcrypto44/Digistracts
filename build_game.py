@@ -107,6 +107,7 @@ markup = (
       <div class="dg-actions">
         <button type="button" id="dg-jump">JUMP</button>
         <button type="button" id="dg-shoot">FIRE</button>
+        <button type="button" id="dg-swap">SWAP</button>
       </div>
     </div>
   </div>
@@ -116,6 +117,7 @@ markup = (
     <div id="dg-medals" class="dg-medals" aria-live="polite"></div>
     <div class="dg-menu-actions">
       <button type="button" id="dg-diff">DIFF: NORMAL</button>
+      <button type="button" id="dg-assist" aria-pressed="true">AIM: ON</button>
       <button type="button" id="dg-daily">DAILY</button>
       <button type="button" id="dg-god" aria-pressed="false">GOD: OFF</button>
       <button type="button" id="dg-start">PRESS START</button>
@@ -128,6 +130,7 @@ markup = (
     <span><kbd>&uarr;&darr;</kbd> Aim</span>
     <span><kbd>SPACE</kbd> Jump · ×2 Super</span>
     <span><kbd>Z</kbd>/<kbd>X</kbd> Fire · hold charge</span>
+    <span><kbd>Q</kbd>/<kbd>Tab</kbd> Swap gun</span>
     <span><kbd>P</kbd>/<kbd>ESC</kbd> Pause</span>
     <span><kbd>R</kbd> Retry sector</span>
   </div>
@@ -144,7 +147,7 @@ markup = (
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "32"
+ASSET_V = "33"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]
