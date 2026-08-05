@@ -22,6 +22,7 @@
   let GROUND = 390;
   const PREACHER_SRC = window.DG_PREACHER;
   const ROBOT_SRCS = window.DG_ROBOTS || [];
+  const PLATFORM_SRCS = window.DG_PLATFORMS || [];
   const BACKGROUND_SRCS = window.DG_BACKGROUNDS || (window.DG_BACKGROUND ? [window.DG_BACKGROUND] : []);
 
   const canvas = ROOT.querySelector("#dg-canvas");
@@ -65,9 +66,10 @@
     return im;
   }
 
-  const imgs = { preacher: loadImg(PREACHER_SRC), backgrounds: [], robots: [] };
+  const imgs = { preacher: loadImg(PREACHER_SRC), backgrounds: [], robots: [], platforms: [] };
   BACKGROUND_SRCS.forEach(function (src) { imgs.backgrounds.push(loadImg(src)); });
   ROBOT_SRCS.forEach(function (src) { imgs.robots.push(loadImg(src)); });
+  PLATFORM_SRCS.forEach(function (src) { imgs.platforms.push(loadImg(src)); });
 
   const keys = Object.create(null);
   const touch = { left: false, right: false, up: false, down: false, jump: false, shoot: false, jx: 0, jy: 0 };
@@ -1476,11 +1478,25 @@
     return best;
   }
 
+  function defaultPlatSkin(idx) {
+    const theme = (currentLevel() && currentLevel().theme) || "docks";
+    const preferB = theme === "slums" || theme === "voidmarket" || theme === "secret"
+      || theme === "signal" || theme === "storm";
+    if (preferB) return (idx % 3 === 0) ? 0 : 1;
+    return (idx % 3 === 0) ? 1 : 0;
+  }
+
+  function platLen(i, base) {
+    const table = [base, base + 36, base + 80, base + 130, base + 24, base + 100, base + 160];
+    return table[i % table.length];
+  }
+
   function addPlatform(x, y, w, extra) {
     const plat = { x: x, y: y, w: w, h: 14, dx: 0 };
     if (extra) {
       for (const k in extra) plat[k] = extra[k];
     }
+    if (plat.skin == null) plat.skin = defaultPlatSkin(state.platforms.length);
     if (plat.mover) {
       plat.ox = x;
       plat.oy = y;
@@ -1632,9 +1648,9 @@
     // Gate walls (visual blockers that activate when arena starts)
     addHazard({ kind: "gate", x: atX - 30, y: GROUND - 160, w: 18, h: 160, open: true, arena: true });
     addHazard({ kind: "gate", x: atX + 500, y: GROUND - 160, w: 18, h: 160, open: true, arena: true });
-    addPlatform(atX + 80, GROUND - 110, 100);
-    addPlatform(atX + 280, GROUND - 150, 100);
-    addPlatform(atX + 180, GROUND - 200, 90);
+    addPlatform(atX + 60, GROUND - 110, 160, { skin: 0 });
+    addPlatform(atX + 260, GROUND - 150, 90, { skin: 1 });
+    addPlatform(atX + 140, GROUND - 200, 200, { skin: 0 });
   }
 
   function buildSectorLayout(idx, L) {
@@ -1654,13 +1670,13 @@
       for (let i = 0; i < L.platforms; i++) {
         const x = 240 + i * ((len - 500) / L.platforms);
         const y = GROUND - (60 + (i % 3) * 28);
-        const w = 90 + (i % 2) * 40;
+        const w = platLen(i, 88);
         if (i % 5 === 2) {
           plat(x, y, w, { mover: true, ampX: 70, ampY: 0, spd: 0.03, phase: i });
         } else if (i % 8 === 4) {
           plat(x, y, w, { bounce: true });
         } else if (i % 8 === 6) {
-          plat(x, y, Math.min(72, w), { breakable: true, hp: 2 });
+          plat(x, y, Math.min(80, w), { breakable: true, hp: 2 });
         } else {
           plat(x, y, w);
         }
@@ -1679,7 +1695,7 @@
         const x = 200 + i * ((len - 400) / L.platforms);
         const row = i % 3;
         const y = GROUND - (55 + row * 48);
-        plat(x, y, 70 + (i % 2) * 20);
+        plat(x, y, platLen(i, 64));
       }
       for (let i = 0; i < 16; i++) {
         const x = 850 + i * 880;
@@ -1702,7 +1718,7 @@
       for (let tower = 0; tower < 12; tower++) {
         const base = 280 + tower * ((len - 800) / 12);
         for (let step = 0; step < 5; step++) {
-          plat(base + (step % 2) * 50, GROUND - (70 + step * 42), 78);
+          plat(base + (step % 2) * 50, GROUND - (70 + step * 42), platLen(tower * 5 + step, 70));
         }
         addHazard({
           kind: "crusher",
@@ -1713,7 +1729,7 @@
       }
       while (elevated.length < L.platforms) {
         const i = elevated.length;
-        plat(300 + i * ((len - 600) / Math.max(8, L.platforms)), GROUND - (80 + (i % 5) * 24), 85);
+        plat(300 + i * ((len - 600) / Math.max(8, L.platforms)), GROUND - (80 + (i % 5) * 24), platLen(i, 78));
       }
       buildArena(Math.floor(len * 0.55));
     } else if (theme === "slums") {
@@ -1725,7 +1741,7 @@
         const crumbling = i % 7 === 3;
         const bounce = i % 7 === 5;
         const brk = i % 9 === 1;
-        plat(x, y, 65 + (i % 3) * 18, crumbling
+        plat(x, y, platLen(i, 58), crumbling
           ? { crumble: true, life: 45, maxLife: 45, gone: false }
           : bounce ? { bounce: true }
           : brk ? { breakable: true, hp: 2 }
@@ -1764,9 +1780,9 @@
         const high = i % 3 !== 2;
         const y = GROUND - (high ? 130 + (i % 4) * 28 : 70);
         if (i % 4 === 0) {
-          plat(x, y, 110, { mover: true, ampX: 90, ampY: 12, spd: 0.028, phase: i, fy: 1.1 });
+          plat(x, y, platLen(i, 100), { mover: true, ampX: 90, ampY: 12, spd: 0.028, phase: i, fy: 1.1 });
         } else {
-          plat(x, y, 70 + (i % 2) * 20);
+          plat(x, y, platLen(i, 72));
         }
       }
       for (let i = 0; i < 12; i++) {
@@ -1803,7 +1819,7 @@
         const y = GROUND - (60 + (i % 5) * 30);
         const fake = i % 6 === 2;
         const bounce = i % 6 === 4;
-        plat(x, y, 68 + (i % 2) * 22, fake
+        plat(x, y, platLen(i, 66), fake
           ? { crumble: true, life: 18, maxLife: 18, gone: false, voidFake: true }
           : bounce ? { bounce: true } : null);
       }
@@ -1842,7 +1858,7 @@
         const y = GROUND - (55 + row * 38);
         const bounce = i % 7 === 2;
         const crumble = i % 7 === 5;
-        plat(x, y, 62 + (i % 2) * 18, bounce
+        plat(x, y, platLen(i, 56), bounce
           ? { bounce: true }
           : crumble ? { crumble: true, life: 14, maxLife: 14, gone: false } : null);
       }
@@ -1875,7 +1891,7 @@
         const y = GROUND - (50 + row * 36);
         const mover = i % 5 === 0;
         const bounce = i % 5 === 2;
-        plat(x, y, 58 + (i % 2) * 16, mover
+        plat(x, y, platLen(i, 54), mover
           ? { mover: true, ampX: 70, ampY: 28, spd: 0.034, phase: i * 0.7, fy: 1.2 }
           : bounce ? { bounce: true } : null);
       }
@@ -1908,7 +1924,7 @@
         const y = GROUND - (48 + row * 38);
         const bounce = i % 4 === 1;
         const brk = i % 5 === 3;
-        plat(x, y, 56 + (i % 2) * 18, bounce
+        plat(x, y, platLen(i, 52), bounce
           ? { bounce: true }
           : brk ? { breakable: true, hp: 3 }
           : (i % 6 === 0 ? { mover: true, ampX: 50, ampY: 16, spd: 0.036, phase: i * 0.8, fy: 1.25 } : null));
@@ -1940,9 +1956,9 @@
         const x = 230 + i * ((len - 500) / L.platforms);
         const y = GROUND - (75 + (i % 4) * 34);
         if (i % 4 === 1) {
-          plat(x, y, 100, { mover: true, ampX: 55, ampY: 18, spd: 0.035, phase: i * 0.7, fy: 1.3 });
+          plat(x, y, platLen(i, 96), { mover: true, ampX: 55, ampY: 18, spd: 0.035, phase: i * 0.7, fy: 1.3 });
         } else {
-          plat(x, y, 80 + (i % 2) * 25);
+          plat(x, y, platLen(i, 78));
         }
       }
       for (let i = 0; i < 14; i++) {
@@ -1963,7 +1979,7 @@
       // Fallback generic
       for (let i = 0; i < 10; i++) addHole(800 + i * 1400, 110);
       for (let i = 0; i < L.platforms; i++) {
-        plat(220 + i * ((len - 400) / L.platforms), GROUND - (70 + (i % 4) * 30), 80);
+        plat(220 + i * ((len - 400) / L.platforms), GROUND - (70 + (i % 4) * 30), platLen(i, 76));
       }
       buildArena(Math.floor(len * 0.5));
     }
@@ -2710,10 +2726,10 @@
     state.hazards = [];
     state.arena = null;
     state.platforms = [];
-    addPlatform(130, GROUND - 290, 120);
-    addPlatform(500, GROUND - 340, 120);
+    addPlatform(80, GROUND - 290, 180, { skin: 0 });
+    addPlatform(480, GROUND - 340, 220, { skin: 1 });
     if (mid) {
-      addPlatform(320, GROUND - 160, 140);
+      addPlatform(280, GROUND - 160, 140, { skin: 0 });
       addHazard({
         kind: "laser", x: 380, y: 40, w: 10, h: GROUND - 180,
         on: 40, off: 70, t: 0, axis: "v"
@@ -3595,7 +3611,7 @@
     } else {
       addHazard({ kind: "spike", x: 160, y: GROUND - 18, w: 90, h: 18, on: 36, off: 44, t: 0 });
       addHazard({ kind: "spike", x: 520, y: GROUND - 18, w: 90, h: 18, on: 36, off: 44, t: 22 });
-      addPlatform(340, GROUND - 210, 110);
+      addPlatform(280, GROUND - 210, 180, { skin: 1 });
     }
   }
 
@@ -5016,33 +5032,62 @@
     ctx.globalAlpha = 1;
   }
 
+  function drawPlatformSprite(p, x) {
+    const pool = imgs.platforms;
+    const img = pool.length ? pool[(p.skin || 0) % pool.length] : null;
+    const drawH = 36;
+    if (!img || !img.complete || !img.naturalWidth) {
+      const body = p.crumble ? N("steel") : p.mover ? N("ink") : p.bounce ? N("purpleDim") : p.breakable ? "#7c2d12" : N("metal");
+      const top = p.crumble ? N("orange") : p.mover ? N("blue") : p.bounce ? N("purple2") : p.breakable ? N("gold2") : N("cyan");
+      const bot = p.mover ? N("purple") : p.bounce ? N("pink2") : p.breakable ? N("orange") : N("pink");
+      pxBevel(x, p.y, p.w, Math.max(8, p.h), top, bot, body);
+      return;
+    }
+    const iw = img.naturalWidth, ih = img.naturalHeight;
+    ctx.save();
+    if (p.crumble) ctx.globalAlpha = 0.72 + 0.28 * Math.sin(performance.now() / 90);
+    else if (p.voidFake) ctx.globalAlpha = 0.55;
+    else if (p.breakable) ctx.globalAlpha = 0.92;
+    if (p.w <= 96) {
+      ctx.drawImage(img, x, p.y, p.w, drawH);
+    } else {
+      const cap = Math.max(18, Math.floor(iw * 0.24));
+      const midSrc = Math.max(10, iw - cap * 2);
+      let dx = x;
+      let rem = p.w - cap * 2;
+      ctx.drawImage(img, 0, 0, cap, ih, dx, p.y, cap, drawH);
+      dx += cap;
+      while (rem > 0) {
+        const tw = Math.min(midSrc, rem);
+        ctx.drawImage(img, cap, 0, midSrc, ih, dx, p.y, tw, drawH);
+        dx += tw;
+        rem -= tw;
+      }
+      ctx.drawImage(img, iw - cap, 0, cap, ih, dx, p.y, cap, drawH);
+    }
+    ctx.restore();
+    if (p.mover) {
+      const chev = Math.floor(performance.now() / 200) % 3;
+      pxFill(N("cyan2"), x + 8 + chev * 6, p.y + 5, 5, 2);
+    }
+    if (p.bounce) {
+      pxFill(N("purple2"), x + 4, p.y + 1, p.w - 8, 2);
+    }
+    if (p.crumble && p.life != null && p.maxLife) {
+      pxFill(N("red"), x, p.y - 4, p.w * Math.max(0, p.life / p.maxLife), 2);
+    }
+    if (p.breakable) {
+      for (let s = 0; s < p.w; s += 12) pxFill(N("gold2"), x + s, p.y, 6, 2);
+    }
+  }
+
   function drawPlatforms() {
-    const theme = currentLevel().theme || "docks";
     for (let i = 0; i < state.platforms.length; i++) {
       const p = state.platforms[i];
       if (p.gone || p.y >= GROUND) continue;
       const x = p.x - state.camX;
       if (x + p.w < -20 || x > W + 20) continue;
-      const body = p.crumble ? N("steel") : p.mover ? N("ink") : p.bounce ? N("purpleDim") : p.breakable ? "#7c2d12" : N("metal");
-      const top = p.crumble ? N("orange") : p.mover ? N("blue") : p.bounce ? N("purple2") : p.breakable ? N("gold2") : N("cyan");
-      const bot = p.mover ? N("purple") : p.bounce ? N("pink2") : p.breakable ? N("orange") : N("pink");
-      if (p.h >= 10 && p.w > 40 && !p.mover) {
-        pxFill(N("metal2"), x + 6, p.y + p.h, 4, Math.min(18, GROUND - p.y - p.h));
-        pxFill(N("metal2"), x + p.w - 10, p.y + p.h, 4, Math.min(18, GROUND - p.y - p.h));
-      }
-      pxBevel(x, p.y, p.w, Math.max(8, p.h), top, bot, body);
-      pxFill(N("steel"), x + 4, p.y + 4, 2, 2);
-      pxFill(N("steel"), x + p.w - 6, p.y + 4, 2, 2);
-      if (p.mover) {
-        const chev = Math.floor(performance.now() / 200) % 3;
-        pxFill(N("cyan2"), x + 8 + chev * 6, p.y + 5, 5, 2);
-      }
-      if (p.crumble && p.life != null && p.maxLife) {
-        pxFill(N("red"), x, p.y - 4, p.w * Math.max(0, p.life / p.maxLife), 2);
-      }
-      if (p.breakable || theme === "slums") {
-        for (let s = 0; s < p.w; s += 10) pxFill(N("gold2"), x + s, p.y, 5, 2);
-      }
+      drawPlatformSprite(p, x);
     }
     const start = Math.floor(state.camX / 32) * 32;
     for (let x = start; x < state.camX + W + 32; x += 32) {

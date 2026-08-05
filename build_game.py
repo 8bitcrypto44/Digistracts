@@ -37,6 +37,25 @@ def compress_robot(path, height=72):
     return data_uri(im, quality=62, method=6)
 
 
+def compress_platform(path, height=56):
+    im = Image.open(path).convert("RGBA")
+    px = im.getdata()
+    cleaned = []
+    for r, g, b, a in px:
+        if a < 10:
+            cleaned.append((0, 0, 0, 0))
+        else:
+            cleaned.append((r, g, b, 255 if a > 200 else a))
+    im.putdata(cleaned)
+    bbox = im.getbbox()
+    if bbox:
+        im = im.crop(bbox)
+    h = height
+    w = max(48, round(im.width * (h / im.height)))
+    im = im.resize((w, h), Image.Resampling.NEAREST)
+    return data_uri(im, quality=72, method=6)
+
+
 # Prefer split singles (hq_01a/b); skip the dual hq_01 frame
 robot_paths = []
 for p in sorted(Path("assets/sprites").glob("hq_*.png")):
@@ -48,6 +67,14 @@ if len(robot_uris) < 4:
     robot_paths = sorted(Path("assets/sprites").glob("robot_*.png"))
     robot_uris = [compress_robot(p, height=56) for p in robot_paths if p.stem != "robot_15"]
 
+platform_paths = [
+    Path("assets/sprites/platform_a_game.png"),
+    Path("assets/sprites/platform_b_game.png"),
+]
+# Fall back to originals if game crops missing
+platform_paths = [p if p.exists() else Path(str(p).replace("_game", "")) for p in platform_paths]
+platform_uris = [compress_platform(p) for p in platform_paths if p.exists()]
+
 embed_source = Path("assets/sprites/embed.js").read_text(encoding="utf-8")
 embed_source = re.sub(
     r"window\.DG_ROBOTS\s*=\s*\[(.*?)\];",
@@ -56,9 +83,17 @@ embed_source = re.sub(
     count=1,
     flags=re.S,
 )
+embed_source = re.sub(
+    r"window\.DG_PLATFORMS\s*=\s*\[(.*?)\];",
+    "window.DG_PLATFORMS=[" + ",".join('"%s"' % u for u in platform_uris) + "];",
+    embed_source,
+    count=1,
+    flags=re.S,
+)
 embed_source = re.sub(r'window\.DG_QR\s*=\s*"[^"]*";', 'window.DG_QR="";', embed_source)
 embed = jsmin(embed_source)
 print("robots embedded", len(robot_uris), "from", [p.name for p in robot_paths])
+print("platforms embedded", len(platform_uris), "from", [p.name for p in platform_paths if p.exists()])
 js = jsmin(mangle(Path("digistracts.js").read_text(encoding="utf-8")))
 
 # Hosted full-res backgrounds (Postimg). 6 slots: levels 1-5 + boss.
@@ -148,7 +183,7 @@ markup = (
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "37"
+ASSET_V = "38"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]
