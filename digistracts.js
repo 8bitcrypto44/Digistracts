@@ -5,6 +5,7 @@
   ROOT.dataset.booted = "1";
 
   const EMBED = /(?:\?|&)embed=1(?:&|$)/.test(location.search || "");
+  const GOD_QS = /(?:\?|&)(?:god|test)=1(?:&|$)/.test(location.search || "");
   if (EMBED) {
     document.documentElement.classList.add("dg-embed");
     document.body && document.body.classList.add("dg-embed");
@@ -43,6 +44,7 @@
     mute: ROOT.querySelector("#dg-mute"),
     pauseBtn: ROOT.querySelector("#dg-pause"),
     diffBtn: ROOT.querySelector("#dg-diff"),
+    godBtn: ROOT.querySelector("#dg-god"),
     levels: ROOT.querySelector("#dg-levels"),
     fs: ROOT.querySelector("#dg-fs")
   };
@@ -540,7 +542,8 @@
     secretKey: false,
     secretCleared: false,
     secretPortal: null,
-    returnLevel: 0
+    returnLevel: 0,
+    godMode: GOD_QS
   };
 
   const CREDIT_LINES = ["DIGISTRACTS","by 8bitcrypto_44","","THANKS WEB3 COMMUNITY","OpenSea · Amazon","Technocade / Soundimage.org","","THANK YOU FOR PLAYING"];
@@ -1497,7 +1500,33 @@
     startBossFight("mid");
   }
 
+  function setGodMode(on) {
+    state.godMode = !!on;
+    if (state.godMode && state.player) {
+      state.invuln = 9999;
+      state.player.goldT = Math.max(state.player.goldT || 0, 9999);
+      if (!state.player.weapon) grantWeapon("MAXI", 2);
+      else state.player.beamFuel = Math.max(state.player.beamFuel, 999);
+    }
+    if (hud.godBtn) {
+      hud.godBtn.textContent = state.godMode ? "GOD: ON" : "GOD: OFF";
+      hud.godBtn.setAttribute("aria-pressed", state.godMode ? "true" : "false");
+      hud.godBtn.classList.toggle("is-on", state.godMode);
+    }
+    if (state.godMode) {
+      state.banner = "GOD MODE ON";
+      state.messageTimer = 60;
+    }
+    updateHUD();
+  }
+
+  function toggleGodMode() {
+    setGodMode(!state.godMode);
+    sfxUi();
+  }
+
   function hurtPlayer(respawnX) {
+    if (state.godMode) return;
     if (state.invuln > 0 || state.mode !== "play") return;
     if (state.player && state.player.goldT > 0) return;
     const p = state.player;
@@ -1753,6 +1782,14 @@
       hud.diffBtn.style.display = onTitle ? "" : "none";
       if (onTitle) syncDiffBtn();
     }
+    if (hud.godBtn) {
+      hud.godBtn.style.display = onTitle ? "" : "none";
+      if (onTitle) {
+        hud.godBtn.textContent = state.godMode ? "GOD: ON" : "GOD: OFF";
+        hud.godBtn.setAttribute("aria-pressed", state.godMode ? "true" : "false");
+        hud.godBtn.classList.toggle("is-on", state.godMode);
+      }
+    }
     if (hud.levels) {
       hud.levels.classList.toggle("is-on", onTitle);
       hud.levels.style.display = onTitle ? "" : "none";
@@ -1806,6 +1843,7 @@
       state.level = opts.level | 0;
       buildLevel(state.level, !!opts.skipTalk, false);
     }
+    if (state.godMode) setGodMode(true);
     startTechno();
     updateHUD();
     postParent({ type: "dg-chrome", inGame: true });
@@ -1881,6 +1919,7 @@
     hideOverlay();
     state.mode = "play";
     buildLevel(state.level);
+    if (state.godMode) setGodMode(true);
     startTechno();
     updateHUD();
     postParent({ type: "dg-chrome", inGame: true });
@@ -2290,6 +2329,7 @@
     hud.score.textContent = String(state.score).padStart(6, "0");
     hud.lives.textContent = "♥".repeat(Math.max(0, state.lives)) || "—";
     hud.level.textContent = state.inSecret ? "SEC" : ("LV " + (state.level + 1));
+    if (state.godMode && hud.level) hud.level.textContent = (state.inSecret ? "SEC" : ("LV " + (state.level + 1))) + " · GOD";
     hud.time.textContent = Math.max(0, Math.ceil(state.levelTime / 1000));
     if (hud.hi) hud.hi.textContent = String(state.hiScore).padStart(6, "0");
     if (hud.combo) {
@@ -2663,10 +2703,15 @@
       state.levelTime -= Math.min(100, levelNow - state.levelTick);
       state.levelTick = levelNow;
       if (state.levelTime <= 0) {
-        state.levelTime = 0;
-        onTimeUp();
-        updateHUD();
-        return;
+        if (state.godMode) {
+          state.levelTime = sectorTimeBudget();
+        } else {
+          state.levelTime = 0;
+          onTimeUp();
+          updateHUD();
+          return;
+        }
+      }
       }
     }
     updateMovers();
@@ -2800,7 +2845,14 @@
     }
     if (state.talkQ && (firePressed || inputJump())) state.talkT = 89;
     if (p.shootCD > 0) p.shootCD--;
-    if (state.invuln > 0) state.invuln--;
+    if (state.godMode) {
+      state.invuln = 9999;
+      p.goldT = Math.max(p.goldT, 60);
+      if (p.weapon) p.beamFuel = Math.max(p.beamFuel, 50);
+      else grantWeapon("MAXI", 1);
+    } else if (state.invuln > 0) {
+      state.invuln--;
+    }
     if (state.flash > 0) state.flash--;
     if (state.messageTimer > 0) state.messageTimer--;
 
@@ -3856,6 +3908,11 @@
     ctx.fillStyle = c >= 10 ? "#ff2bd6" : c >= 5 ? "#ffd400" : c >= 3 ? "#00e5ff" : "#64748b";
     ctx.font = "bold 11px monospace";
     ctx.fillText(c > 0 ? ("COMBO ×" + c) : "COMBO", mx, my - 4);
+    if (state.godMode) {
+      ctx.fillStyle = "#39ff14";
+      ctx.font = "bold 12px monospace";
+      ctx.fillText("GOD MODE", W - 100, 22);
+    }
     if (state.maxCombo > 0) {
       ctx.fillStyle = "#94a3b8";
       ctx.font = "10px monospace";
@@ -3936,6 +3993,11 @@
       if (now - lastSpaceTap < 420) superJump();
       lastSpaceTap = now;
     }
+    if ((e.key === "g" || e.key === "G") && !e.repeat) {
+      e.preventDefault();
+      ensureAudio();
+      toggleGodMode();
+    }
     if ((e.key === "Enter" || e.key === " ") && state.mode !== "play") handleStartAction();
   });
   window.addEventListener("keyup", function (e) { keys[e.key] = false; });
@@ -3966,6 +4028,14 @@
       ev.stopPropagation();
       ensureAudio();
       if (state.mode === "title" || state.mode === "credits") cycleDiff();
+    });
+  }
+  if (hud.godBtn) {
+    hud.godBtn.addEventListener("click", function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      ensureAudio();
+      toggleGodMode();
     });
   }
 
@@ -4226,12 +4296,14 @@
 
   let bootHint = "";
   try { if (localStorage.getItem("dg-secret") === "1") bootHint = "\n★ Ember Vault discovered"; } catch (e) {}
+  if (state.godMode) bootHint += "\nGOD MODE ready · press G anytime";
   const bootSub = wantsTouchUI()
-    ? "by 8bitcrypto_44 · 7 sectors + secret vault\nHI " + state.hiScore + bootHint +
-      "\nPick DIFF · landscape · stick + JUMP / FIRE"
-    : "by 8bitcrypto_44 · 7 sectors + secret Ember Vault\nHI " + state.hiScore + bootHint +
-      "\nVoid Market: find the KEY · ↑ into the vault";
+    ? "by 8bitcrypto_44 · TEST BUILD\nHI " + state.hiScore + bootHint +
+      "\nGOD + level buttons · stick + JUMP / FIRE"
+    : "by 8bitcrypto_44 · TEST / GOD MODE\nHI " + state.hiScore + bootHint +
+      "\nToggle GOD · pick a level · G key in-game";
   buildLevelSelect();
+  if (state.godMode) setGodMode(true);
   syncDiffBtn();
   showOverlay("DIGISTRACTS", bootSub, "PRESS START");
   updateHUD();
