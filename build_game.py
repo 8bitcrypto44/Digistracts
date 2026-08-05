@@ -130,7 +130,7 @@ markup = (
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "3"
+ASSET_V = "4"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]
@@ -191,29 +191,24 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
 .dg-gd.is-loading .dg-gd-load{{display:flex}}
 .dg-gd.is-open .dg-gd-cover{{display:none}}
 .dg-gd.is-open .dg-gd-play{{display:block}}
-.dg-gd.is-open.is-land{{
+.dg-gd.is-open.is-land,
+.dg-gd.is-fs-mode{{
   position:fixed;inset:0;z-index:9999;max-width:none;width:100%;height:100%;height:100dvh;margin:0;
   background:#020617
 }}
-.dg-gd.is-open.is-land .dg-gd-card{{
+.dg-gd.is-open.is-land .dg-gd-card,
+.dg-gd.is-fs-mode .dg-gd-card{{
   height:100%;border:0;border-radius:0;padding:0;box-shadow:none;
   display:flex;flex-direction:column;background:#020617
 }}
-.dg-gd.is-open.is-land .dg-gd-top{{display:none}}
-.dg-gd.is-open.is-land .dg-gd-stage{{
+.dg-gd.is-open.is-land .dg-gd-top,
+.dg-gd.is-fs-mode .dg-gd-top{{display:none}}
+.dg-gd.is-open.is-land .dg-gd-stage,
+.dg-gd.is-fs-mode .dg-gd-stage{{
   flex:1;min-height:0;aspect-ratio:auto;height:auto;border:0;border-radius:0
 }}
-.dg-gd:fullscreen,.dg-gd:-webkit-full-screen{{
-  width:100%;height:100%;max-width:none;background:#020617
-}}
-.dg-gd:fullscreen .dg-gd-card,.dg-gd:-webkit-full-screen .dg-gd-card{{
-  height:100%;border:0;border-radius:0;padding:0;box-shadow:none;
-  display:flex;flex-direction:column
-}}
-.dg-gd:fullscreen .dg-gd-top,.dg-gd:-webkit-full-screen .dg-gd-top{{display:none}}
-.dg-gd:fullscreen .dg-gd-stage,.dg-gd:-webkit-full-screen .dg-gd-stage{{
-  flex:1;min-height:0;aspect-ratio:auto;height:auto;border:0;border-radius:0
-}}
+/* Native Fullscreen API is NOT used for embeds: clicks inside a cross-origin
+   iframe cancel it and cause a flash / exit. CSS is-fs-mode stays stable. */
 @media (max-width:700px){{
   .dg-gd-card{{padding:4px;border-width:2px}}
   .dg-gd-top{{margin-bottom:4px}}
@@ -279,7 +274,7 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
     return window.innerWidth>window.innerHeight;
   }}
   function isFs(){{
-    return !!(document.fullscreenElement||document.webkitFullscreenElement);
+    return root.classList.contains("is-fs-mode");
   }}
   function syncFsClass(){{
     root.classList.toggle("is-fs",isFs());
@@ -294,24 +289,20 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
     }}catch(e){{}}
   }}
   function enterFs(){{
-    if(isFs()){{notifyFrame();return;}}
-    var req=root.requestFullscreen||root.webkitRequestFullscreen;
-    if(!req){{notifyFrame();return;}}
-    try{{
-      var p=req.call(root);
-      if(p&&p.then)p.then(notifyFrame).catch(function(){{notifyFrame();}});
-      else setTimeout(notifyFrame,80);
-    }}catch(e){{notifyFrame();}}
+    root.classList.add("is-fs-mode");
+    try{{document.documentElement.style.overflow="hidden";document.body.style.overflow="hidden";}}catch(e){{}}
+    syncFsClass();
+    notifyFrame();
   }}
   function exitFs(){{
+    root.classList.remove("is-fs-mode");
+    try{{document.documentElement.style.overflow="";document.body.style.overflow="";}}catch(e){{}}
     var exit=document.exitFullscreen||document.webkitExitFullscreen;
-    if(exit&&isFs()){{
-      try{{
-        var p=exit.call(document);
-        if(p&&p.then)p.then(notifyFrame).catch(function(){{notifyFrame();}});
-        else setTimeout(notifyFrame,80);
-      }}catch(e){{notifyFrame();}}
-    }}else notifyFrame();
+    if(exit&&(document.fullscreenElement||document.webkitFullscreenElement)){{
+      try{{exit.call(document);}}catch(e){{}}
+    }}
+    syncFsClass();
+    notifyFrame();
   }}
   root.classList.add("is-trailer");
   var heroImgs=root.querySelectorAll("#dg-gd-hero img");
@@ -347,7 +338,7 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
     enterFs();
   }},{{passive:true}});
   window.addEventListener("message",function(e){{
-    if(!e.data)return;
+    if(!e.data||typeof e.data!=="object")return;
     if(e.data.type==="dg-chrome"){{
       if(typeof e.data.inGame==="boolean")playing=!!e.data.inGame;
       syncLand();

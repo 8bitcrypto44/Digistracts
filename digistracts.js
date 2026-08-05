@@ -2042,6 +2042,7 @@
   bindTouch("#dg-shoot", "shoot");
 
   let parentFs = false;
+  let fsWanted = false;
 
   function wantsTouchUI() {
     // PC with mouse: keep desktop chrome even if a touchscreen / narrow iframe exists
@@ -2065,7 +2066,7 @@
   }
 
   function isFullscreen() {
-    return parentFs || isNativeFullscreen();
+    return fsWanted || parentFs || (!EMBED && isNativeFullscreen());
   }
 
   function askParentFullscreen(exit) {
@@ -2074,6 +2075,7 @@
 
   function enterFullscreen() {
     if (EMBED) {
+      fsWanted = true;
       parentFs = true;
       askParentFullscreen(false);
       syncFsBtn();
@@ -2084,7 +2086,7 @@
       document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
     if (!req) return;
     try {
-      const el = ROOT.requestFullscreen || ROOT.webkitRequestFullscreen ? ROOT : document.documentElement;
+      const el = (ROOT.requestFullscreen || ROOT.webkitRequestFullscreen) ? ROOT : document.documentElement;
       const p = (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
       if (p && p.catch) p.catch(function () {});
     } catch (e) {}
@@ -2092,6 +2094,7 @@
 
   function exitFullscreen() {
     if (EMBED) {
+      fsWanted = false;
       parentFs = false;
       askParentFullscreen(true);
       syncFsBtn();
@@ -2136,7 +2139,6 @@
     else if (!phone && help && help.offsetParent !== null && !ROOT.classList.contains("dg-menu")) chrome += help.offsetHeight;
 
     // Always fit canvas into the visible viewport so the ground/player stay on-screen
-    // (fullscreen / embed used to overflow and clip the character below the fold).
     const needFit = EMBED || fs || phone || vh < 620;
     if (needFit) {
       const availH = Math.max(120, vh - chrome);
@@ -2153,8 +2155,11 @@
   }
 
   window.addEventListener("message", function (e) {
-    if (!e.data || e.data.type !== "dg-fs-state") return;
-    parentFs = !!e.data.active;
+    if (!e.data || typeof e.data !== "object" || e.data.type !== "dg-fs-state") return;
+    // Ignore false while user still wants FULL — native FS drops on iframe clicks
+    // and used to clear parentFs, flash-resize the canvas, and look like an exit.
+    if (e.data.active) parentFs = true;
+    else if (!fsWanted) parentFs = false;
     syncFsBtn();
     fit();
   });
