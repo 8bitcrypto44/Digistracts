@@ -420,6 +420,7 @@
   };
   const DIFF_ORDER = ["easy", "normal", "hard"];
   const MID_BOSS_LEVEL = 2; // after MEGA SPIRE
+  const SECRET_FROM_LEVEL = 5; // VOID MARKET
 
   const LEVELS = [
     { name: "NEON DOCKS", theme: "docks", ground: 425, len: 14500, enemyRate: 0.36, enemySpeed: 1.85, qrCount: 14, platforms: 40 },
@@ -430,6 +431,10 @@
     { name: "VOID MARKET", theme: "voidmarket", ground: 410, len: 17200, enemyRate: 0.15, enemySpeed: 3.7, qrCount: 22, platforms: 54 },
     { name: "CORE SEWERS", theme: "sewers", ground: 438, len: 17600, enemyRate: 0.12, enemySpeed: 4.0, qrCount: 24, platforms: 52 }
   ];
+  const SECRET_LEVEL = {
+    name: "EMBER VAULT", theme: "secret", ground: 405, len: 9800,
+    enemyRate: 0.14, enemySpeed: 4.2, qrCount: 18, platforms: 48, secret: true
+  };
   const TALES = [
     [{ who: "YOU", line: "New Eden rains neon lies." }, { who: "YOU", line: "Ride the dock cranes. Keep Ember lit." }],
     [{ who: "YOU", line: "Tunnels hide quiet arrests." }, { who: "YOU", line: "Time the laser gates. Trust the map." }],
@@ -438,6 +443,10 @@
     [{ who: "YOU", line: "Rails over black sky." }, { who: "YOU", line: "Wind will throw you. Hold the line." }],
     [{ who: "YOU", line: "Void Market sells lies." }, { who: "YOU", line: "Fake floors. Real bullets." }],
     [{ who: "YOU", line: "Faith and code—walk both." }, { who: "YOU", line: "Acid rises. Clear the Core." }]
+  ];
+  const SECRET_TALE = [
+    { who: "YOU", line: "The Ember Vault opens…" },
+    { who: "YOU", line: "Old code. Older faith. Survive it." }
   ];
   const BOSS_GROUND = 424;
 
@@ -465,8 +474,13 @@
     ["#0a0a12", "#67e8f9", "#fb7185"],
     ["#06101c", "#7dd3fc", "#c084fc"],
     ["#12061a", "#e879f9", "#22d3ee"],
-    ["#0c0610", "#fbbf24", "#22d3ee"]
+    ["#0c0610", "#fbbf24", "#22d3ee"],
+    ["#1a0614", "#fb7185", "#fbbf24"] // Ember Vault
   ];
+
+  function currentLevel() {
+    return state.inSecret ? SECRET_LEVEL : LEVELS[state.level];
+  }
 
   let state = {
     mode: "title",
@@ -520,7 +534,12 @@
     pauseMusicWasOn: false,
     hazards: [],
     arena: null,
-    diff: "normal"
+    diff: "normal",
+    inSecret: false,
+    secretKey: false,
+    secretCleared: false,
+    secretPortal: null,
+    returnLevel: 0
   };
 
   const CREDIT_LINES = ["DIGISTRACTS","by 8bitcrypto_44","","THANKS WEB3 COMMUNITY","OpenSea · Amazon","Technocade / Soundimage.org","","THANK YOU FOR PLAYING"];
@@ -869,6 +888,50 @@
         });
       }
       buildArena(Math.floor(len * 0.54));
+      // Ember Key (high hard-to-reach) + dormant portal mid-market
+      if (elevated.length > 8) {
+        const keyPlat = elevated[Math.min(elevated.length - 1, Math.floor(elevated.length * 0.35))];
+        state.qrs.push({
+          x: keyPlat.x + keyPlat.w / 2 - 12, y: keyPlat.y - 42,
+          w: 24, h: 24, bob: 6.6, taken: false, power: "ember"
+        });
+      }
+      state.secretPortal = {
+        x: Math.floor(len * 0.42), y: GROUND - 96, w: 48, h: 96, open: false
+      };
+    } else if (theme === "secret") {
+      // Ember Vault: dense climb, purple lasers, bounce + crumble, tight arena
+      for (let i = 0; i < 16; i++) addHole(500 + i * 580, 70 + (i % 3) * 25);
+      for (let i = 0; i < L.platforms; i++) {
+        const x = 160 + i * ((len - 360) / L.platforms);
+        const row = i % 5;
+        const y = GROUND - (55 + row * 38);
+        const bounce = i % 7 === 2;
+        const crumble = i % 7 === 5;
+        plat(x, y, 62 + (i % 2) * 18, bounce
+          ? { bounce: true }
+          : crumble ? { crumble: true, life: 14, maxLife: 14, gone: false } : null);
+      }
+      for (let i = 0; i < 18; i++) {
+        addHazard({
+          kind: "laser", x: 420 + i * 500, y: 16, w: 10, h: GROUND - 90,
+          on: 24, off: 40, t: i * 9, axis: "v"
+        });
+      }
+      for (let i = 0; i < 10; i++) {
+        addHazard({
+          kind: "spike", x: 700 + i * 900, y: GROUND - 14, w: 56, h: 14,
+          on: 40, off: 35, t: i * 13, hurt: true
+        });
+      }
+      for (let i = 0; i < 6; i++) {
+        addHazard({
+          kind: "crusher",
+          x: 1100 + i * 1400, yTop: 8, yBot: GROUND - 80, w: 70, h: 28,
+          t: i * 17, down: 28, hold: 14, up: 40, phase: "up"
+        });
+      }
+      buildArena(Math.floor(len * 0.55));
     } else if (theme === "sewers") {
       // Sewers: acid pools + drip hazards + movers over acid
       for (let i = 0; i < 12; i++) {
@@ -916,8 +979,15 @@
   }
 
   function buildLevel(idx, skipTalk, keepGun) {
-    const L = LEVELS[idx];
-    state.level = idx;
+    const goingSecret = idx === "secret";
+    const L = goingSecret ? SECRET_LEVEL : LEVELS[idx];
+    if (!goingSecret) {
+      state.level = idx;
+      state.inSecret = false;
+      if (L.theme !== "voidmarket") state.secretPortal = null;
+    } else {
+      state.inSecret = true;
+    }
     GROUND = L.ground;
     state.endX = L.len;
     state.camX = 0;
@@ -934,7 +1004,7 @@
     state.playerHP = 0;
     state.platforms = [];
     state.particles = [];
-    state.spawnTimer = 220;
+    state.spawnTimer = goingSecret ? 160 : 220;
     state.grace = skipTalk ? 120 : 0;
     state.invuln = 135;
     const prevGun = keepGun && state.player && state.player.weapon && state.player.beamFuel > 0
@@ -951,14 +1021,15 @@
       spire: "CLIMB THE SPIRE · WATCH CRUSHERS",
       slums: "SPIKE ALLEYS · CRUMBLE LEDGES",
       skyrail: "HIGH RAILS · WIND GUSTS",
-      voidmarket: "FAKE FLOORS · BOUNCE PADS",
-      sewers: "ACID POOLS · CLEAR THE ARENA"
+      voidmarket: "FIND EMBER KEY · OPEN THE VAULT",
+      sewers: "ACID POOLS · CLEAR THE ARENA",
+      secret: "EMBER VAULT · CLAIM THE RELIC"
     };
     state.banner = L.name + " · " + (tips[L.theme] || "GO!");
     state.antiCampCD = 0;
-    state.levelTime = sectorTimeBudget();
+    state.levelTime = Math.floor(sectorTimeBudget() * (goingSecret ? 0.85 : 1));
     state.levelTick = performance.now();
-    state.droneTimer = 280 + Math.random() * 80;
+    state.droneTimer = goingSecret ? 120 : 280 + Math.random() * 80;
     state.flash = 0;
     state.checkpointX = 80;
     state.hitThisLevel = false;
@@ -966,17 +1037,61 @@
     state.comboTimer = 0;
     if (skipTalk) {
       state.talkQ = null;
+    } else if (goingSecret) {
+      state.talkQ = SECRET_TALE;
+      state.talkI = 0;
+      state.talkT = 0;
     } else {
       state.talkQ = TALES[idx];
       state.talkI = 0;
       state.talkT = 0;
     }
 
-    buildSectorLayout(idx, L);
+    buildSectorLayout(goingSecret ? 7 : idx, L);
 
-    for (let i = 0; i < 16 + idx * 6; i++) {
-      spawnEnemy(1500 + i * 190 + Math.random() * 80, i % 5 === 0 || i % 7 === 0);
+    const waves = goingSecret ? 30 : (16 + idx * 6);
+    for (let i = 0; i < waves; i++) {
+      spawnEnemy((goingSecret ? 700 : 1500) + i * (goingSecret ? 150 : 190) + Math.random() * 80, i % 4 === 0 || i % 6 === 0);
     }
+  }
+
+  function enterSecretStage() {
+    if (state.inSecret || state.secretCleared || !state.secretKey) return;
+    state.returnLevel = state.level;
+    state.secretPortal = null;
+    hideOverlay();
+    state.mode = "play";
+    buildLevel("secret", false, true);
+    sfxArenaClear();
+    state.banner = "EMBER VAULT UNLOCKED!";
+    state.messageTimer = 100;
+    state.flash = 14;
+    updateHUD();
+  }
+
+  function onSecretComplete() {
+    const leftover = state.qrs.filter(function (q) { return !q.taken; }).length;
+    const clearPts = 2000 + Math.max(0, 800 - leftover * 30);
+    const timePts = Math.ceil(state.levelTime / 1000) * 20;
+    const noHitPts = !state.hitThisLevel ? 2500 : 0;
+    const bonus = clearPts + timePts + noHitPts;
+    addScore(bonus);
+    state.bonusScore += bonus;
+    state.secretCleared = true;
+    state.inSecret = false;
+    grantWeapon("MAXI", 1.4);
+    if (state.player) state.player.goldT = Math.max(state.player.goldT, 240);
+    saveHiScore(state.score);
+    try { localStorage.setItem("dg-secret", "1"); } catch (e) {}
+    state.mode = "clear";
+    showOverlay(
+      "VAULT CLEARED",
+      "EMBER RELIC SECURED!\nBonus +" + bonus +
+        (noHitPts ? "\nNO-HIT VAULT +2500" : "") +
+        "\nMAXI armed · warp to CORE SEWERS" +
+        "\nScore " + String(state.score).padStart(6, "0"),
+      "ENTER SEWERS"
+    );
   }
 
   // Distinct robot classes — sprite pools map into window.DG_ROBOTS order
@@ -1021,7 +1136,8 @@
 
   function pickRole(forceFlying) {
     if (forceFlying) return "flyer";
-    const w = ROLE_WEIGHTS[Math.min(state.level, ROLE_WEIGHTS.length - 1)];
+    const wi = state.inSecret ? ROLE_WEIGHTS.length - 1 : Math.min(state.level, ROLE_WEIGHTS.length - 1);
+    const w = ROLE_WEIGHTS[wi];
     let roll = Math.random() * (w.walker + w.gunner + w.tank + w.dasher + w.flyer);
     if ((roll -= w.walker) < 0) return "walker";
     if ((roll -= w.gunner) < 0) return "gunner";
@@ -1037,7 +1153,7 @@
   }
 
   function spawnEnemy(x, forceFlying) {
-    const L = LEVELS[state.level];
+    const L = currentLevel();
     const role = pickRole(forceFlying);
     const def = ROLE_DEFS[role];
     const type = pickSprite(role);
@@ -1451,13 +1567,19 @@
     const sc = state.score;
     const nextLife = state.nextLifeAt;
     const ck = state.checkpointX || 80;
+    const resumeSecret = state.inSecret && !state.secretCleared;
+    const hadKey = state.secretKey;
     hideOverlay();
     state.mode = "play";
     state.lives = currentDiff().lives;
     state.score = sc;
     state.nextLifeAt = nextLife;
     state.failAt = 0;
-    buildLevel(lvl, true, true);
+    buildLevel(resumeSecret ? "secret" : lvl, true, true);
+    if (resumeSecret) {
+      state.secretKey = hadKey;
+      state.inSecret = true;
+    }
     if (state.player) {
       state.player.x = Math.max(80, ck);
       state.player.safeX = state.player.x;
@@ -1466,7 +1588,7 @@
       state.checkpointX = state.player.x;
     }
     startTechno();
-    state.banner = "CONTINUE — SECTOR " + (lvl + 1);
+    state.banner = resumeSecret ? "CONTINUE — EMBER VAULT" : ("CONTINUE — SECTOR " + (lvl + 1));
     state.messageTimer = 90;
     updateHUD();
     postParent({ type: "dg-chrome", inGame: true });
@@ -1484,12 +1606,18 @@
     const sc = state.score;
     const lives = Math.max(1, state.lives);
     const nextLife = state.nextLifeAt;
-    buildLevel(state.level, true, true);
+    const wasSecret = state.inSecret;
+    const hadKey = state.secretKey;
+    buildLevel(wasSecret ? "secret" : state.level, true, true);
+    if (wasSecret) {
+      state.secretKey = hadKey;
+      state.inSecret = true;
+    }
     state.score = sc;
     state.lives = lives;
     state.nextLifeAt = nextLife;
     startTechno();
-    state.banner = "SECTOR RETRY";
+    state.banner = wasSecret ? "VAULT RETRY" : "SECTOR RETRY";
     state.messageTimer = 70;
     updateHUD();
     postParent({ type: "dg-chrome", inGame: true });
@@ -1544,7 +1672,13 @@
     const ck = state.checkpointX || 80;
     const sc = state.score;
     const nextLife = state.nextLifeAt;
-    buildLevel(state.level, true, true);
+    const resumeSecret = state.inSecret && !state.secretCleared;
+    const hadKey = state.secretKey;
+    buildLevel(resumeSecret ? "secret" : state.level, true, true);
+    if (resumeSecret) {
+      state.secretKey = hadKey;
+      state.inSecret = true;
+    }
     state.score = sc;
     state.nextLifeAt = nextLife;
     if (state.player) {
@@ -1640,6 +1774,10 @@
     state.combo = 0;
     state.comboTimer = 0;
     state.checkpointX = 80;
+    state.inSecret = false;
+    state.secretKey = false;
+    state.secretCleared = false;
+    state.secretPortal = null;
     resetRunStats();
     hideOverlay();
     state.mode = "play";
@@ -1656,6 +1794,16 @@
   }
 
   function advanceFromClear() {
+    if (state.mode === "clear" && state.secretCleared && state.level === SECRET_FROM_LEVEL) {
+      // Came from vault clear overlay — jump to Core Sewers
+      hideOverlay();
+      state.mode = "play";
+      state.inSecret = false;
+      buildLevel(LEVELS.length - 1, false, true);
+      if (!musicOn) startTechno();
+      updateHUD();
+      return;
+    }
     if (state.level >= LEVELS.length - 1) {
       startCredits();
       return;
@@ -2042,7 +2190,7 @@
   function updateHUD() {
     hud.score.textContent = String(state.score).padStart(6, "0");
     hud.lives.textContent = "♥".repeat(Math.max(0, state.lives)) || "—";
-    hud.level.textContent = "LV " + (state.level + 1);
+    hud.level.textContent = state.inSecret ? "SEC" : ("LV " + (state.level + 1));
     hud.time.textContent = Math.max(0, Math.ceil(state.levelTime / 1000));
     if (hud.hi) hud.hi.textContent = String(state.hiScore).padStart(6, "0");
     if (hud.combo) {
@@ -2068,7 +2216,7 @@
     }
     hud.staff.textContent = gun;
     if (state.messageTimer > 0) {
-      hud.msg.textContent = state.banner || LEVELS[state.level].name;
+      hud.msg.textContent = state.banner || currentLevel().name;
       hud.msg.style.opacity = "1";
     } else if (state.combo >= 3 && state.mode === "play") {
       hud.msg.textContent = "COMBO ×" + state.combo;
@@ -2398,7 +2546,7 @@
 
   function updatePlay() {
     const p = state.player;
-    const L = LEVELS[state.level];
+    const L = currentLevel();
     const levelNow = performance.now();
     if (!state.bossMode) tickTalk();
     const calm = state.grace > 0 || !!state.talkQ;
@@ -2771,6 +2919,14 @@
           state.banner = "1-UP QR! ♥×" + state.lives;
           state.messageTimer = 80;
           sfxOneUp();
+        } else if (q.power === "ember") {
+          state.secretKey = true;
+          addScore(1000);
+          state.banner = "EMBER KEY! FIND THE VAULT GATE";
+          state.messageTimer = 110;
+          sfxOneUp();
+          if (state.secretPortal) state.secretPortal.open = true;
+          state.flash = 10;
         } else {
           addScore(q.power === "gold" ? 500 : q.power === "speed" ? 400 : 250);
           if (q.power === "speed") {
@@ -2787,7 +2943,7 @@
             sfxPickup();
           }
         }
-        explode(q.x + 8, q.y + 8, q.power === "life" ? "#ff2bd6" : q.power === "gold" ? "#ffd400" : q.power === "speed" ? "#3b82f6" : "#39ff14", 12);
+        explode(q.x + 8, q.y + 8, q.power === "life" ? "#ff2bd6" : q.power === "ember" ? "#fb7185" : q.power === "gold" ? "#ffd400" : q.power === "speed" ? "#3b82f6" : "#39ff14", 12);
       }
     }
     for (let i = 0; i < state.staffs.length; i++) {
@@ -2813,10 +2969,22 @@
 
     if (!state.bossMode || state.hazards.length) updateHazards(calm);
 
+    // Secret vault portal (Void Market)
+    if (state.secretPortal && state.secretKey && !state.inSecret && !state.secretCleared) {
+      const gate = state.secretPortal;
+      gate.open = true;
+      if (rectsOverlap(p, gate) && (inputUp() || inputJump())) {
+        enterSecretStage();
+        updateHUD();
+        return;
+      }
+    }
+
     if (!state.bossMode && p.x + p.w >= state.endX - 65) {
       if (state.arena && state.arena.active && !state.arena.cleared) {
-        // Can't finish while arena is locked
         p.x = state.endX - 70;
+      } else if (state.inSecret) {
+        onSecretComplete();
       } else if (state.level === LEVELS.length - 1) startBossFight("final");
       else if (state.level === MID_BOSS_LEVEL) startBossFight("mid");
       else onLevelComplete();
@@ -2827,8 +2995,12 @@
   }
 
   function drawCity() {
-    const pal = PAL[Math.min(state.level, PAL.length - 1)];
-    const bi = state.bossMode ? Math.min(5, imgs.backgrounds.length - 1) : Math.min(state.level, imgs.backgrounds.length - 1);
+    const pal = PAL[state.inSecret ? PAL.length - 1 : Math.min(state.level, PAL.length - 1)];
+    const bi = state.bossMode
+      ? Math.min(5, imgs.backgrounds.length - 1)
+      : state.inSecret
+        ? Math.min(5, imgs.backgrounds.length - 1)
+        : Math.min(state.level, imgs.backgrounds.length - 1);
     const bg = imgs.backgrounds[bi];
     if (bg && bg.complete && bg.naturalWidth) {
       const iw = bg.naturalWidth, ih = bg.naturalHeight;
@@ -2837,8 +3009,14 @@
       ctx.imageSmoothingEnabled = true;
       ctx.drawImage(bg, (W - dw) / 2, (H - dh) / 2, dw, dh);
       ctx.imageSmoothingEnabled = false;
+      if (state.inSecret) {
+        ctx.fillStyle = "#fb7185";
+        ctx.globalAlpha = 0.12;
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalAlpha = 1;
+      }
       ctx.fillStyle = pal[2];
-      ctx.globalAlpha = 0.02 + state.level * 0.01;
+      ctx.globalAlpha = 0.02 + (state.inSecret ? 0.06 : state.level * 0.01);
       ctx.fillRect(0, 0, W, GROUND);
       ctx.globalAlpha = 1;
     } else {
@@ -3248,7 +3426,7 @@
   }
 
   function drawPickupQR(qx, qy, power) {
-    const accent = power === "life" ? "#ff2bd6" : power === "gold" ? "#ffd400" : power === "speed" ? "#3b82f6" : "#39ff14";
+    const accent = power === "life" ? "#ff2bd6" : power === "gold" ? "#ffd400" : power === "speed" ? "#3b82f6" : power === "ember" ? "#fb7185" : "#39ff14";
     ctx.globalAlpha = 0.22 + Math.sin(performance.now() / 180 + qx) * 0.1;
     ctx.fillStyle = accent; ctx.fillRect(qx - 3, qy - 3, 32, 32); ctx.globalAlpha = 1;
     ctx.fillStyle = "#f8fafc"; ctx.fillRect(qx, qy, 26, 26);
@@ -3267,6 +3445,11 @@
     for (let r = 0; r < 7; r++) for (let c = 0; c < 7; c++) if ((bits[r] >> c) & 1) ctx.fillRect(qx + 9 + c * 2, qy + 9 + r * 2, 2, 2);
     ctx.fillStyle = accent; ctx.fillRect(qx + 19, qy + 19, 5, 5);
     ctx.fillStyle = "#020617"; ctx.fillRect(qx + 20, qy + 20, 3, 3);
+    if (power === "ember") {
+      ctx.fillStyle = "#fb7185";
+      ctx.font = "bold 7px monospace";
+      ctx.fillText("KEY", qx + 4, qy - 2);
+    }
   }
 
   function drawPickupGun(sx, sy, type) {
@@ -3338,7 +3521,7 @@
 
     const gx = state.endX - 70 - state.camX;
     if (!state.bossMode && gx > -55 && gx < W) {
-      ctx.fillStyle = "#00e5ff";
+      ctx.fillStyle = state.inSecret ? "#fb7185" : "#00e5ff";
       ctx.fillRect(gx - 5, GROUND - 84, 52, 84);
       ctx.fillStyle = "#101828";
       ctx.fillRect(gx, GROUND - 78, 42, 78);
@@ -3348,7 +3531,37 @@
       ctx.fillRect(gx + 30, GROUND - 38, 4, 4);
       ctx.fillStyle = "#ffffff";
       ctx.font = "bold 9px monospace";
-      ctx.fillText("EXIT", gx + 8, GROUND - 88);
+      ctx.fillText(state.inSecret ? "RELIC" : "EXIT", gx + 8, GROUND - 88);
+    }
+
+    if (state.secretPortal && !state.inSecret) {
+      const gate = state.secretPortal;
+      const px = gate.x - state.camX;
+      if (px > -60 && px < W + 60) {
+        const open = !!(state.secretKey || gate.open);
+        const blink = Math.floor(performance.now() / 120) % 2;
+        ctx.globalAlpha = open ? 0.85 : 0.35;
+        ctx.fillStyle = open ? (blink ? "#fb7185" : "#fbbf24") : "#64748b";
+        ctx.fillRect(px, gate.y, gate.w, gate.h);
+        ctx.fillStyle = "#0f172a";
+        ctx.fillRect(px + 6, gate.y + 8, gate.w - 12, gate.h - 16);
+        if (open) {
+          ctx.fillStyle = "#fda4af";
+          ctx.globalAlpha = 0.35 + Math.sin(performance.now() / 180) * 0.2;
+          ctx.fillRect(px + 10, gate.y + 16, gate.w - 20, gate.h - 32);
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = "#ffd400";
+          ctx.font = "bold 10px monospace";
+          ctx.fillText("VAULT", px + 6, gate.y - 6);
+          ctx.fillText("↑ ENTER", px + 2, gate.y + gate.h + 12);
+        } else {
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = "#94a3b8";
+          ctx.font = "bold 9px monospace";
+          ctx.fillText("LOCKED", px + 4, gate.y - 6);
+        }
+        ctx.globalAlpha = 1;
+      }
     }
 
     for (let i = 0; i < state.qrs.length; i++) {
@@ -3912,11 +4125,13 @@
   }, { passive: true });
   fit();
 
+  let bootHint = "";
+  try { if (localStorage.getItem("dg-secret") === "1") bootHint = "\n★ Ember Vault discovered"; } catch (e) {}
   const bootSub = wantsTouchUI()
-    ? "by 8bitcrypto_44 · 7 sectors + 2 bosses\nHI " + state.hiScore +
+    ? "by 8bitcrypto_44 · 7 sectors + secret vault\nHI " + state.hiScore + bootHint +
       "\nPick DIFF · landscape · stick + JUMP / FIRE"
-    : "by 8bitcrypto_44 · 7 sectors + mid-boss + finale\nHI " + state.hiScore +
-      "\nPick DIFF · P pause · Jump×2 = Super · pink QR = 1-UP";
+    : "by 8bitcrypto_44 · 7 sectors + secret Ember Vault\nHI " + state.hiScore + bootHint +
+      "\nVoid Market: find the KEY · ↑ into the vault";
   syncDiffBtn();
   showOverlay("DIGISTRACTS", bootSub, "PRESS START");
   updateHUD();
