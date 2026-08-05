@@ -1202,7 +1202,14 @@
       hp: hp, maxHp: hp, hitCD: 0, mode: "idle", timer: 9999, vx: 0, vy: 0,
       facing: -1, laserAimX: 200, laserAimY: 280, slamX: 400, phase: 1, walk: 0, eyeCD: 0,
       title: mid ? "PULSE WARDEN" : "BLUE SENTINEL",
-      aggro: mid ? 1.35 : 1
+      aggro: mid ? 1.4 : 1,
+      accent: mid ? "#e879f9" : "#00e5ff",
+      accentHot: mid ? "#ff2bd6" : "#39ff14",
+      phaseFlash: 0,
+      pulseR: 0,
+      dashDir: -1,
+      pillars: [],
+      warnedPhase2: false
     };
     state.bossPickups = [
       { x: 160, y: GROUND - 336, w: 32, h: 36, type: "health", taken: false, respawn: 0 },
@@ -1276,7 +1283,7 @@
     p.safeX = p.x;
     p.onGround = false;
     state.camX = Math.max(0, Math.min(p.x - 180, state.endX - W));
-    if (state.bossMode) state.playerHP = 3;
+    if (state.bossMode) state.playerHP = state.boss && state.boss.midBoss ? 2 : 3;
     state.invuln = 135;
     state.banner = "CHECKPOINT — " + state.lives + " LEFT";
     state.messageTimer = 70;
@@ -1555,14 +1562,135 @@
     }
   }
 
+  function bossBusy(b) {
+    return b.mode === "jump" || b.mode === "jumpCharge" || b.mode === "laser" || b.mode === "laserCharge"
+      || b.mode === "skyRise" || b.mode === "skyHold" || b.mode === "skySlam"
+      || b.mode === "pulseCharge" || b.mode === "pulseWave"
+      || b.mode === "dashCharge" || b.mode === "dash"
+      || b.mode === "pillarCharge" || b.mode === "pillar"
+      || b.mode === "eyeCharge" || b.mode === "eyeFire";
+  }
+
+  function bossEnterPhase2(b) {
+    if (b.warnedPhase2) return;
+    b.warnedPhase2 = true;
+    b.phase = 2;
+    b.phaseFlash = 50;
+    b.vulnerable = false;
+    b.mode = "recover";
+    b.timer = 55;
+    state.banner = b.midBoss ? "PULSE OVERLOAD!" : "CORE PROTOCOL 2!";
+    state.messageTimer = 100;
+    state.flash = 18;
+    sfxArenaLock();
+    explode(b.x + b.w / 2, b.y + b.h / 2, b.accentHot || "#39ff14", 36);
+    if (b.midBoss) {
+      addHazard({
+        kind: "laser", x: 220, y: 30, w: 10, h: GROUND - 140,
+        on: 28, off: 48, t: 12, axis: "v"
+      });
+      addHazard({
+        kind: "laser", x: 560, y: 30, w: 10, h: GROUND - 140,
+        on: 28, off: 48, t: 36, axis: "v"
+      });
+    } else {
+      addHazard({ kind: "spike", x: 160, y: GROUND - 18, w: 90, h: 18, on: 36, off: 44, t: 0 });
+      addHazard({ kind: "spike", x: 520, y: GROUND - 18, w: 90, h: 18, on: 36, off: 44, t: 22 });
+      addPlatform(340, GROUND - 210, 110);
+    }
+  }
+
+  function pickBossAttack(b, p) {
+    b.vulnerable = false;
+    const roll = Math.random();
+    const hot = b.phase === 2;
+    if (b.midBoss) {
+      // Pulse Warden: burst / pulse rings / dash / short laser
+      if (roll < 0.28) {
+        b.mode = "pulseCharge";
+        b.timer = hot ? 22 : 34;
+        b.pulseR = 0;
+        slideBeep(360, 720, 0.22, "sawtooth", 0.06);
+        state.banner = "PULSE CHARGE";
+        state.messageTimer = 40;
+      } else if (roll < 0.52) {
+        b.mode = "dashCharge";
+        b.timer = hot ? 18 : 28;
+        b.dashDir = p.x + p.w / 2 < b.x + b.w / 2 ? -1 : 1;
+        beep(240, 0.14, "square", 0.07);
+        state.banner = "DASH STRIKE";
+        state.messageTimer = 40;
+      } else if (roll < 0.74) {
+        b.mode = "eyeCharge";
+        b.timer = hot ? 16 : 26;
+        beep(700, 0.16, "square", 0.06);
+        state.banner = "BURST VOLLEY";
+        state.messageTimer = 40;
+      } else {
+        b.mode = "laserCharge";
+        b.laserAimX = p.x + p.w / 2;
+        b.laserAimY = p.y + p.h / 2;
+        b.timer = hot ? 20 : 30;
+        slideBeep(420, 280, 0.25, "sawtooth", 0.05);
+        state.banner = "PULSE BEAM";
+        state.messageTimer = 40;
+      }
+      return;
+    }
+    // Blue Sentinel: slam / pillars / laser / jump
+    if (roll < (hot ? 0.34 : 0.28)) {
+      b.mode = "skyRise";
+      b.timer = 50;
+      b.vx = 0;
+      b.vy = -8.5;
+      beep(180, 0.14, "square", 0.07);
+      state.banner = "ORBITAL SLAM";
+      state.messageTimer = 45;
+    } else if (roll < 0.52) {
+      b.mode = "pillarCharge";
+      const cx = p.x + p.w / 2;
+      b.pillars = [
+        Math.max(40, Math.min(W - 40, cx)),
+        Math.max(40, Math.min(W - 40, cx - 140)),
+        Math.max(40, Math.min(W - 40, cx + 140))
+      ];
+      if (!hot) b.pillars = b.pillars.slice(0, 2);
+      b.timer = hot ? 28 : 40;
+      slideBeep(200, 480, 0.28, "sawtooth", 0.06);
+      state.banner = "PILLAR STRIKE";
+      state.messageTimer = 45;
+    } else if (roll < 0.74) {
+      b.mode = "laserCharge";
+      b.laserAimX = p.x + p.w / 2;
+      b.laserAimY = p.y + p.h / 2;
+      b.timer = hot ? 24 : 38;
+      slideBeep(420, 280, 0.3, "sawtooth", 0.05);
+      state.banner = "CORE LASER";
+      state.messageTimer = 40;
+    } else if (roll < 0.88) {
+      b.mode = "jumpCharge";
+      b.timer = hot ? 16 : 26;
+      state.banner = "SHOCK JUMP";
+      state.messageTimer = 35;
+    } else {
+      b.mode = "eyeCharge";
+      b.timer = hot ? 18 : 28;
+      beep(700, 0.16, "square", 0.06);
+      state.banner = "EYE BARRAGE";
+      state.messageTimer = 40;
+    }
+  }
+
   function updateBoss() {
     const b = state.boss, p = state.player;
     if (!b || !b.alive || !p) return;
-    b.phase = b.hp <= b.maxHp / 2 ? 2 : 1;
+    if (b.hp <= b.maxHp / 2) bossEnterPhase2(b);
+    else b.phase = 1;
     if (b.hitCD > 0) b.hitCD--;
     if (b.eyeCD > 0) b.eyeCD--;
+    if (b.phaseFlash > 0) b.phaseFlash--;
     b.facing = p.x + p.w / 2 < b.x + b.w / 2 ? -1 : 1;
-    b.walk += b.mode === "jump" || b.mode === "skySlam" ? 0.28 : 0.2;
+    b.walk += b.mode === "jump" || b.mode === "skySlam" || b.mode === "dash" ? 0.32 : 0.2;
 
     if (tickTalk()) return;
 
@@ -1588,10 +1716,9 @@
       state.messageTimer = 80;
       sfxPickup(q.type === "health" ? "life" : "weapon");
     }
-    const busy = b.mode === "jump" || b.mode === "jumpCharge" || b.mode === "laser" || b.mode === "laserCharge"
-      || b.mode === "skyRise" || b.mode === "skyHold" || b.mode === "skySlam";
-    if (!busy) {
-      const spd = b.phase === 2 ? 2.6 : 1.9;
+
+    if (!bossBusy(b) && b.mode !== "recover") {
+      const spd = (b.phase === 2 ? 2.7 : 1.9) * (b.midBoss ? 1.15 : 1);
       const pc = p.x + p.w / 2, bc = b.x + b.w / 2;
       const side = bc >= pc ? 1 : -1;
       if (Math.abs(bc - pc) < 150) b.x += side * spd * 1.5;
@@ -1602,57 +1729,112 @@
       }
       b.x = Math.max(36, Math.min(W - b.w - 16, b.x));
     }
-    if ((b.mode === "idle" || b.mode === "laser") && b.eyeCD <= 0) {
+
+    // Passive eye fire only for Sentinel when idle (Warden saves ammo for bursts)
+    if (!b.midBoss && (b.mode === "idle" || b.mode === "laser") && b.eyeCD <= 0) {
       bossFireEye(b);
       b.eyeCD = b.phase === 2 ? 42 : 64;
     }
+
     b.timer -= b.aggro || 1;
+
     if (b.mode === "idle" && b.timer <= 0) {
-      b.vulnerable = false;
-      const roll = Math.random();
-      if (roll < 0.3) {
-        b.mode = "laserCharge";
-        b.laserAimX = p.x + p.w / 2;
-        b.laserAimY = p.y + p.h / 2;
-        b.timer = b.phase === 2 ? 26 : 38;
-        slideBeep(420, 280, 0.3, "sawtooth", 0.05);
-      } else if (roll < 0.52) {
-        b.mode = "eyeCharge";
-        b.timer = b.phase === 2 ? 20 : 30;
-        beep(700, 0.16, "square", 0.06);
-      } else if (roll < 0.82) {
-        b.mode = "skyRise";
-        b.timer = 50;
-        b.vx = 0;
-        b.vy = -8.5;
-        beep(180, 0.14, "square", 0.07);
-      } else {
-        b.mode = "jumpCharge";
-        b.timer = b.phase === 2 ? 18 : 28;
+      pickBossAttack(b, p);
+    } else if (b.mode === "laserCharge") {
+      // slight tracking telegraph
+      b.laserAimX += (p.x + p.w / 2 - b.laserAimX) * (b.midBoss ? 0.08 : 0.04);
+      b.laserAimY += (p.y + p.h / 2 - b.laserAimY) * (b.midBoss ? 0.08 : 0.04);
+      if (b.timer <= 0) {
+        b.mode = "laser";
+        b.timer = b.phase === 2 ? (b.midBoss ? 28 : 36) : (b.midBoss ? 22 : 28);
+        sfxBossLaser();
       }
-    } else if (b.mode === "laserCharge" && b.timer <= 0) {
-      b.mode = "laser";
-      b.timer = b.phase === 2 ? 34 : 26;
-      sfxBossLaser();
     } else if (b.mode === "laser") {
       const h = bossHand(b), dx = Math.cos(h.a) * 900, dy = Math.sin(h.a) * 900;
       const cx = p.x + p.w / 2, cy = p.y + p.h / 2;
       const t = Math.max(0, Math.min(1, ((cx - h.x) * dx + (cy - h.y) * dy) / (dx * dx + dy * dy)));
-      if (Math.hypot(cx - h.x - t * dx, cy - h.y - t * dy) < 24) hurtPlayer();
+      const thick = b.midBoss ? 20 : 26;
+      if (Math.hypot(cx - h.x - t * dx, cy - h.y - t * dy) < thick) hurtPlayer();
       if (b.timer <= 0) {
-        b.mode = "recover"; b.timer = b.phase === 2 ? 28 : 44; b.vulnerable = true;
+        b.mode = "recover"; b.timer = b.phase === 2 ? 26 : 42; b.vulnerable = true;
       }
     } else if (b.mode === "eyeCharge" && b.timer <= 0) {
       b.mode = "eyeFire";
-      b.timer = b.phase === 2 ? 36 : 28;
+      b.timer = b.phase === 2 ? (b.midBoss ? 42 : 36) : (b.midBoss ? 34 : 28);
       b.eyeCD = 0;
     } else if (b.mode === "eyeFire") {
       if (b.eyeCD <= 0) {
-        bossFireEye(b);
-        b.eyeCD = b.phase === 2 ? 14 : 18;
+        if (b.midBoss) {
+          // fan burst
+          const e = bossEye(b);
+          const base = Math.atan2(p.y + p.h / 2 - e.y, p.x + p.w / 2 - e.x);
+          const spd = b.phase === 2 ? 5.4 : 4.2;
+          [-0.28, 0, 0.28].forEach(function (off) {
+            const a = base + off;
+            state.bullets.push({
+              x: e.x - 6, y: e.y - 4, w: 12, h: 8,
+              vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
+              life: 90, from: "enemy", fire: true
+            });
+          });
+          beep(640, 0.06, "sawtooth", 0.06);
+          b.eyeCD = b.phase === 2 ? 12 : 16;
+        } else {
+          bossFireEye(b);
+          b.eyeCD = b.phase === 2 ? 14 : 18;
+        }
       }
       if (b.timer <= 0) {
-        b.mode = "recover"; b.timer = b.phase === 2 ? 26 : 40; b.vulnerable = true;
+        b.mode = "recover"; b.timer = b.phase === 2 ? 24 : 38; b.vulnerable = true;
+      }
+    } else if (b.mode === "pulseCharge" && b.timer <= 0) {
+      b.mode = "pulseWave";
+      b.timer = 48;
+      b.pulseR = 20;
+      sfxBossLaser();
+      noiseBurst(0.12, 0.08, 0, 600);
+    } else if (b.mode === "pulseWave") {
+      b.pulseR += b.phase === 2 ? 9.5 : 7.2;
+      const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      const d = Math.hypot(p.x + p.w / 2 - cx, p.y + p.h / 2 - cy);
+      if (Math.abs(d - b.pulseR) < 22) hurtPlayer();
+      if (b.phase === 2 && b.timer % 16 === 0) {
+        bossFireEye(b);
+      }
+      if (b.timer <= 0 || b.pulseR > 420) {
+        b.mode = "recover"; b.timer = 30; b.vulnerable = true; b.pulseR = 0;
+      }
+    } else if (b.mode === "dashCharge" && b.timer <= 0) {
+      b.mode = "dash";
+      b.timer = 36;
+      b.vx = b.dashDir * (b.phase === 2 ? 11 : 8.5);
+      b.vy = 0;
+      sfxArenaLock();
+      explode(b.x + b.w / 2, b.y + b.h / 2, "#ff2bd6", 12);
+    } else if (b.mode === "dash") {
+      b.x += b.vx;
+      if (rectsOverlap({ x: p.x + 4, y: p.y + 8, w: p.w - 8, h: p.h - 10 }, b)) hurtPlayer();
+      if (b.x < 20 || b.x > W - b.w - 20 || b.timer <= 0) {
+        b.x = Math.max(36, Math.min(W - b.w - 16, b.x));
+        b.vx = 0;
+        b.mode = "recover";
+        b.timer = b.phase === 2 ? 22 : 34;
+        b.vulnerable = true;
+        state.flash = 6;
+      }
+    } else if (b.mode === "pillarCharge" && b.timer <= 0) {
+      b.mode = "pillar";
+      b.timer = b.phase === 2 ? 36 : 28;
+      sfxBossLaser();
+      state.flash = 8;
+    } else if (b.mode === "pillar") {
+      for (let i = 0; i < b.pillars.length; i++) {
+        const px = b.pillars[i];
+        if (Math.abs(p.x + p.w / 2 - px) < 28 && p.y + p.h > 60) hurtPlayer();
+      }
+      if (b.timer <= 0) {
+        b.mode = "recover"; b.timer = b.phase === 2 ? 28 : 42; b.vulnerable = true;
+        b.pillars = [];
       }
     } else if (b.mode === "skyRise") {
       b.y += b.vy;
@@ -1660,14 +1842,19 @@
         b.y = 10;
         b.vy = 0;
         b.mode = "skyHold";
-        b.timer = b.phase === 2 ? 32 : 44;
+        b.timer = b.phase === 2 ? 28 : 40;
         b.slamX = Math.max(30, Math.min(W - b.w - 30, p.x + p.w / 2 - b.w / 2));
         beep(520, 0.12, "triangle", 0.06);
       }
-    } else if (b.mode === "skyHold" && b.timer <= 0) {
-      b.mode = "skySlam";
-      b.timer = 50;
-      beep(140, 0.16, "sawtooth", 0.08);
+    } else if (b.mode === "skyHold") {
+      // track player a bit during hold so telegraph stays honest
+      b.slamX += ((p.x + p.w / 2 - b.w / 2) - b.slamX) * 0.08;
+      b.slamX = Math.max(30, Math.min(W - b.w - 30, b.slamX));
+      if (b.timer <= 0) {
+        b.mode = "skySlam";
+        b.timer = 50;
+        beep(140, 0.16, "sawtooth", 0.08);
+      }
     } else if (b.mode === "skySlam") {
       b.x += (b.slamX - b.x) * 0.42;
       b.vy = 16;
@@ -1677,13 +1864,21 @@
         b.x = b.slamX;
         b.vx = 0;
         b.vy = 0;
-        if (Math.abs(p.x + p.w / 2 - (b.x + b.w / 2)) < 58) hurtPlayer();
-        state.flash = 10;
-        explode(b.x + b.w / 2, GROUND - 4, "#ff7a12", 22);
-        beep(70, 0.22, "square", 0.1);
-        b.mode = "recover";
-        b.timer = b.phase === 2 ? 26 : 40;
-        b.vulnerable = true;
+        if (Math.abs(p.x + p.w / 2 - (b.x + b.w / 2)) < 62) hurtPlayer();
+        state.flash = 12;
+        explode(b.x + b.w / 2, GROUND - 4, "#ff7a12", 26);
+        // phase-2 shockwave ring
+        if (b.phase === 2) {
+          b.mode = "pulseWave";
+          b.timer = 34;
+          b.pulseR = 40;
+          beep(70, 0.22, "square", 0.1);
+        } else {
+          beep(70, 0.22, "square", 0.1);
+          b.mode = "recover";
+          b.timer = 40;
+          b.vulnerable = true;
+        }
       }
     } else if (b.mode === "jumpCharge" && b.timer <= 0) {
       b.mode = "jump";
@@ -1702,7 +1897,7 @@
       }
     } else if (b.mode === "recover" && b.timer <= 0) {
       b.mode = "idle";
-      b.timer = b.phase === 2 ? 24 : 40;
+      b.timer = b.phase === 2 ? (b.midBoss ? 18 : 22) : (b.midBoss ? 28 : 38);
       b.vulnerable = true;
     }
     if (rectsOverlap({ x: p.x + 5, y: p.y + 5, w: p.w - 10, h: p.h - 5 }, b) && !state.talkQ) hurtPlayer();
@@ -2424,7 +2619,7 @@
     }
     state.particles = state.particles.filter(function (pt) { return pt.life > 0; });
 
-    if (!state.bossMode || (state.boss && state.boss.midBoss)) updateHazards(calm);
+    if (!state.bossMode || state.hazards.length) updateHazards(calm);
 
     if (!state.bossMode && p.x + p.w >= state.endX - 65) {
       if (state.arena && state.arena.active && !state.arena.cleared) {
@@ -2610,9 +2805,14 @@
     const sx = b.x - state.camX, sy = b.y, f = b.facing < 0 ? -1 : 1;
     const active = b.mode === "laser" || b.mode === "laserCharge";
     const eyeOn = b.mode === "eyeFire" || b.mode === "eyeCharge";
-    const step = Math.sin(b.walk) * 0.3, jump = b.mode === "jump" || b.mode === "skySlam" ? 0.55 : b.mode === "jumpCharge" || b.mode === "skyHold" || b.mode === "skyRise" ? 0.32 : 0;
-    const core = b.phase === 2 ? "#39ff14" : "#00e5ff";
-    const pulse = 0.5 + Math.sin(performance.now() / (b.phase === 2 ? 80 : 140)) * 0.32;
+    const charging = b.mode.indexOf("Charge") >= 0 || b.mode === "skyHold" || b.mode === "pulseCharge" || b.mode === "dashCharge" || b.mode === "pillarCharge";
+    const step = Math.sin(b.walk) * 0.3, jump = b.mode === "jump" || b.mode === "skySlam" || b.mode === "dash" ? 0.55 : b.mode === "jumpCharge" || b.mode === "skyHold" || b.mode === "skyRise" ? 0.32 : 0;
+    const core = b.phase === 2 ? (b.accentHot || "#39ff14") : (b.accent || "#00e5ff");
+    const pulse = 0.5 + Math.sin(performance.now() / (b.phase === 2 ? 70 : 140)) * 0.32;
+    const armor = b.midBoss ? "#4a1760" : "#0757a6";
+    const armor2 = b.midBoss ? "#7a2a9a" : "#0a4a86";
+    const armor3 = b.midBoss ? "#2a0a38" : "#052f68";
+    const trim = b.midBoss ? "#f0abfc" : "#2ea8f0";
     const p = state.player;
     const aimTx = active ? b.laserAimX : (p ? p.x + 14 : b.x);
     const aimTy = active ? b.laserAimY : (p ? p.y + 22 : sy + 46);
@@ -2625,66 +2825,128 @@
       box("#03101e", -3, -hw - 2, len + 6, wide + 4);
       box(c, 0, -hw, len, wide);
       box(dark, 0, hw - 3, len, 3);
-      box("#2ea8f0", 1, -hw + 1, len - 2, 2);
+      box(trim, 1, -hw + 1, len - 2, 2);
       box("#0a1b2e", 4, -2, len - 8, 4);
       lit(core, len - 7, -hw + 2, 3, wide - 4, pulse);
       ctx.restore();
       return { x: lx + Math.cos(a) * len, y: ly + Math.sin(a) * len };
     }
+    if (b.phaseFlash > 0) {
+      ctx.globalAlpha = 0.25 + (b.phaseFlash % 6) * 0.08;
+      ctx.fillStyle = core;
+      ctx.fillRect(sx - 10, sy - 10, b.w + 20, b.h + 20);
+      ctx.globalAlpha = 1;
+    }
     ctx.save();
     ctx.translate(sx + 39, sy);
     ctx.scale(f, 1);
-    let k = limb(-5, 78, 23, 12, Math.PI / 2 + step + jump, "#0a4a86", "#04203f");
-    let s = limb(k.x, k.y, 23, 10, Math.PI / 2 - step - jump * 1.4, "#052f68", "#03182f");
-    box("#03101e", s.x - 4, s.y - 5, 20, 10); box("#0a3262", s.x - 3, s.y - 4, 18, 8);
-    k = limb(7, 78, 23, 12, Math.PI / 2 - step - jump, "#0757a6", "#052445");
-    s = limb(k.x, k.y, 23, 10, Math.PI / 2 + step + jump * 1.4, "#0a3262", "#04203f");
-    box("#03101e", s.x - 4, s.y - 5, 22, 10); box("#0757a6", s.x - 3, s.y - 4, 20, 8);
-    box("#2ea8f0", s.x - 3, s.y - 4, 20, 2);
-    let elbow = limb(-9, 42, 16, 10, Math.PI / 2 - Math.sin(b.walk) * 0.2, "#0757a6", "#052445");
-    let hand = limb(elbow.x, elbow.y, 14, 8, Math.PI / 2 - 0.2, "#052f68", "#03182f");
+    let k = limb(-5, 78, 23, 12, Math.PI / 2 + step + jump, armor2, "#04203f");
+    let s = limb(k.x, k.y, 23, 10, Math.PI / 2 - step - jump * 1.4, armor3, "#03182f");
+    box("#03101e", s.x - 4, s.y - 5, 20, 10); box(armor, s.x - 3, s.y - 4, 18, 8);
+    k = limb(7, 78, 23, 12, Math.PI / 2 - step - jump, armor, "#052445");
+    s = limb(k.x, k.y, 23, 10, Math.PI / 2 + step + jump * 1.4, armor, "#04203f");
+    box("#03101e", s.x - 4, s.y - 5, 22, 10); box(armor2, s.x - 3, s.y - 4, 20, 8);
+    box(trim, s.x - 3, s.y - 4, 20, 2);
+    let elbow = limb(-9, 42, 16, 10, Math.PI / 2 - Math.sin(b.walk) * 0.2, armor2, "#052445");
+    let hand = limb(elbow.x, elbow.y, 14, 8, Math.PI / 2 - 0.2, armor3, "#03182f");
     box("#5b7fa6", hand.x - 3, hand.y - 3, 7, 7);
     box("#03101e", -15, 26, 36, 56);
     box("#061225", -12, 28, 30, 52);
-    box("#0757a6", -14, 28, 34, 30);
-    box("#2ea8f0", -14, 28, 34, 3);
-    box("#0a4a86", -14, 50, 34, 8);
-    box("#0b8de0", -3, 34, 18, 14);
+    box(armor2, -14, 28, 34, 30);
+    box(trim, -14, 28, 34, 3);
+    box(armor, -14, 50, 34, 8);
+    box(b.midBoss ? "#d946ef" : "#0b8de0", -3, 34, 18, 14);
     for (let i = 0; i < 3; i++) {
       box("#03101e", 7, 36 + i * 4, 7, 3); box(core, 8, 37 + i * 4, 5, 1);
     }
     lit(core, 0, 36, 12, 12, pulse * 0.55);
     box("#03101e", 2, 38, 8, 8); box(core, 3, 39, 6, 6); box("#dffcff", 4, 40, 3, 3);
-    box("#0a3262", -11, 56, 26, 22); box("#04203f", -11, 72, 26, 6);
+    box(armor, -11, 56, 26, 22); box("#04203f", -11, 72, 26, 6);
     for (let i = 0; i < 3; i++) box("#03101e", -9, 58 + i * 5, 22, 2);
-    box("#03101e", -21, 30, 9, 24); box("#0a3262", -20, 31, 7, 22);
+    box("#03101e", -21, 30, 9, 24); box(armor, -20, 31, 7, 22);
     lit(core, -19, 33, 5, 4, pulse); lit(core, -19, 40, 5, 3, pulse * 0.7);
-    box("#03101e", -21, 24, 16, 18); box("#0757a6", -20, 25, 14, 16);
-    box("#2ea8f0", -20, 25, 14, 2); lit(core, -17, 30, 8, 4, pulse);
+    box("#03101e", -21, 24, 16, 18); box(armor2, -20, 25, 14, 16);
+    box(trim, -20, 25, 14, 2); lit(core, -17, 30, 8, 4, pulse);
     ctx.save();
     ctx.translate(13, 20);
     ctx.rotate(aimA * 0.7);
     box("#03101e", -8, -14, 32, 28);
-    box("#0757a6", -6, -12, 28, 24);
-    box("#2ea8f0", -6, -12, 28, 3);
+    box(armor2, -6, -12, 28, 24);
+    box(trim, -6, -12, 28, 3);
     box("#04203f", -6, 6, 28, 6);
     box("#03101e", 16, -6, 12, 14);
     box("#061225", 18, -4, 10, 10);
-    lit(eyeOn ? "#ff7a12" : core, 20, -2, 8, 6, eyeOn ? 1 : pulse);
+    lit(eyeOn || charging ? "#ff7a12" : core, 20, -2, 8, 6, eyeOn || charging ? 1 : pulse);
     box(eyeOn ? "#fff27a" : "#dffcff", 21, -1, 6, 4);
     box("#03101e", 0, 4, 12, 6);
     for (let i = 0; i < 3; i++) box("#5b7fa6", 2 + i * 3, 5, 2, 4);
     box("#8fb6d6", 4, -18, 2, 6); lit(core, 2, -22, 6, 4, pulse);
-    if (eyeOn) lit("#ff7a12", 14, -4, 16, 10, 0.5);
+    if (eyeOn || charging) lit("#ff7a12", 14, -4, 16, 10, 0.5);
     ctx.restore();
     const gunA = active ? aimA : aimA * 0.85 + Math.sin(b.walk) * 0.1;
-    elbow = limb(11, 46, 26, 12, gunA, "#0757a6", "#052445");
-    hand = limb(elbow.x, elbow.y, 24, 11, gunA, "#052f68", "#03182f");
+    elbow = limb(11, 46, 26, 12, gunA, armor2, "#052445");
+    hand = limb(elbow.x, elbow.y, 24, 11, gunA, armor3, "#03182f");
     box("#03101e", hand.x - 6, hand.y - 6, 12, 12);
-    box(active ? "#39ff14" : "#5b7fa6", hand.x - 4, hand.y - 4, 8, 8);
-    if (active) lit("#39ff14", hand.x - 8, hand.y - 8, 16, 16, pulse);
+    box(active ? core : "#5b7fa6", hand.x - 4, hand.y - 4, 8, 8);
+    if (active) lit(core, hand.x - 8, hand.y - 8, 16, 16, pulse);
     ctx.restore();
-    if (!b.vulnerable) drawGlobeShield(sx + 39, sy + 54, 76);
+    if (!b.vulnerable) drawGlobeShield(sx + 39, sy + 54, 76, core);
+  }
+
+  function drawBossTelegraphs(b) {
+    const accent = b.accentHot || "#39ff14";
+    const blink = Math.floor(performance.now() / 100) % 2;
+    if (b.mode === "pulseCharge" || b.mode === "pulseWave") {
+      const cx = b.x + b.w / 2 - state.camX, cy = b.y + b.h / 2;
+      const r = b.mode === "pulseWave" ? b.pulseR : 30 + (40 - Math.max(0, b.timer)) * 2;
+      ctx.strokeStyle = accent;
+      ctx.globalAlpha = b.mode === "pulseWave" ? 0.85 : (blink ? 0.7 : 0.35);
+      ctx.lineWidth = b.mode === "pulseWave" ? 8 : 3;
+      ctx.beginPath();
+      ctx.arc(cx, cy, Math.max(8, r), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 1;
+    }
+    if (b.mode === "dashCharge" || b.mode === "dash") {
+      const y = b.y + b.h - 12;
+      ctx.globalAlpha = blink ? 0.55 : 0.28;
+      ctx.fillStyle = "#ff2bd6";
+      ctx.fillRect(20, y, W - 40, 14);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = "#fce7f3";
+      ctx.font = "bold 11px monospace";
+      ctx.fillText(b.dashDir < 0 ? "<<< DASH" : "DASH >>>", b.dashDir < 0 ? 40 : W - 120, y - 4);
+    }
+    if (b.mode === "pillarCharge" || b.mode === "pillar") {
+      for (let i = 0; i < b.pillars.length; i++) {
+        const px = b.pillars[i] - state.camX;
+        ctx.globalAlpha = b.mode === "pillar" ? 0.75 : (blink ? 0.55 : 0.25);
+        ctx.fillStyle = b.mode === "pillar" ? "#00e5ff" : "#ffd400";
+        ctx.fillRect(px - 16, 20, 32, GROUND - 24);
+        if (b.mode === "pillar") {
+          ctx.fillStyle = "#e0f2fe";
+          ctx.fillRect(px - 6, 20, 12, GROUND - 24);
+        }
+        ctx.globalAlpha = 1;
+      }
+    }
+    if (b.mode === "laserCharge") {
+      const h = bossHand(b);
+      const ang = Math.atan2(b.laserAimY - h.y, b.laserAimX - h.x);
+      ctx.save();
+      ctx.translate(h.x - state.camX, h.y);
+      ctx.rotate(ang);
+      ctx.globalAlpha = blink ? 0.55 : 0.25;
+      ctx.fillStyle = accent;
+      ctx.fillRect(0, -2, 900, 4);
+      ctx.globalAlpha = 1;
+      ctx.restore();
+      ctx.fillStyle = accent;
+      ctx.beginPath();
+      ctx.arc(b.laserAimX - state.camX, b.laserAimY, 10 + (blink ? 4 : 0), 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   function drawBullet(b, bx) {
@@ -2715,10 +2977,10 @@
     ctx.restore();
   }
 
-  function drawGlobeShield(cx, cy, r) {
+  function drawGlobeShield(cx, cy, r, color) {
     const t = performance.now() / 420;
     ctx.globalAlpha = 0.35 + Math.sin(t) * 0.1;
-    ctx.fillStyle = "#39ff14";
+    ctx.fillStyle = color || "#39ff14";
     ctx.beginPath(); ctx.arc(cx, cy, r + Math.sin(t * 2) * 2, 0, 6.283); ctx.fill();
     ctx.globalAlpha = 1;
   }
@@ -2833,7 +3095,7 @@
   function drawPlay() {
     drawCity();
     drawPlatforms();
-    if (!state.bossMode || (state.boss && state.boss.midBoss)) drawHazards();
+    if (!state.bossMode || state.hazards.length) drawHazards();
 
     const gx = state.endX - 70 - state.camX;
     if (!state.bossMode && gx > -55 && gx < W) {
@@ -2902,13 +3164,20 @@
     }
     if (state.bossMode && state.boss && state.boss.alive) {
       const b = state.boss;
+      drawBossTelegraphs(b);
       if (b.mode === "laserCharge" || b.mode === "laser") {
         const h = bossHand(b), len = 920;
+        const beam = b.accentHot || "#39ff14";
         ctx.save(); ctx.translate(h.x - state.camX, h.y); ctx.rotate(h.a);
-        ctx.fillStyle = b.mode === "laser" ? "rgba(57,255,20,.35)" : "rgba(57,255,20,.18)";
+        ctx.fillStyle = b.mode === "laser" ? "rgba(255,255,255,.2)" : "rgba(255,255,255,.08)";
+        if (b.midBoss) {
+          ctx.fillStyle = b.mode === "laser" ? "rgba(232,121,249,.4)" : "rgba(232,121,249,.18)";
+        } else {
+          ctx.fillStyle = b.mode === "laser" ? "rgba(57,255,20,.35)" : "rgba(57,255,20,.18)";
+        }
         ctx.fillRect(0, b.mode === "laser" ? -8 : -1, len, b.mode === "laser" ? 16 : 2);
         if (b.mode === "laser") {
-          ctx.fillStyle = "#39ff14"; ctx.fillRect(0, -4, len, 8);
+          ctx.fillStyle = beam; ctx.fillRect(0, -4, len, 8);
           ctx.fillStyle = "#eaffea"; ctx.fillRect(0, -1, len, 2);
         }
         ctx.restore();
@@ -2922,12 +3191,26 @@
         ctx.fillStyle = blink ? "#ff2bd6" : "#ff7a12";
         ctx.fillRect(wx - 3, 20, 6, GROUND - 36);
         ctx.fillRect(wx - 10, GROUND - 26, 20, 8);
+        ctx.fillStyle = "#ffd400";
+        ctx.font = "bold 11px monospace";
+        ctx.fillText("SLAM ZONE", wx - 32, 16);
       }
       ctx.fillStyle = "rgba(0,0,0,.78)"; ctx.fillRect(174, 14, 452, 31);
-      ctx.fillStyle = "#ffffff"; ctx.font = "bold 11px monospace"; ctx.fillText(b.title || "BLUE SENTINEL", 180, 26);
+      ctx.fillStyle = "#ffffff"; ctx.font = "bold 11px monospace";
+      ctx.fillText(b.title || "BLUE SENTINEL", 180, 26);
+      if (b.phase === 2) {
+        ctx.fillStyle = b.accentHot || "#39ff14";
+        ctx.fillText("PHASE 2", 520, 26);
+      }
       ctx.fillStyle = "#24283b"; ctx.fillRect(180, 31, 440, 9);
-      ctx.fillStyle = b.phase === 2 ? "#39ff14" : "#00e5ff"; ctx.fillRect(180, 31, 440 * Math.max(0, b.hp) / b.maxHp, 9);
+      ctx.fillStyle = b.phase === 2 ? (b.accentHot || "#39ff14") : (b.accent || "#00e5ff");
+      ctx.fillRect(180, 31, 440 * Math.max(0, b.hp) / b.maxHp, 9);
       ctx.fillStyle = "#ffffff"; ctx.fillText("SHIELD " + "■".repeat(state.playerHP), 14, 26);
+      if (b.vulnerable) {
+        ctx.fillStyle = "#ffd400";
+        ctx.font = "bold 10px monospace";
+        ctx.fillText("WEAK!", b.x - state.camX + 18, b.y - 8);
+      }
     }
 
     if (p && !(state.invuln > 0 && Math.floor(state.invuln / 3) % 2 === 0 && p.goldT <= 0)) {
