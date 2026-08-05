@@ -38,7 +38,8 @@
     sub: ROOT.querySelector("#dg-sub"),
     startBtn: ROOT.querySelector("#dg-start"),
     vol: ROOT.querySelector("#dg-vol"),
-    mute: ROOT.querySelector("#dg-mute")
+    mute: ROOT.querySelector("#dg-mute"),
+    fs: ROOT.querySelector("#dg-fs")
   };
 
   function loadImg(src) {
@@ -2040,12 +2041,76 @@
   bindTouch("#dg-jump", "jump");
   bindTouch("#dg-shoot", "shoot");
 
+  function wantsTouchUI() {
+    // PC with mouse: keep desktop chrome even if a touchscreen / narrow iframe exists
+    try {
+      if (window.matchMedia("(pointer: fine)").matches &&
+          !window.matchMedia("(pointer: coarse)").matches) {
+        return false;
+      }
+    } catch (e) {}
+    const coarse = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+    const hover = !!(window.matchMedia && window.matchMedia("(hover: hover)").matches);
+    if (coarse && !hover) return true;
+    try {
+      if (coarse && !window.matchMedia("(pointer: fine)").matches) return true;
+    } catch (e2) {}
+    return coarse && ("ontouchstart" in window);
+  }
+
+  function isNativeFullscreen() {
+    return !!(document.fullscreenElement || document.webkitFullscreenElement);
+  }
+
+  function likelyParentFullscreen() {
+    if (!EMBED) return false;
+    try {
+      if (window.matchMedia && window.matchMedia("(display-mode: fullscreen)").matches) return true;
+    } catch (e) {}
+    const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+    const target = Math.min(
+      (window.screen && (window.screen.availHeight || window.screen.height)) || vh,
+      vh + 80
+    );
+    return vh >= target * 0.86;
+  }
+
+  function askParentFullscreen(exit) {
+    postParent({ type: exit ? "dg-fs-exit" : "dg-fs" });
+  }
+
+  function enterFullscreen() {
+    askParentFullscreen(false);
+    const req = ROOT.requestFullscreen || ROOT.webkitRequestFullscreen;
+    if (!req) return;
+    try {
+      const p = req.call(ROOT);
+      if (p && p.catch) p.catch(function () {});
+    } catch (e) {}
+  }
+
+  function exitFullscreen() {
+    askParentFullscreen(true);
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (exit && isNativeFullscreen()) {
+      try {
+        const p = exit.call(document);
+        if (p && p.catch) p.catch(function () {});
+      } catch (e) {}
+    }
+  }
+
+  function syncFsBtn() {
+    if (!hud.fs) return;
+    const fs = isNativeFullscreen() || likelyParentFullscreen();
+    hud.fs.setAttribute("aria-pressed", fs ? "true" : "false");
+    hud.fs.textContent = fs ? "EXIT" : "FULL";
+  }
+
   function fit() {
-    const touch = ("ontouchstart" in window) || (navigator.maxTouchPoints > 0);
-    const coarse = window.matchMedia("(pointer: coarse)").matches || touch;
+    const phone = wantsTouchUI();
     const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
     const land = window.matchMedia("(orientation: landscape)").matches || window.innerWidth > window.innerHeight;
-    const phone = coarse || window.innerWidth <= 900;
     ROOT.classList.toggle("dg-phone", phone);
     const phoneLand = phone && land && vh <= 520;
     ROOT.classList.toggle("dg-land", phoneLand);
@@ -2058,22 +2123,29 @@
       if (ch > availH) { ch = availH; cw = ch * W / H; }
       canvas.style.width = Math.floor(cw) + "px";
       canvas.style.height = Math.floor(ch) + "px";
-    } else if (phone) {
-      // Full root width — no side letterbox bars
-      canvas.style.width = "";
-      canvas.style.height = "";
     } else {
       canvas.style.width = "";
       canvas.style.height = "";
     }
+    syncFsBtn();
   }
   window.addEventListener("resize", fit);
   window.addEventListener("orientationchange", function () { setTimeout(fit, 150); });
   if (window.visualViewport) window.visualViewport.addEventListener("resize", fit);
+  document.addEventListener("fullscreenchange", syncFsBtn);
+  document.addEventListener("webkitfullscreenchange", syncFsBtn);
+  if (hud.fs) {
+    hud.fs.addEventListener("click", function () {
+      ensureAudio();
+      if (isNativeFullscreen() || likelyParentFullscreen()) exitFullscreen();
+      else enterFullscreen();
+      setTimeout(syncFsBtn, 200);
+    });
+  }
   ROOT.addEventListener("touchstart", function () {
     if (!ROOT.classList.contains("dg-land")) return;
-    const req = ROOT.requestFullscreen || ROOT.webkitRequestFullscreen;
-    if (req && !document.fullscreenElement) try { req.call(ROOT); } catch (err) {}
+    if (isNativeFullscreen()) return;
+    enterFullscreen();
   }, { passive: true });
   fit();
 

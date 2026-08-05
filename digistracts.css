@@ -14,6 +14,8 @@
 #digistracts-root .dg-hud b{color:var(--cyan)}
 #digistracts-root .dg-audio{display:flex;align-items:center;gap:8px;font-size:12px}
 #digistracts-root .dg-audio input[type=range]{width:90px;accent-color:#00e5ff}
+#digistracts-root #dg-fs{min-width:56px;padding:6px 10px;font-size:12px;border-color:var(--gold);color:var(--gold)}
+#digistracts-root #dg-fs[aria-pressed="true"]{border-color:var(--cyan);color:var(--cyan)}
 #digistracts-root button{background:#111827;color:#fff;border:2px solid var(--cyan);border-radius:8px;padding:8px 12px;font-family:inherit;font-weight:700;cursor:pointer}
 #digistracts-root button:active{transform:scale(.97);background:#0ea5e9;color:#041016}
 #digistracts-root .dg-stage{position:relative;width:100%;background:#05070f;border:2px solid #334155;border-radius:8px;overflow:hidden}
@@ -34,7 +36,10 @@
 /* Phone: full-width playfield, larger controls; play = viewport fill */
 #digistracts-root.dg-phone{padding:4px;border-width:2px;width:100%;max-width:100%;display:flex;flex-direction:column;gap:4px;overflow:hidden}
 #digistracts-root.dg-phone:not(.dg-menu){position:fixed;inset:0;z-index:9999;max-width:none;height:100%;margin:0;border:0;border-radius:0;padding:6px;background:#05070f;overflow:auto;justify-content:center}
-#digistracts-root.dg-phone .dg-help,#digistracts-root.dg-phone .dg-brand span,#digistracts-root.dg-phone .dg-audio,#digistracts-root.dg-phone .dg-hud div:nth-child(3),#digistracts-root.dg-phone .dg-hud div:nth-child(4),#digistracts-root.dg-phone:not(.dg-menu) .dg-brand{display:none}
+#digistracts-root.dg-phone .dg-help,#digistracts-root.dg-phone .dg-brand span,#digistracts-root.dg-phone .dg-hud div:nth-child(3),#digistracts-root.dg-phone .dg-hud div:nth-child(4),#digistracts-root.dg-phone:not(.dg-menu) .dg-brand{display:none}
+#digistracts-root.dg-phone .dg-audio{display:flex!important;gap:6px}
+#digistracts-root.dg-phone .dg-audio label,#digistracts-root.dg-phone .dg-audio input{display:none}
+#digistracts-root.dg-phone #dg-fs,#digistracts-root.dg-phone #dg-mute{display:inline-block;min-height:40px;padding:8px 12px}
 #digistracts-root.dg-phone .dg-top{flex-wrap:nowrap;gap:6px;margin:0;justify-content:center}
 #digistracts-root.dg-phone .dg-brand{font-size:13px}
 #digistracts-root.dg-phone .dg-hud{gap:10px;font-size:13px;flex-wrap:nowrap;justify-content:center}

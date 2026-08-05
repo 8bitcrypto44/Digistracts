@@ -92,6 +92,7 @@ markup = (
       <label for="dg-vol">VOL</label>
       <input id="dg-vol" type="range" min="0" max="1" step="0.01" value="0.35" aria-label="Volume">
       <button type="button" id="dg-mute" aria-pressed="false">MUTE</button>
+      <button type="button" id="dg-fs" aria-pressed="false">FS</button>
     </div>
   </div>
   <div class="dg-stage">
@@ -129,7 +130,7 @@ markup = (
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "1"
+ASSET_V = "2"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]
@@ -268,7 +269,10 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
   var playing=false;
   var baseSrc="{iframe_src_attr}".replace(/&amp;/g,"&");
   function phone(){{
-    return ("ontouchstart" in window)||(navigator.maxTouchPoints>0)||window.innerWidth<=900;
+    try{{
+      if(window.matchMedia("(pointer: fine)").matches && !window.matchMedia("(pointer: coarse)").matches)return false;
+    }}catch(e){{}}
+    return (("ontouchstart" in window)||(navigator.maxTouchPoints>0)) && !!(window.matchMedia&&window.matchMedia("(pointer: coarse)").matches);
   }}
   function land(){{
     if(window.matchMedia&&window.matchMedia("(orientation: landscape)").matches)return true;
