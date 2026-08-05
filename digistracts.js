@@ -43,6 +43,7 @@
     mute: ROOT.querySelector("#dg-mute"),
     pauseBtn: ROOT.querySelector("#dg-pause"),
     diffBtn: ROOT.querySelector("#dg-diff"),
+    levels: ROOT.querySelector("#dg-levels"),
     fs: ROOT.querySelector("#dg-fs")
   };
 
@@ -1747,10 +1748,14 @@
     hud.sub.textContent = sub;
     hud.startBtn.textContent = btn || "START";
     hud.startBtn.style.display = "";
+    const onTitle = state.mode === "title" || title === "DIGISTRACTS";
     if (hud.diffBtn) {
-      const showDiff = state.mode === "title" || title === "DIGISTRACTS";
-      hud.diffBtn.style.display = showDiff ? "" : "none";
-      if (showDiff) syncDiffBtn();
+      hud.diffBtn.style.display = onTitle ? "" : "none";
+      if (onTitle) syncDiffBtn();
+    }
+    if (hud.levels) {
+      hud.levels.classList.toggle("is-on", onTitle);
+      hud.levels.style.display = onTitle ? "" : "none";
     }
     ROOT.classList.add("dg-menu");
     if (!opts || !opts.keepPlaying) {
@@ -1760,8 +1765,102 @@
 
   function hideOverlay() {
     hud.overlay.style.display = "none";
+    if (hud.levels) {
+      hud.levels.classList.remove("is-on");
+      hud.levels.style.display = "none";
+    }
     ROOT.classList.remove("dg-menu");
     fit();
+  }
+
+  function beginTestRun(opts) {
+    opts = opts || {};
+    ensureAudio();
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+    state.score = 0;
+    state.lives = currentDiff().lives;
+    state.nextLifeAt = LIFE_EVERY;
+    state.combo = 0;
+    state.comboTimer = 0;
+    state.checkpointX = 80;
+    state.inSecret = false;
+    state.secretKey = !!opts.secretKey;
+    state.secretCleared = false;
+    state.secretPortal = null;
+    resetRunStats();
+    hideOverlay();
+    state.mode = "play";
+    if (opts.boss === "mid") {
+      state.level = MID_BOSS_LEVEL;
+      buildLevel(MID_BOSS_LEVEL, true, false);
+      startBossFight("mid");
+    } else if (opts.boss === "final") {
+      state.level = LEVELS.length - 1;
+      buildLevel(LEVELS.length - 1, true, false);
+      startBossFight("final");
+    } else if (opts.secret) {
+      state.level = SECRET_FROM_LEVEL;
+      state.secretKey = true;
+      buildLevel("secret", false, false);
+    } else {
+      state.level = opts.level | 0;
+      buildLevel(state.level, !!opts.skipTalk, false);
+    }
+    startTechno();
+    updateHUD();
+    postParent({ type: "dg-chrome", inGame: true });
+    if (wantsTouchUI()) {
+      enterFullscreen();
+      setTimeout(fit, 100);
+      setTimeout(fit, 300);
+    }
+  }
+
+  function buildLevelSelect() {
+    if (!hud.levels) return;
+    hud.levels.innerHTML = "";
+    const short = ["DOCKS", "TUNNEL", "SPIRE", "SLUMS", "RAIL", "VOID", "SEWERS"];
+    LEVELS.forEach(function (L, i) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = (i + 1) + " " + (short[i] || L.name);
+      b.title = L.name;
+      b.addEventListener("click", function () {
+        sfxUi();
+        beginTestRun({ level: i, skipTalk: true });
+      });
+      hud.levels.appendChild(b);
+    });
+    const vault = document.createElement("button");
+    vault.type = "button";
+    vault.className = "dg-lv-secret";
+    vault.textContent = "VAULT";
+    vault.title = "Ember Vault secret stage";
+    vault.addEventListener("click", function () {
+      sfxUi();
+      beginTestRun({ secret: true });
+    });
+    hud.levels.appendChild(vault);
+    const mid = document.createElement("button");
+    mid.type = "button";
+    mid.className = "dg-lv-boss";
+    mid.textContent = "MID BOSS";
+    mid.title = "Pulse Warden";
+    mid.addEventListener("click", function () {
+      sfxUi();
+      beginTestRun({ boss: "mid" });
+    });
+    hud.levels.appendChild(mid);
+    const fin = document.createElement("button");
+    fin.type = "button";
+    fin.className = "dg-lv-boss";
+    fin.textContent = "FINAL";
+    fin.title = "Blue Sentinel";
+    fin.addEventListener("click", function () {
+      sfxUi();
+      beginTestRun({ boss: "final" });
+    });
+    hud.levels.appendChild(fin);
   }
 
   function startGame() {
@@ -4132,6 +4231,7 @@
       "\nPick DIFF · landscape · stick + JUMP / FIRE"
     : "by 8bitcrypto_44 · 7 sectors + secret Ember Vault\nHI " + state.hiScore + bootHint +
       "\nVoid Market: find the KEY · ↑ into the vault";
+  buildLevelSelect();
   syncDiffBtn();
   showOverlay("DIGISTRACTS", bootSub, "PRESS START");
   updateHUD();

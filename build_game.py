@@ -116,6 +116,7 @@ markup = (
       <button type="button" id="dg-diff">DIFF: NORMAL</button>
       <button type="button" id="dg-start">PRESS START</button>
     </div>
+    <div id="dg-levels" class="dg-levels" aria-label="Level select"></div>
   </div>
   <div class="dg-help" aria-label="Keyboard controls">
     <span><kbd>&larr;&rarr;</kbd>/<kbd>AD</kbd> Move</span>
@@ -138,7 +139,7 @@ markup = (
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "19"
+ASSET_V = "20"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]
