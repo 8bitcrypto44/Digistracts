@@ -2422,7 +2422,7 @@
   }
 
   function inputX() {
-    if (Math.abs(touch.jx) > 0.22) return touch.jx > 0 ? 1 : -1;
+    if (Math.abs(touch.jx) > 0.28) return touch.jx > 0 ? 1 : -1;
     let x = 0;
     if (keys.ArrowLeft || keys.a || keys.A || touch.left) x -= 1;
     if (keys.ArrowRight || keys.d || keys.D || touch.right) x += 1;
@@ -2432,13 +2432,26 @@
     return !!(keys[" "] || touch.jump);
   }
   function inputUp() {
-    return !!(keys.ArrowUp || keys.w || keys.W || touch.up || touch.jy < -0.45);
+    return !!(keys.ArrowUp || keys.w || keys.W || touch.up || touch.jy < -0.36);
   }
   function inputDown() {
-    return !!(keys.ArrowDown || keys.s || keys.S || touch.down || touch.jy > 0.45);
+    return !!(keys.ArrowDown || keys.s || keys.S || touch.down || touch.jy > 0.42);
   }
   function inputShoot() {
     return !!(keys.z || keys.Z || keys.x || keys.X || keys.Control || keys.Enter || keys.j || keys.J || touch.shoot);
+  }
+
+  function clearTouchInput() {
+    touch.left = touch.right = touch.up = touch.down = false;
+    touch.jump = touch.shoot = false;
+    touch.jx = 0;
+    touch.jy = 0;
+    const jumpBtn = ROOT.querySelector("#dg-jump");
+    const shootBtn = ROOT.querySelector("#dg-shoot");
+    if (jumpBtn) jumpBtn.classList.remove("is-held");
+    if (shootBtn) shootBtn.classList.remove("is-held");
+    const knob = ROOT.querySelector("#dg-knob");
+    if (knob) knob.style.transform = "translate(-50%, -50%)";
   }
 
   function superJump() {
@@ -4111,8 +4124,13 @@
     const el = ROOT.querySelector(id);
     if (!el) return;
     let lastTap = 0;
+    let ptrId = null;
     function down(ev) {
+      if (ev.pointerType === "mouse" && ev.button != null && ev.button !== 0) return;
       ev.preventDefault();
+      if (ev.pointerId != null && el.setPointerCapture) {
+        try { el.setPointerCapture(ev.pointerId); ptrId = ev.pointerId; } catch (err) {}
+      }
       touch[prop] = true;
       el.classList.add("is-held");
       ensureAudio();
@@ -4125,16 +4143,25 @@
     }
     function up(ev) {
       if (ev && ev.preventDefault) ev.preventDefault();
+      if (ev && ev.pointerId != null && ptrId != null && ev.pointerId !== ptrId) return;
+      ptrId = null;
       touch[prop] = false;
       el.classList.remove("is-held");
     }
-    el.addEventListener("touchstart", down, { passive: false });
-    el.addEventListener("touchend", up, { passive: false });
-    el.addEventListener("touchcancel", up, { passive: false });
-    el.addEventListener("mousedown", down);
-    el.addEventListener("mouseup", up);
-    el.addEventListener("mouseleave", up);
     el.addEventListener("contextmenu", function (ev) { ev.preventDefault(); });
+    if (window.PointerEvent) {
+      el.addEventListener("pointerdown", down);
+      el.addEventListener("pointerup", up);
+      el.addEventListener("pointercancel", up);
+      el.addEventListener("lostpointercapture", up);
+    } else {
+      el.addEventListener("touchstart", down, { passive: false });
+      el.addEventListener("touchend", up, { passive: false });
+      el.addEventListener("touchcancel", up, { passive: false });
+      el.addEventListener("mousedown", down);
+      el.addEventListener("mouseup", up);
+      el.addEventListener("mouseleave", up);
+    }
   }
 
   function bindJoystick() {
@@ -4142,21 +4169,40 @@
     const knob = ROOT.querySelector("#dg-knob");
     if (!stick || !knob) return;
     let active = false, pid = null;
+    let ox = 0, oy = 0;
+    const DEAD = 0.28;
     function travel() {
-      return Math.max(22, stick.clientWidth * 0.28);
+      return Math.max(26, stick.clientWidth * 0.32);
     }
     function setKnob(nx, ny) {
-      touch.jx = nx; touch.jy = ny;
+      // Cardinal bias: strong horizontal + weak vertical = run clean (aim via dedicated flick)
+      if (Math.abs(nx) > 0.55 && Math.abs(ny) < 0.32) ny = 0;
+      if (Math.abs(ny) > 0.55 && Math.abs(nx) < 0.28) nx = 0;
+      touch.jx = nx;
+      touch.jy = ny;
       const t = travel();
       knob.style.transform = "translate(calc(-50% + " + (nx * t) + "px), calc(-50% + " + (ny * t) + "px))";
     }
     function read(clientX, clientY) {
-      const r = stick.getBoundingClientRect();
-      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-      let dx = (clientX - cx) / (r.width * 0.42), dy = (clientY - cy) / (r.height * 0.42);
+      const range = Math.max(40, stick.clientWidth * 0.46);
+      let dx = (clientX - ox) / range;
+      let dy = (clientY - oy) / range;
       const m = Math.hypot(dx, dy);
-      if (m > 1) { dx /= m; dy /= m; }
+      if (m < DEAD) {
+        setKnob(0, 0);
+        return;
+      }
+      const remapped = Math.min(1, (m - DEAD) / (1 - DEAD));
+      dx = (dx / m) * remapped;
+      dy = (dy / m) * remapped;
       setKnob(dx, dy);
+    }
+    function touchById(list) {
+      if (!list) return null;
+      for (let i = 0; i < list.length; i++) {
+        if (list[i].identifier === pid) return list[i];
+      }
+      return null;
     }
     function start(ev) {
       ev.preventDefault();
@@ -4165,18 +4211,21 @@
       if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
       const t = ev.changedTouches ? ev.changedTouches[0] : ev;
       if (t.identifier != null) pid = t.identifier;
-      read(t.clientX, t.clientY);
+      // Relative stick: first contact becomes origin (easier thumb placement)
+      ox = t.clientX;
+      oy = t.clientY;
+      setKnob(0, 0);
     }
     function move(ev) {
       if (!active) return;
-      ev.preventDefault();
-      let t = ev;
-      if (ev.changedTouches) {
-        t = null;
-        for (let i = 0; i < ev.changedTouches.length; i++) {
-          if (ev.changedTouches[i].identifier === pid) { t = ev.changedTouches[i]; break; }
-        }
+      let t = null;
+      if (ev.touches || ev.changedTouches) {
+        t = touchById(ev.touches) || touchById(ev.changedTouches);
         if (!t) return;
+        ev.preventDefault();
+      } else {
+        t = ev;
+        ev.preventDefault();
       }
       read(t.clientX, t.clientY);
     }
@@ -4188,12 +4237,18 @@
         }
         if (!hit) return;
       }
-      active = false; pid = null; setKnob(0, 0);
+      active = false;
+      pid = null;
+      setKnob(0, 0);
     }
     stick.addEventListener("touchstart", start, { passive: false });
     stick.addEventListener("touchmove", move, { passive: false });
     stick.addEventListener("touchend", end, { passive: false });
     stick.addEventListener("touchcancel", end, { passive: false });
+    // Keep tracking if thumb slides outside the stick ring
+    window.addEventListener("touchmove", move, { passive: false, capture: true });
+    window.addEventListener("touchend", end, { passive: false, capture: true });
+    window.addEventListener("touchcancel", end, { passive: false, capture: true });
     stick.addEventListener("mousedown", start);
     stick.addEventListener("contextmenu", function (ev) { ev.preventDefault(); });
     window.addEventListener("mousemove", move);
@@ -4202,6 +4257,11 @@
   bindJoystick();
   bindTouch("#dg-jump", "jump");
   bindTouch("#dg-shoot", "shoot");
+  window.addEventListener("blur", clearTouchInput);
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) clearTouchInput();
+  });
+  window.addEventListener("pagehide", clearTouchInput);
 
   let parentFs = false;
   let fsWanted = false;
@@ -4242,6 +4302,9 @@
       askParentFullscreen(false);
       syncFsBtn();
       fit();
+      setTimeout(fit, 80);
+      setTimeout(fit, 220);
+      setTimeout(fit, 500);
       return;
     }
     const req = ROOT.requestFullscreen || ROOT.webkitRequestFullscreen ||
@@ -4250,8 +4313,9 @@
     try {
       const el = (ROOT.requestFullscreen || ROOT.webkitRequestFullscreen) ? ROOT : document.documentElement;
       const p = (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
-      if (p && p.catch) p.catch(function () {});
-    } catch (e) {}
+      if (p && p.then) p.then(function () { fit(); setTimeout(fit, 120); }).catch(function () { fit(); });
+      else { fit(); setTimeout(fit, 120); }
+    } catch (e) { fit(); }
   }
 
   function exitFullscreen() {
@@ -4340,8 +4404,21 @@
     fit();
   });
   window.addEventListener("resize", fit);
-  window.addEventListener("orientationchange", function () { setTimeout(fit, 150); });
-  if (window.visualViewport) window.visualViewport.addEventListener("resize", fit);
+  window.addEventListener("orientationchange", function () {
+    clearTouchInput();
+    setTimeout(fit, 80);
+    setTimeout(fit, 220);
+    setTimeout(function () {
+      fit();
+      if (wantsTouchUI() && state.mode === "play" && !isFullscreen()) enterFullscreen();
+    }, 400);
+  });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", function () {
+      fit();
+      if (wantsTouchUI() && state.mode === "play") setTimeout(fit, 60);
+    });
+  }
   document.addEventListener("fullscreenchange", function () { syncFsBtn(); fit(); });
   document.addEventListener("webkitfullscreenchange", function () { syncFsBtn(); fit(); });
   if (hud.fs) {
