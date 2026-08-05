@@ -176,18 +176,18 @@
   }
 
   const LEVELS = [
-    { name: "NEON DOCKS", ground: 425, len: 14500, enemyRate: 0.36, enemySpeed: 1.85, qrCount: 14, platforms: 44 },
-    { name: "DATA TUNNEL", ground: 415, len: 15200, enemyRate: 0.28, enemySpeed: 2.35, qrCount: 16, platforms: 48 },
-    { name: "MEGA SPIRE", ground: 418, len: 15800, enemyRate: 0.24, enemySpeed: 2.85, qrCount: 18, platforms: 52 },
-    { name: "CIRCUIT SLUMS", ground: 395, len: 16400, enemyRate: 0.18, enemySpeed: 3.35, qrCount: 20, platforms: 56 },
-    { name: "CORE SEWERS", ground: 438, len: 17000, enemyRate: 0.14, enemySpeed: 3.9, qrCount: 22, platforms: 60 }
+    { name: "NEON DOCKS", theme: "docks", ground: 425, len: 14500, enemyRate: 0.36, enemySpeed: 1.85, qrCount: 14, platforms: 40 },
+    { name: "DATA TUNNEL", theme: "tunnel", ground: 415, len: 15200, enemyRate: 0.28, enemySpeed: 2.35, qrCount: 16, platforms: 46 },
+    { name: "MEGA SPIRE", theme: "spire", ground: 418, len: 15800, enemyRate: 0.24, enemySpeed: 2.85, qrCount: 18, platforms: 54 },
+    { name: "CIRCUIT SLUMS", theme: "slums", ground: 395, len: 16400, enemyRate: 0.18, enemySpeed: 3.35, qrCount: 20, platforms: 58 },
+    { name: "CORE SEWERS", theme: "sewers", ground: 438, len: 17000, enemyRate: 0.14, enemySpeed: 3.9, qrCount: 22, platforms: 52 }
   ];
   const TALES = [
-    [{ who: "YOU", line: "New Eden rains neon lies." }, { who: "YOU", line: "Jonah is gone. Keep Ember lit." }],
-    [{ who: "YOU", line: "Tunnels hide quiet arrests." }, { who: "YOU", line: "Trust the Flame's map." }],
-    [{ who: "YOU", line: "Spire of Unity Core ahead." }, { who: "YOU", line: "Ember needs three gates." }],
-    [{ who: "YOU", line: "Override sells false freedom." }, { who: "YOU", line: "Refuse the single throat." }],
-    [{ who: "YOU", line: "Faith and code—walk both." }, { who: "YOU", line: "Or the Core owns us." }]
+    [{ who: "YOU", line: "New Eden rains neon lies." }, { who: "YOU", line: "Ride the dock cranes. Keep Ember lit." }],
+    [{ who: "YOU", line: "Tunnels hide quiet arrests." }, { who: "YOU", line: "Time the laser gates. Trust the map." }],
+    [{ who: "YOU", line: "Spire of Unity Core ahead." }, { who: "YOU", line: "Climb high. Crushers don't forgive." }],
+    [{ who: "YOU", line: "Override sells false freedom." }, { who: "YOU", line: "Spike alleys. Don't linger." }],
+    [{ who: "YOU", line: "Faith and code—walk both." }, { who: "YOU", line: "Acid rises. Clear the arena." }]
   ];
   const BOSS_GROUND = 424;
 
@@ -258,7 +258,9 @@
     hitThisLevel: false,
     combo: 0,
     comboTimer: 0,
-    pauseMusicWasOn: false
+    pauseMusicWasOn: false,
+    hazards: [],
+    arena: null
   };
 
   const CREDIT_LINES = ["DIGISTRACTS","by 8bitcrypto_44","","THANKS WEB3 COMMUNITY","OpenSea · Amazon","Technocade / Soundimage.org","","THANK YOU FOR PLAYING"];
@@ -281,8 +283,29 @@
     };
   }
 
-  function addPlatform(x, y, w) {
-    state.platforms.push({ x: x, y: y, w: w, h: 14 });
+  function addPlatform(x, y, w, extra) {
+    const plat = { x: x, y: y, w: w, h: 14, dx: 0 };
+    if (extra) {
+      for (const k in extra) plat[k] = extra[k];
+    }
+    if (plat.mover) {
+      plat.ox = x;
+      plat.oy = y;
+      plat.prevX = x;
+      plat.prevY = y;
+      plat.phase = plat.phase || 0;
+    }
+    state.platforms.push(plat);
+    return plat;
+  }
+
+  function addHazard(h) {
+    state.hazards.push(h);
+    return h;
+  }
+
+  function addHole(x, w) {
+    state.holes.push({ x: x, w: w });
   }
 
   function endTalk() {
@@ -315,6 +338,202 @@
     return true;
   }
 
+  function placePickups(elevated, L) {
+    const qrPlats = [], staffPlats = [];
+    for (let i = 0; i < elevated.length; i++) {
+      if (i % 3 === 0) qrPlats.push(elevated[i]);
+      else if (i % 3 === 1) staffPlats.push(elevated[i]);
+    }
+    if (!qrPlats.length && elevated.length) qrPlats.push(elevated[0]);
+    if (!staffPlats.length && elevated.length) staffPlats.push(elevated[Math.min(1, elevated.length - 1)]);
+    for (let i = 0; i < L.qrCount && qrPlats.length; i++) {
+      const plat = qrPlats[i % qrPlats.length];
+      state.qrs.push({
+        x: plat.x + plat.w / 2 - 12, y: plat.y - 34,
+        w: 24, h: 24, bob: i * 0.8, taken: false, power: 0
+      });
+    }
+    const blueN = 1 + (state.level % 2);
+    for (let i = 0; i < blueN + 1 && qrPlats.length; i++) {
+      const plat = qrPlats[(qrPlats.length - 1 - i * 2 + qrPlats.length) % qrPlats.length];
+      state.qrs.push({
+        x: plat.x + plat.w / 2 - 12, y: plat.y - 36,
+        w: 24, h: 24, bob: i + 2, taken: false, power: i === blueN ? "gold" : "speed"
+      });
+    }
+    if (qrPlats.length) {
+      const lifePlat = qrPlats[Math.min(qrPlats.length - 1, Math.floor(qrPlats.length * 0.55))];
+      state.qrs.push({
+        x: lifePlat.x + lifePlat.w / 2 - 12, y: lifePlat.y - 38,
+        w: 24, h: 24, bob: 4.2, taken: false, power: "life"
+      });
+    }
+    ["RIFLE", "SPREAD", "MAXI"].forEach(function (type, i) {
+      if (!staffPlats.length) return;
+      const plat = staffPlats[i % staffPlats.length];
+      state.staffs.push({
+        x: plat.x + plat.w / 2 - 7, y: plat.y - 28,
+        w: 14, h: 20, type: type, bob: i, taken: false
+      });
+    });
+  }
+
+  function buildArena(atX) {
+    state.arena = {
+      x: atX,
+      w: 520,
+      active: false,
+      cleared: false,
+      triggered: false,
+      spawnLeft: 8 + state.level * 2,
+      timer: 0,
+      lockL: atX - 40,
+      lockR: atX + 480
+    };
+    // Gate walls (visual blockers that activate when arena starts)
+    addHazard({ kind: "gate", x: atX - 30, y: GROUND - 160, w: 18, h: 160, open: true, arena: true });
+    addHazard({ kind: "gate", x: atX + 500, y: GROUND - 160, w: 18, h: 160, open: true, arena: true });
+    addPlatform(atX + 80, GROUND - 110, 100);
+    addPlatform(atX + 280, GROUND - 150, 100);
+    addPlatform(atX + 180, GROUND - 200, 90);
+  }
+
+  function buildSectorLayout(idx, L) {
+    const elevated = [];
+    const theme = L.theme || "docks";
+    const len = L.len;
+
+    function plat(x, y, w, extra) {
+      const p = addPlatform(x, y, w, extra);
+      elevated.push(p);
+      return p;
+    }
+
+    if (theme === "docks") {
+      // Wide cargo docks: movers + sparse pits + spike strips
+      for (let i = 0; i < 9; i++) addHole(900 + i * 1450, 120 + (i % 2) * 40);
+      for (let i = 0; i < L.platforms; i++) {
+        const x = 240 + i * ((len - 500) / L.platforms);
+        const y = GROUND - (60 + (i % 3) * 28);
+        const w = 90 + (i % 2) * 40;
+        if (i % 5 === 2) {
+          plat(x, y, w, { mover: true, ampX: 70, ampY: 0, spd: 0.03, phase: i });
+        } else {
+          plat(x, y, w);
+        }
+      }
+      for (let i = 0; i < 10; i++) {
+        addHazard({
+          kind: "spike", x: 1100 + i * 1200, y: GROUND - 16, w: 64, h: 16,
+          on: 70, off: 50, t: i * 11, hurt: true
+        });
+      }
+      buildArena(Math.floor(len * 0.48));
+    } else if (theme === "tunnel") {
+      // Laser corridor: dense low platforms + vertical lasers
+      for (let i = 0; i < 14; i++) addHole(700 + i * 1000, 70 + (i % 3) * 20);
+      for (let i = 0; i < L.platforms; i++) {
+        const x = 200 + i * ((len - 400) / L.platforms);
+        const row = i % 3;
+        const y = GROUND - (55 + row * 48);
+        plat(x, y, 70 + (i % 2) * 20);
+      }
+      for (let i = 0; i < 16; i++) {
+        const x = 850 + i * 880;
+        addHazard({
+          kind: "laser", x: x, y: 40, w: 10, h: GROUND - 50,
+          on: 55, off: 70, t: i * 17, axis: "v"
+        });
+      }
+      for (let i = 0; i < 6; i++) {
+        addHazard({
+          kind: "laser", x: 1200 + i * 2200, y: GROUND - 120, w: 160, h: 8,
+          on: 40, off: 80, t: i * 23, axis: "h"
+        });
+      }
+      buildArena(Math.floor(len * 0.52));
+    } else if (theme === "spire") {
+      // Vertical climb towers + crushers
+      for (let i = 0; i < 7; i++) addHole(1400 + i * 2000, 90);
+      let x = 220;
+      for (let tower = 0; tower < 12; tower++) {
+        const base = 280 + tower * ((len - 800) / 12);
+        for (let step = 0; step < 5; step++) {
+          plat(base + (step % 2) * 50, GROUND - (70 + step * 42), 78);
+        }
+        addHazard({
+          kind: "crusher",
+          x: base + 30, yTop: 20, yBot: GROUND - 90, w: 70, h: 28,
+          t: tower * 19, down: 40, hold: 18, up: 50, phase: "up"
+        });
+        x = base;
+      }
+      while (elevated.length < L.platforms) {
+        const i = elevated.length;
+        plat(300 + i * ((len - 600) / Math.max(8, L.platforms)), GROUND - (80 + (i % 5) * 24), 85);
+      }
+      buildArena(Math.floor(len * 0.55));
+    } else if (theme === "slums") {
+      // Spike alleys + crumbling ledges (timed platforms)
+      for (let i = 0; i < 16; i++) addHole(650 + i * 950, 85 + (i % 2) * 25);
+      for (let i = 0; i < L.platforms; i++) {
+        const x = 210 + i * ((len - 450) / L.platforms);
+        const y = GROUND - (50 + (i % 5) * 32);
+        const crumbling = i % 7 === 3;
+        plat(x, y, 65 + (i % 3) * 18, crumbling ? { crumble: true, life: 45, maxLife: 45, gone: false } : null);
+      }
+      for (let i = 0; i < 18; i++) {
+        addHazard({
+          kind: "spike", x: 780 + i * 850, y: GROUND - 14, w: 90, h: 14,
+          on: 1, off: 0, t: 0, hurt: true, always: true
+        });
+      }
+      for (let i = 0; i < 8; i++) {
+        addHazard({
+          kind: "laser", x: 1600 + i * 1700, y: 30, w: 8, h: GROUND - 40,
+          on: 35, off: 90, t: i * 13, axis: "v"
+        });
+      }
+      buildArena(Math.floor(len * 0.5));
+    } else {
+      // Sewers: acid pools + drip hazards + movers over acid
+      for (let i = 0; i < 12; i++) {
+        const hx = 800 + i * 1300;
+        addHole(hx, 140);
+        addHazard({
+          kind: "acid", x: hx + 10, y: GROUND, w: 120, h: H - GROUND + 20,
+          drip: true, t: i * 9
+        });
+      }
+      for (let i = 0; i < L.platforms; i++) {
+        const x = 230 + i * ((len - 500) / L.platforms);
+        const y = GROUND - (75 + (i % 4) * 34);
+        if (i % 4 === 1) {
+          plat(x, y, 100, { mover: true, ampX: 55, ampY: 18, spd: 0.035, phase: i * 0.7, fy: 1.3 });
+        } else {
+          plat(x, y, 80 + (i % 2) * 25);
+        }
+      }
+      for (let i = 0; i < 14; i++) {
+        addHazard({
+          kind: "drip", x: 1000 + i * 1100, y: 0, w: 12, h: 16,
+          t: i * 21, period: 90, fallY: 0, active: false
+        });
+      }
+      for (let i = 0; i < 5; i++) {
+        addHazard({
+          kind: "crusher",
+          x: 2000 + i * 2800, yTop: 10, yBot: GROUND - 70, w: 80, h: 30,
+          t: i * 29, down: 35, hold: 22, up: 55, phase: "up"
+        });
+      }
+      buildArena(Math.floor(len * 0.58));
+    }
+
+    placePickups(elevated, L);
+    return elevated;
+  }
+
   function buildLevel(idx, skipTalk) {
     const L = LEVELS[idx];
     state.level = idx;
@@ -326,6 +545,8 @@
     state.qrs = [];
     state.staffs = [];
     state.holes = [];
+    state.hazards = [];
+    state.arena = null;
     state.bossMode = false;
     state.boss = null;
     state.bossPickups = [];
@@ -337,7 +558,14 @@
     state.invuln = 135;
     state.player = makePlayer();
     state.messageTimer = 100;
-    state.banner = L.name + (skipTalk ? " · JUMP×2=SUPER" : "");
+    const tips = {
+      docks: "DOCK CRANES · RIDE THE MOVERS",
+      tunnel: "LASER GATES · TIME YOUR RUN",
+      spire: "CLIMB THE SPIRE · WATCH CRUSHERS",
+      slums: "SPIKE ALLEYS · CRUMBLE LEDGES",
+      sewers: "ACID POOLS · CLEAR THE ARENA"
+    };
+    state.banner = L.name + " · " + (tips[L.theme] || "GO!");
     state.antiCampCD = 0;
     state.levelTime = 135000;
     state.levelTick = performance.now();
@@ -355,58 +583,10 @@
       state.talkT = 0;
     }
 
-    const holeCount = 11 + idx * 4;
-    for (let i = 0; i < holeCount; i++) {
-      state.holes.push({
-        x: 780 + i * ((L.len - 1600) / holeCount) + (i % 3) * 55,
-        w: 105 + (i % 3) * 30
-      });
-    }
-    const elevated = [];
-    for (let i = 0; i < L.platforms; i++) {
-      const x = 220 + i * ((L.len - 400) / L.platforms) + (i % 3) * 30;
-      const y = GROUND - (70 + (i % 4) * 36 + ((i * 17) % 40));
-      const w = 70 + (i % 3) * 28;
-      addPlatform(x, y, w);
-      elevated.push({ x: x, y: y, w: w });
-    }
-    const qrPlats = [], staffPlats = [];
-    for (let i = 0; i < elevated.length; i++) {
-      if (i % 3 === 0) qrPlats.push(elevated[i]);
-      else if (i % 3 === 1) staffPlats.push(elevated[i]);
-    }
-    for (let i = 0; i < L.qrCount; i++) {
-      const plat = qrPlats[i % qrPlats.length];
-      state.qrs.push({
-        x: plat.x + plat.w / 2 - 12, y: plat.y - 34,
-        w: 24, h: 24, bob: i * 0.8, taken: false, power: 0
-      });
-    }
-    const blueN = 1 + (idx % 2);
-    for (let i = 0; i < blueN + 1; i++) {
-      const plat = qrPlats[(qrPlats.length - 1 - i * 2 + qrPlats.length) % qrPlats.length];
-      state.qrs.push({
-        x: plat.x + plat.w / 2 - 12, y: plat.y - 36,
-        w: 24, h: 24, bob: i + 2, taken: false, power: i === blueN ? "gold" : "speed"
-      });
-    }
-    // One 1-UP QR mid-sector
-    if (qrPlats.length) {
-      const lifePlat = qrPlats[Math.min(qrPlats.length - 1, Math.floor(qrPlats.length * 0.55))];
-      state.qrs.push({
-        x: lifePlat.x + lifePlat.w / 2 - 12, y: lifePlat.y - 38,
-        w: 24, h: 24, bob: 4.2, taken: false, power: "life"
-      });
-    }
-    ["RIFLE", "SPREAD", "MAXI"].forEach(function (type, i) {
-      const plat = staffPlats[i % staffPlats.length];
-      state.staffs.push({
-        x: plat.x + plat.w / 2 - 7, y: plat.y - 28,
-        w: 14, h: 20, type: type, bob: i, taken: false
-      });
-    });
-    for (let i = 0; i < 18 + idx * 7; i++) {
-      spawnEnemy(1400 + i * 175 + Math.random() * 90, i % 4 === 0 || i % 6 === 0);
+    buildSectorLayout(idx, L);
+
+    for (let i = 0; i < 16 + idx * 6; i++) {
+      spawnEnemy(1500 + i * 190 + Math.random() * 80, i % 5 === 0 || i % 7 === 0);
     }
   }
 
@@ -638,6 +818,8 @@
     state.qrs = [];
     state.staffs = [];
     state.holes = [];
+    state.hazards = [];
+    state.arena = null;
     state.platforms = [];
     addPlatform(130, GROUND - 290, 120);
     addPlatform(500, GROUND - 340, 120);
@@ -1190,6 +1372,7 @@
     // One-way platforms: land only when falling onto the top edge.
     for (let i = 0; i < state.platforms.length; i++) {
       const plat = state.platforms[i];
+      if (plat.gone) continue;
       const overX = p.x + p.w > plat.x + 2 && p.x < plat.x + plat.w - 2;
       if (!overX) continue;
       const onTop = prevBottom <= plat.y + 2 && p.y + p.h >= plat.y;
@@ -1198,10 +1381,242 @@
         p.vy = 0;
         p.onGround = true;
         p.airSupers = 0;
+        p.ridePlat = plat;
+        if (plat.mover) {
+          p.x += plat.dx || 0;
+          p.y += plat.dy || 0;
+        }
+        if (plat.crumble && !plat.gone) {
+          plat.life = (plat.life == null ? plat.maxLife : plat.life) - 1;
+          if (plat.life <= 0) {
+            plat.gone = true;
+            explode(plat.x + plat.w / 2, plat.y, "#94a3b8", 10);
+            beep(140, 0.08, "sawtooth", 0.05);
+          }
+        }
         return true;
       }
     }
+    p.ridePlat = null;
     return false;
+  }
+
+  function hazardActive(h) {
+    if (h.always) return true;
+    if (h.kind === "gate") return !h.open;
+    if (h.kind === "crusher") return h.phase === "down" || h.phase === "hold";
+    if (h.kind === "drip") return h.active;
+    if (h.kind === "acid") return true;
+    const cycle = (h.on || 60) + (h.off || 60);
+    const t = ((h.t || 0) % cycle + cycle) % cycle;
+    return t < (h.on || 60);
+  }
+
+  function updateMovers() {
+    for (let i = 0; i < state.platforms.length; i++) {
+      const plat = state.platforms[i];
+      if (!plat.mover) {
+        plat.dx = 0;
+        plat.dy = 0;
+        continue;
+      }
+      plat.phase = (plat.phase || 0) + (plat.spd || 0.03);
+      const nx = plat.ox + Math.sin(plat.phase) * (plat.ampX || 0);
+      const ny = plat.oy + Math.sin(plat.phase * (plat.fy || 1)) * (plat.ampY || 0);
+      plat.dx = nx - plat.x;
+      plat.dy = ny - plat.y;
+      plat.x = nx;
+      plat.y = ny;
+    }
+  }
+
+  function updateHazards(calm) {
+    if (calm) return;
+    const p = state.player;
+    for (let i = 0; i < state.hazards.length; i++) {
+      const h = state.hazards[i];
+      h.t = (h.t || 0) + 1;
+
+      if (h.kind === "crusher") {
+        const down = h.down || 40, hold = h.hold || 18, up = h.up || 50;
+        const cycle = down + hold + up;
+        const t = h.t % cycle;
+        if (t < down) {
+          h.phase = "down";
+          const u = t / down;
+          h.y = h.yTop + (h.yBot - h.yTop) * u;
+        } else if (t < down + hold) {
+          h.phase = "hold";
+          h.y = h.yBot;
+        } else {
+          h.phase = "up";
+          const u = (t - down - hold) / up;
+          h.y = h.yBot + (h.yTop - h.yBot) * u;
+        }
+      } else if (h.kind === "drip") {
+        const period = h.period || 90;
+        const phase = h.t % period;
+        if (phase === 0) {
+          h.active = true;
+          h.fallY = 20;
+          h.vy = 0;
+        }
+        if (h.active) {
+          h.vy = (h.vy || 0) + 0.35;
+          h.fallY += h.vy;
+          if (h.fallY > GROUND - 8) {
+            h.active = false;
+            explode(h.x + 6, GROUND - 4, "#4ade80", 6);
+          }
+        }
+      } else if (h.kind === "gate" && h.arena && state.arena) {
+        h.open = !state.arena.active || state.arena.cleared;
+      }
+
+      if (!p || state.invuln > 0 || p.goldT > 0) continue;
+      let hitBox = null;
+      if (h.kind === "laser" && hazardActive(h)) {
+        hitBox = { x: h.x, y: h.y, w: h.w, h: h.h };
+      } else if (h.kind === "spike" && hazardActive(h)) {
+        hitBox = { x: h.x, y: h.y, w: h.w, h: h.h };
+      } else if (h.kind === "crusher" && (h.phase === "down" || h.phase === "hold")) {
+        hitBox = { x: h.x, y: h.y, w: h.w, h: h.h };
+      } else if (h.kind === "acid") {
+        hitBox = { x: h.x, y: h.y - 8, w: h.w, h: 24 };
+      } else if (h.kind === "drip" && h.active) {
+        hitBox = { x: h.x, y: h.fallY, w: 12, h: 16 };
+      } else if (h.kind === "gate" && !h.open) {
+        hitBox = { x: h.x, y: h.y, w: h.w, h: h.h };
+      }
+      if (hitBox && rectsOverlap({ x: p.x + 4, y: p.y + 6, w: p.w - 8, h: p.h - 10 }, hitBox)) {
+        if (h.kind === "gate") {
+          // push back instead of instant death
+          if (p.x + p.w / 2 < h.x + h.w / 2) p.x = h.x - p.w - 2;
+          else p.x = h.x + h.w + 2;
+          p.vx = 0;
+        } else {
+          hurtPlayer(h.kind === "acid" || h.kind === "spike" ? p.safeX : null);
+          return;
+        }
+      }
+    }
+  }
+
+  function updateArena(calm) {
+    const a = state.arena;
+    const p = state.player;
+    if (!a || a.cleared || !p || state.bossMode) return;
+
+    if (!a.triggered && p.x >= a.x + 40) {
+      a.triggered = true;
+      a.active = true;
+      a.timer = 0;
+      state.banner = "ARENA LOCK · CLEAR THE WAVE!";
+      state.messageTimer = 90;
+      beep(200, 0.12, "sawtooth", 0.08);
+      beep(400, 0.1, "square", 0.06, 0.1);
+    }
+    if (!a.active) return;
+
+    // Soft cam lock
+    state.camX = Math.max(a.lockL - 20, Math.min(state.camX, a.lockR - W + 40));
+    if (p.x < a.lockL) p.x = a.lockL;
+    if (p.x > a.lockR - p.w) p.x = a.lockR - p.w;
+
+    if (calm) return;
+    a.timer++;
+    if (a.spawnLeft > 0 && a.timer % 38 === 0) {
+      const side = a.timer % 76 === 0 ? a.lockL + 30 : a.lockR - 80;
+      spawnEnemy(side, a.spawnLeft % 3 === 0);
+      a.spawnLeft--;
+    }
+    const foes = state.enemies.filter(function (e) {
+      return e.alive && e.x > a.lockL - 40 && e.x < a.lockR + 40;
+    }).length;
+    if (a.spawnLeft <= 0 && foes <= 0) {
+      a.active = false;
+      a.cleared = true;
+      addScore(750 + state.level * 150);
+      state.checkpointX = Math.max(state.checkpointX, a.x + 200);
+      state.banner = "ARENA CLEAR · GATE OPEN!";
+      state.messageTimer = 100;
+      beep(880, 0.1, "square", 0.07);
+      beep(1200, 0.12, "triangle", 0.06, 0.08);
+    }
+  }
+
+  function drawHazards() {
+    for (let i = 0; i < state.hazards.length; i++) {
+      const h = state.hazards[i];
+      const x = h.x - state.camX;
+      if (h.kind === "laser") {
+        if (x + h.w < -20 || x > W + 20) continue;
+        const on = hazardActive(h);
+        ctx.globalAlpha = on ? 0.85 : 0.15;
+        ctx.fillStyle = on ? "#ff2bd6" : "#831843";
+        ctx.fillRect(x, h.y, h.w, h.h);
+        if (on) {
+          ctx.fillStyle = "#fce7f3";
+          ctx.fillRect(x + 2, h.y, Math.max(2, h.w - 4), h.h);
+        }
+        ctx.globalAlpha = 1;
+      } else if (h.kind === "spike") {
+        if (x + h.w < -10 || x > W + 10) continue;
+        const on = hazardActive(h);
+        const spikes = Math.max(3, Math.floor(h.w / 10));
+        for (let s = 0; s < spikes; s++) {
+          const sx = x + s * (h.w / spikes);
+          ctx.fillStyle = on ? "#e2e8f0" : "#475569";
+          ctx.beginPath();
+          ctx.moveTo(sx, h.y + h.h);
+          ctx.lineTo(sx + h.w / spikes / 2, h.y + (on ? 0 : 6));
+          ctx.lineTo(sx + h.w / spikes, h.y + h.h);
+          ctx.fill();
+        }
+      } else if (h.kind === "crusher") {
+        if (x + h.w < -20 || x > W + 20) continue;
+        ctx.fillStyle = "#334155";
+        ctx.fillRect(x, h.y, h.w, h.h);
+        ctx.fillStyle = "#f97316";
+        ctx.fillRect(x, h.y + h.h - 4, h.w, 4);
+        ctx.fillStyle = "#64748b";
+        ctx.fillRect(x + h.w / 2 - 4, 0, 8, h.y);
+      } else if (h.kind === "acid") {
+        if (x + h.w < -20 || x > W + 20) continue;
+        ctx.fillStyle = "#14532d";
+        ctx.fillRect(x, h.y, h.w, Math.min(40, h.h));
+        ctx.globalAlpha = 0.55 + Math.sin(performance.now() / 200 + h.x) * 0.15;
+        ctx.fillStyle = "#4ade80";
+        ctx.fillRect(x, h.y - 4, h.w, 10);
+        ctx.globalAlpha = 1;
+      } else if (h.kind === "drip" && h.active) {
+        const dx = h.x - state.camX;
+        if (dx < -20 || dx > W + 20) continue;
+        ctx.fillStyle = "#4ade80";
+        ctx.fillRect(dx, h.fallY, 10, 14);
+        ctx.fillStyle = "#bbf7d0";
+        ctx.fillRect(dx + 2, h.fallY + 2, 6, 6);
+      } else if (h.kind === "gate") {
+        if (h.open) continue;
+        if (x + h.w < -20 || x > W + 20) continue;
+        ctx.fillStyle = "#0f172a";
+        ctx.fillRect(x, h.y, h.w, h.h);
+        ctx.fillStyle = "#00e5ff";
+        for (let gy = 0; gy < h.h; gy += 16) ctx.fillRect(x + 2, h.y + gy, h.w - 4, 4);
+      }
+    }
+    // Arena cue
+    if (state.arena && state.arena.active && !state.arena.cleared) {
+      const a = state.arena;
+      const ax = a.x - state.camX;
+      ctx.globalAlpha = 0.2;
+      ctx.fillStyle = "#ff2bd6";
+      ctx.fillRect(ax, 0, a.w, H);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = "#ffd400";
+      ctx.font = "bold 14px monospace";
+      ctx.fillText("ARENA " + state.arena.spawnLeft, Math.max(20, ax + 180), 36);
+    }
   }
 
   function updatePlay() {
@@ -1230,6 +1645,8 @@
         return;
       }
     }
+    updateMovers();
+    updateArena(calm);
     const ix = inputX();
     p.vx = ix * (p.speedT > 0 ? 6.6 : 3.2);
     if (p.speedT > 0) p.speedT--;
@@ -1555,8 +1972,13 @@
     }
     state.particles = state.particles.filter(function (pt) { return pt.life > 0; });
 
+    if (!state.bossMode) updateHazards(calm);
+
     if (!state.bossMode && p.x + p.w >= state.endX - 65) {
-      if (state.level === LEVELS.length - 1) startBoss(); else onLevelComplete();
+      if (state.arena && state.arena.active && !state.arena.cleared) {
+        // Can't finish while arena is locked
+        p.x = state.endX - 70;
+      } else if (state.level === LEVELS.length - 1) startBoss(); else onLevelComplete();
       updateHUD();
       return;
     }
@@ -1596,15 +2018,20 @@
   function drawPlatforms() {
     for (let i = 0; i < state.platforms.length; i++) {
       const p = state.platforms[i];
-      if (p.y >= GROUND) continue;
+      if (p.gone || p.y >= GROUND) continue;
       const x = p.x - state.camX;
       if (x + p.w < 0 || x > W) continue;
-      ctx.fillStyle = "#1f2937";
+      ctx.fillStyle = p.crumble ? "#57534e" : p.mover ? "#1e3a5f" : "#1f2937";
       ctx.fillRect(x, p.y, p.w, p.h);
-      ctx.fillStyle = "#22d3ee";
+      ctx.fillStyle = p.crumble ? "#fb923c" : p.mover ? "#38bdf8" : "#22d3ee";
       ctx.fillRect(x, p.y, p.w, 3);
-      ctx.fillStyle = "#f472b6";
+      ctx.fillStyle = p.mover ? "#a78bfa" : "#f472b6";
       ctx.fillRect(x, p.y + p.h - 2, p.w, 2);
+      if (p.crumble && p.life != null && p.maxLife) {
+        const pct = Math.max(0, p.life / p.maxLife);
+        ctx.fillStyle = "#ef4444";
+        ctx.fillRect(x, p.y - 3, p.w * pct, 2);
+      }
     }
     const start = Math.floor(state.camX / 32) * 32;
     for (let x = start; x < state.camX + W + 32; x += 32) {
@@ -1952,6 +2379,7 @@
   function drawPlay() {
     drawCity();
     drawPlatforms();
+    if (!state.bossMode) drawHazards();
 
     const gx = state.endX - 70 - state.camX;
     if (!state.bossMode && gx > -55 && gx < W) {
