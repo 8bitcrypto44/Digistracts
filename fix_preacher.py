@@ -82,18 +82,17 @@ def extract_preacher(src):
                     mask[ny][nx] = True
                     q.append((nx, ny))
 
-    # Reclaim robe whites between left/right character extents (fixes hem→floor leak)
-    for y in range(h):
+    # Reclaim robe whites only on the LOWER body (hem→floor leak).
+    # Doing this near the head fills the paper gap between mitre and staff.
+    y0 = int(h * 0.48)
+    for y in range(y0, h):
         xs = [x for x in range(w) if mask[y][x] and not near_white(*px[x, y][:3], 245)]
         if len(xs) < 2:
             xs = [x for x in range(w) if mask[y][x]]
         if len(xs) < 2:
             continue
+        # Use body seeds only — ignore staff so we don't bridge the gap
         lo, hi = min(xs), max(xs)
-        mxs = [x for x in range(w) if mask[y][x]]
-        if mxs:
-            lo = min(lo, min(mxs))
-            hi = max(hi, max(mxs))
         for x in range(lo, hi + 1):
             if mask[y][x]:
                 continue
@@ -112,14 +111,53 @@ def extract_preacher(src):
                 op[x, y] = CREAM
             else:
                 op[x, y] = (r, g, b, 255)
-    return out
+
+    # Scrub any cream / near-white still connected to the image edge
+    # (catches leftover paper blocks by the head without reopening robe holes).
+    return scrub_edge_paper(out)
+
+
+def scrub_edge_paper(im):
+    """Make edge-connected cream/paper pixels transparent."""
+    w, h = im.size
+    px = im.load()
+    seen = [[False] * w for _ in range(h)]
+    q = deque()
+
+    def is_paper(x, y):
+        r, g, b, a = px[x, y]
+        if a < 8:
+            return False
+        if near_white(r, g, b, 240):
+            return True
+        # our hardened cream
+        return abs(r - CREAM[0]) <= 3 and abs(g - CREAM[1]) <= 3 and abs(b - CREAM[2]) <= 3
+
+    for x in range(w):
+        for y in (0, h - 1):
+            if is_paper(x, y) and not seen[y][x]:
+                seen[y][x] = True
+                q.append((x, y))
+    for y in range(h):
+        for x in (0, w - 1):
+            if is_paper(x, y) and not seen[y][x]:
+                seen[y][x] = True
+                q.append((x, y))
+    while q:
+        x, y = q.popleft()
+        px[x, y] = (0, 0, 0, 0)
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if 0 <= nx < w and 0 <= ny < h and not seen[ny][nx] and is_paper(nx, ny):
+                seen[ny][nx] = True
+                q.append((nx, ny))
+    return im
 
 
 def fill_small_gaps(im, max_run=14):
-    """Close short transparent runs between opaque pixels (hem holes)."""
+    """Close short transparent runs between opaque pixels on the lower body only."""
     px = im.load()
     w, h = im.size
-    for y in range(h):
+    for y in range(int(h * 0.48), h):
         x = 0
         while x < w:
             if px[x, y][3] >= 128:
