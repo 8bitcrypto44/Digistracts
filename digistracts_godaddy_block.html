@@ -39,22 +39,26 @@
 .dg-gd.is-open .dg-gd-play{display:block}
 .dg-gd.is-open.is-land,
 .dg-gd.is-fs-mode{
-  position:fixed;inset:0;z-index:9999;max-width:none;width:100%;height:100%;height:100dvh;margin:0;
-  background:#020617
+  position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:0!important;
+  inset:0!important;width:100vw!important;width:100dvw!important;height:100vh!important;height:100dvh!important;
+  max-width:none!important;margin:0!important;padding:0!important;
+  z-index:2147483646!important;background:#020617!important;
+  transform:none!important;filter:none!important;perspective:none!important
 }
 .dg-gd.is-open.is-land .dg-gd-card,
 .dg-gd.is-fs-mode .dg-gd-card{
-  height:100%;border:0;border-radius:0;padding:0;box-shadow:none;
-  display:flex;flex-direction:column;background:#020617
+  height:100%!important;width:100%!important;max-width:none!important;border:0!important;border-radius:0!important;padding:0!important;box-shadow:none!important;
+  display:flex!important;flex-direction:column!important;background:#020617!important
 }
 .dg-gd.is-open.is-land .dg-gd-top,
-.dg-gd.is-fs-mode .dg-gd-top{display:none}
+.dg-gd.is-fs-mode .dg-gd-top{display:none!important}
 .dg-gd.is-open.is-land .dg-gd-stage,
 .dg-gd.is-fs-mode .dg-gd-stage{
-  flex:1;min-height:0;aspect-ratio:auto;height:auto;border:0;border-radius:0
+  flex:1!important;min-height:0!important;aspect-ratio:auto!important;height:auto!important;border:0!important;border-radius:0!important
 }
-/* Native Fullscreen API is NOT used for embeds: clicks inside a cross-origin
-   iframe cancel it and cause a flash / exit. CSS is-fs-mode stays stable. */
+.dg-gd.is-fs-mode .dg-gd-play iframe{position:absolute!important;inset:0!important;width:100%!important;height:100%!important}
+/* GoDaddy traps fixed positioning via parent transforms — JS moves #dg-gd onto document.body.
+   Native fullscreen is requested on the iframe element so in-game clicks do not cancel it. */
 @media (max-width:700px){
   .dg-gd-card{padding:4px;border-width:2px}
   .dg-gd-top{margin-bottom:4px}
@@ -91,7 +95,7 @@
           title="Digistracts"
           width="100%"
           height="450"
-          data-src="https://8bitcrypto44.github.io/Digistracts/?embed=1&amp;v=4"
+          data-src="https://8bitcrypto44.github.io/Digistracts/?embed=1&amp;v=5"
           allow="autoplay; fullscreen; gamepad"
           allowfullscreen
           scrolling="no"
@@ -108,7 +112,7 @@
   var frame=document.getElementById("dg-gd-frame");
   if(!root||!btn||!frame)return;
   var playing=false;
-  var baseSrc="https://8bitcrypto44.github.io/Digistracts/?embed=1&amp;v=4".replace(/&amp;/g,"&");
+  var baseSrc="https://8bitcrypto44.github.io/Digistracts/?embed=1&amp;v=5".replace(/&amp;/g,"&");
   function phone(){
     try{
       if(window.matchMedia("(pointer: fine)").matches && !window.matchMedia("(pointer: coarse)").matches)return false;
@@ -120,10 +124,11 @@
     return window.innerWidth>window.innerHeight;
   }
   function isFs(){
-    return root.classList.contains("is-fs-mode");
+    return root.classList.contains("is-fs-mode") ||
+      !!(document.fullscreenElement||document.webkitFullscreenElement);
   }
   function syncFsClass(){
-    root.classList.toggle("is-fs",isFs());
+    root.classList.toggle("is-fs", root.classList.contains("is-fs-mode"));
   }
   function syncLand(){
     root.classList.toggle("is-land", root.classList.contains("is-open") && playing && phone() && land());
@@ -134,21 +139,58 @@
       if(frame.contentWindow)frame.contentWindow.postMessage({type:"dg-fs-state",active:isFs()},"*");
     }catch(e){}
   }
+  function mountFs(){
+    if(root.dataset.dgMounted==="1")return;
+    var slot=document.createElement("div");
+    slot.setAttribute("data-dg-slot","1");
+    slot.style.cssText="display:block;width:100%;max-width:920px;margin:0 auto;aspect-ratio:16/9";
+    if(root.parentNode)root.parentNode.insertBefore(slot, root);
+    document.body.appendChild(root);
+    root.dataset.dgMounted="1";
+  }
+  function unmountFs(){
+    if(root.dataset.dgMounted!=="1")return;
+    var slot=document.querySelector("[data-dg-slot]");
+    if(slot&&slot.parentNode){
+      slot.parentNode.insertBefore(root, slot);
+      slot.parentNode.removeChild(slot);
+    }
+    delete root.dataset.dgMounted;
+  }
   function enterFs(){
+    mountFs();
     root.classList.add("is-fs-mode");
     try{document.documentElement.style.overflow="hidden";document.body.style.overflow="hidden";}catch(e){}
     syncFsClass();
     notifyFrame();
+    // Fullscreen the iframe (not the wrapper) so clicks inside the game do not cancel it
+    var native=document.fullscreenElement||document.webkitFullscreenElement;
+    if(!native){
+      var req=frame.requestFullscreen||frame.webkitRequestFullscreen;
+      if(req){
+        try{
+          var p=req.call(frame);
+          if(p&&p.catch)p.catch(function(){});
+        }catch(e){}
+      }
+    }
+    setTimeout(notifyFrame,120);
   }
   function exitFs(){
     root.classList.remove("is-fs-mode");
     try{document.documentElement.style.overflow="";document.body.style.overflow="";}catch(e){}
     var exit=document.exitFullscreen||document.webkitExitFullscreen;
     if(exit&&(document.fullscreenElement||document.webkitFullscreenElement)){
-      try{exit.call(document);}catch(e){}
+      try{
+        var p=exit.call(document);
+        if(p&&p.then)p.then(function(){unmountFs();syncFsClass();notifyFrame();}).catch(function(){unmountFs();syncFsClass();notifyFrame();});
+        else {unmountFs();syncFsClass();notifyFrame();}
+      }catch(e){unmountFs();syncFsClass();notifyFrame();}
+    }else{
+      unmountFs();
+      syncFsClass();
+      notifyFrame();
     }
-    syncFsClass();
-    notifyFrame();
   }
   root.classList.add("is-trailer");
   var heroImgs=root.querySelectorAll("#dg-gd-hero img");
