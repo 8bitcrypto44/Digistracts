@@ -94,6 +94,7 @@ markup = (
       <label for="dg-vol">VOL</label>
       <input id="dg-vol" type="range" min="0" max="1" step="0.01" value="0.35" aria-label="Volume">
       <button type="button" id="dg-mute" aria-pressed="false">MUTE</button>
+      <button type="button" id="dg-fx" aria-pressed="true" title="Screen shake / hit-stop">FX: ON</button>
       <button type="button" id="dg-pause" aria-pressed="false">PAUSE</button>
       <button type="button" id="dg-fs" aria-pressed="false">FS</button>
     </div>
@@ -143,7 +144,7 @@ markup = (
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "30"
+ASSET_V = "31"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]

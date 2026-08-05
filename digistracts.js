@@ -44,6 +44,7 @@
     startBtn: ROOT.querySelector("#dg-start"),
     vol: ROOT.querySelector("#dg-vol"),
     mute: ROOT.querySelector("#dg-mute"),
+    fxBtn: ROOT.querySelector("#dg-fx"),
     pauseBtn: ROOT.querySelector("#dg-pause"),
     diffBtn: ROOT.querySelector("#dg-diff"),
     dailyBtn: ROOT.querySelector("#dg-daily"),
@@ -76,6 +77,11 @@
   musicTrack.src = MUSIC_URL;
   let audioCtx = null, masterGain = null, sfxGain = null, musicGain = null;
   let muted = false, volume = 0.35, musicOn = false, musicFallback = false;
+  let fxOn = true;
+  try {
+    const fxSaved = localStorage.getItem("dg-fx");
+    if (fxSaved === "0") fxOn = false;
+  } catch (e) {}
   let musicTimer = null, musicStep = 0, noiseBuf = null;
   let lastSpaceTap = 0;
 
@@ -116,6 +122,22 @@
     musicTrack.volume = muted ? 0 : volume * 0.7;
     hud.mute.textContent = muted ? "UNMUTE" : "MUTE";
     hud.mute.setAttribute("aria-pressed", muted ? "true" : "false");
+  }
+
+  function setFx(on) {
+    fxOn = !!on;
+    try { localStorage.setItem("dg-fx", fxOn ? "1" : "0"); } catch (e) {}
+    syncFxBtn();
+    if (!fxOn) {
+      state.shake = 0;
+      state.hitStop = 0;
+    }
+  }
+
+  function syncFxBtn() {
+    if (!hud.fxBtn) return;
+    hud.fxBtn.textContent = fxOn ? "FX: ON" : "FX: OFF";
+    hud.fxBtn.setAttribute("aria-pressed", fxOn ? "true" : "false");
   }
 
   function beep(freq, dur, type, gain, when, dest) {
@@ -678,7 +700,7 @@
       formatMedalsLine(state.runMedals),
       (state.daily ? ("Daily " + (state.dailyKey || dailyId()) + " · " + dailyBestLine() + "\n") : "") +
         "DIFF " + currentDiff().label,
-      PAGES_SHARE + "?v=30"
+      PAGES_SHARE + "?v=31"
     ];
     return lines.join("\n");
   }
@@ -1807,17 +1829,27 @@
       : Math.round(h * 0.55);
     const flying = !!def.flying;
     const baseY = 95 + Math.random() * 160;
+    const eliteChance = state.inSecret ? 0.16 : (0.07 + state.level * 0.012);
+    const elite = !forceFlying && rnd() < eliteChance;
     const rawHp = def.hp + Math.floor(state.level / 2) + (def.heavy ? Math.floor(state.level / 2) : 0);
-    const hp = Math.max(1, Math.round(rawHp * (currentDiff().hpMult || 1)));
+    const hp = Math.max(1, Math.round(rawHp * (currentDiff().hpMult || 1) * (elite ? 2.2 : 1)));
+    const scoreValue = Math.floor((def.score + state.level * 25) * (elite ? 2.6 : 1));
     state.enemies.push({
       x: x, y: flying ? baseY : GROUND - h, w: w, h: h, type: type, kind: def.kind,
-      role: role, vx: -L.enemySpeed * def.spd, baseSpd: L.enemySpeed * def.spd,
-      vy: 0, hp: hp, maxHp: hp, scoreValue: def.score + state.level * 25,
+      role: role, vx: -L.enemySpeed * def.spd * (elite ? 1.25 : 1), baseSpd: L.enemySpeed * def.spd * (elite ? 1.25 : 1),
+      vy: 0, hp: hp, maxHp: hp, scoreValue: scoreValue,
       shootCD: 36 + Math.random() * 40, flash: 0, charge: 0, dashCD: 40 + Math.random() * 50,
       mode: "patrol", facing: -1, alive: true, bob: Math.random() * 20,
       walk: Math.random() * 6, flying: flying, baseY: baseY,
-      heavy: !!def.heavy, canShoot: !!def.shoot, canDash: !!def.dash
+      heavy: !!def.heavy, canShoot: !!def.shoot, canDash: !!def.dash,
+      elite: elite
     });
+    if (elite && state.mode === "play" && state.messageTimer < 20) {
+      state.banner = "ELITE HUNTER!";
+      state.messageTimer = 40;
+      beep(220, 0.08, "sawtooth", 0.06);
+      beep(440, 0.1, "square", 0.05, 0.06);
+    }
   }
 
   function spawnDrone() {
@@ -2020,8 +2052,10 @@
 
   function addJuice(opts) {
     opts = opts || {};
-    if (opts.shake) state.shake = Math.min(24, Math.max(state.shake || 0, opts.shake));
-    if (opts.hitStop) state.hitStop = Math.max(state.hitStop || 0, opts.hitStop | 0);
+    if (fxOn) {
+      if (opts.shake) state.shake = Math.min(24, Math.max(state.shake || 0, opts.shake));
+      if (opts.hitStop) state.hitStop = Math.max(state.hitStop || 0, opts.hitStop | 0);
+    }
     if (opts.flash) state.flash = Math.max(state.flash || 0, opts.flash);
     if (opts.flashColor) state.flashColor = opts.flashColor;
   }
@@ -2081,14 +2115,25 @@
       e.alive = false;
       const pts = e.scoreValue || (100 + e.kind * 50);
       addScore(pts);
-      noteKill({ points: pts, x: e.x + e.w / 2, y: e.y + e.h / 2 });
-      explode(e.x + e.w / 2, e.y + e.h / 2, "#ff2bd6", e.heavy ? 22 : 14);
-      sfxKill();
-      addJuice({
-        shake: e.heavy ? 7 : (e.drone ? 4 : 3.5),
-        hitStop: e.heavy ? 3 : 2,
-        flash: e.heavy ? 6 : 0
+      noteKill({
+        points: pts,
+        x: e.x + e.w / 2,
+        y: e.y + e.h / 2,
+        color: e.elite ? "#fbbf24" : undefined
       });
+      explode(e.x + e.w / 2, e.y + e.h / 2, e.elite ? "#fbbf24" : "#ff2bd6", e.elite ? 28 : (e.heavy ? 22 : 14));
+      sfxKill();
+      if (e.elite) {
+        state.banner = "ELITE DOWN! +" + pts;
+        state.messageTimer = 50;
+        addJuice({ shake: 8, hitStop: 3, flash: 8, flashColor: "rgba(251,191,36,0.35)" });
+      } else {
+        addJuice({
+          shake: e.heavy ? 7 : (e.drone ? 4 : 3.5),
+          hitStop: e.heavy ? 3 : 2,
+          flash: e.heavy ? 6 : 0
+        });
+      }
     }
   }
 
@@ -2739,14 +2784,21 @@
     saveHiScore(state.score);
     saveDailyBest(state.score);
     const breakdown = formatClearBreakdown(state.lastClear);
+    const perfect = !state.hitThisLevel && state.levelTime > sectorTimeBudget() * 0.45 && state.maxCombo >= 8;
+    if (perfect) {
+      addScore(1500);
+      state.bonusScore += 1500;
+      addJuice({ shake: 10, hitStop: 4, flash: 14, flashColor: "rgba(57,255,20,0.4)" });
+    }
     if (state.level >= LEVELS.length - 1) {
       startCredits();
     } else {
       state.mode = "clear";
       sfxClear();
       showOverlay(
-        "SECTOR CLEAR",
+        perfect ? "PERFECT CLEAR!" : "SECTOR CLEAR",
         LEVELS[state.level].name + " complete!" +
+          (perfect ? "\n★ TRIPLE GOAL +1500 ★" : "") +
           (breakdown ? "\n" + breakdown : "") +
           "\nScore " + String(state.score).padStart(6, "0") +
           " · HI " + String(state.hiScore).padStart(6, "0") +
@@ -4139,10 +4191,25 @@
       ctx.shadowColor = "#00e5ff";
       ctx.shadowBlur = 12;
     }
+    if (e.elite) {
+      ctx.shadowColor = "#fbbf24";
+      ctx.shadowBlur = 16;
+      ctx.globalAlpha = 0.35;
+      ctx.strokeStyle = "#fbbf24";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-w / 2 - 3, -h / 2 - 3, w + 6, h + 6);
+      ctx.globalAlpha = 1;
+    }
     if (e.flash > 0) ctx.globalAlpha = 0.55 + (e.flash % 2) * 0.35;
     ctx.drawImage(img, -w / 2, -h / 2, w, h);
     ctx.shadowBlur = 0;
     ctx.globalAlpha = 1;
+
+    if (e.elite) {
+      ctx.fillStyle = "#fbbf24";
+      ctx.font = "bold 8px monospace";
+      ctx.fillText("ELITE", -14, -h / 2 - 12);
+    }
 
     if (e.flying) {
       ctx.fillStyle = "#67e8f9";
@@ -4818,6 +4885,30 @@
       ctx.strokeStyle = c >= 10 ? "#ff2bd6" : "#ffd400";
       ctx.strokeRect(mx - 0.5, my - 0.5, mw + 1, mh + 1);
     }
+
+    // Sector goal strip (medal chase)
+    if (state.mode === "play" && !state.bossMode) {
+      const budget = sectorTimeBudget();
+      const timeOk = state.levelTime > budget * 0.45;
+      const goals = [
+        { ok: !state.hitThisLevel, label: "NO-HIT" },
+        { ok: state.combo >= 8 || state.maxCombo >= 8, label: "COMBO" },
+        { ok: timeOk, label: "SPEED" }
+      ];
+      let gx = W - 14;
+      for (let i = goals.length - 1; i >= 0; i--) {
+        const g = goals[i];
+        ctx.font = "bold 10px monospace";
+        const tw = ctx.measureText(g.label).width;
+        gx -= tw + 14;
+        ctx.fillStyle = g.ok ? "rgba(15,23,42,0.85)" : "rgba(2,6,23,0.55)";
+        ctx.fillRect(gx - 4, 10, tw + 10, 16);
+        ctx.strokeStyle = g.ok ? "#39ff14" : "#475569";
+        ctx.strokeRect(gx - 4.5, 9.5, tw + 11, 17);
+        ctx.fillStyle = g.ok ? "#39ff14" : "#64748b";
+        ctx.fillText(g.label, gx, 22);
+      }
+    }
   }
 
   function loop() {
@@ -4909,6 +5000,15 @@
     setMuted(!muted);
     if (!muted && !musicOn && state.mode === "play") startTechno();
   });
+  if (hud.fxBtn) {
+    hud.fxBtn.addEventListener("click", function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      ensureAudio();
+      setFx(!fxOn);
+      sfxUi();
+    });
+  }
   if (hud.pauseBtn) {
     hud.pauseBtn.addEventListener("click", function (ev) {
       ev.preventDefault();
@@ -5299,6 +5399,7 @@
     }
   }
   syncDiffBtn();
+  syncFxBtn();
   showOverlay("DIGISTRACTS", bootSub, "PRESS START");
   updateHUD();
   fit();
