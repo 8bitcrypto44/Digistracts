@@ -12,10 +12,14 @@
 #digistracts-root .dg-brand span{color:var(--cyan);font-weight:400;font-size:12px}
 #digistracts-root .dg-hud{display:flex;gap:14px;flex-wrap:wrap;font-size:13px}
 #digistracts-root .dg-hud b{color:var(--cyan)}
+#digistracts-root .dg-hi b{color:var(--gold)}
+#digistracts-root .dg-air{opacity:.9}
 #digistracts-root .dg-audio{display:flex;align-items:center;gap:8px;font-size:12px}
 #digistracts-root .dg-audio input[type=range]{width:90px;accent-color:#00e5ff}
 #digistracts-root #dg-fs{min-width:56px;padding:6px 10px;font-size:12px;border-color:var(--gold);color:var(--gold)}
 #digistracts-root #dg-fs[aria-pressed="true"]{border-color:var(--cyan);color:var(--cyan)}
+#digistracts-root #dg-pause{min-width:56px;padding:6px 10px;font-size:12px;border-color:#94a3b8;color:#e2e8f0}
+#digistracts-root #dg-pause[aria-pressed="true"]{border-color:var(--pink);color:var(--pink)}
 #digistracts-root button{background:#111827;color:#fff;border:2px solid var(--cyan);border-radius:8px;padding:8px 12px;font-family:inherit;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent}
 #digistracts-root button:active{transform:scale(.97);background:#0ea5e9;color:#041016}
 #digistracts-root .dg-stage{position:relative;width:100%;background:#05070f;border:2px solid #334155;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center}
@@ -88,14 +92,15 @@ body.dg-embed #digistracts-root.dg-phone.dg-fs{
 }
 #digistracts-root.dg-phone .dg-help,
 #digistracts-root.dg-phone .dg-brand span,
-#digistracts-root.dg-phone .dg-hud div:nth-child(3),
-#digistracts-root.dg-phone .dg-hud div:nth-child(4),
+#digistracts-root.dg-phone .dg-air,
+#digistracts-root.dg-phone .dg-hi,
 #digistracts-root.dg-phone:not(.dg-menu) .dg-brand{display:none}
 #digistracts-root.dg-phone .dg-audio{display:flex!important;gap:6px;margin:0}
 #digistracts-root.dg-phone .dg-audio label,
 #digistracts-root.dg-phone .dg-audio input{display:none}
 #digistracts-root.dg-phone #dg-fs,
-#digistracts-root.dg-phone #dg-mute{
+#digistracts-root.dg-phone #dg-mute,
+#digistracts-root.dg-phone #dg-pause{
   display:inline-block;min-height:36px;min-width:52px;padding:6px 10px;font-size:12px
 }
 /* HUD floats over the playfield so the stage can use the full frame */

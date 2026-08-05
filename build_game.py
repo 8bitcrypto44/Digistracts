@@ -83,15 +83,17 @@ markup = (
     <div class="dg-hud">
       <div>SCORE <b id="dg-score">000000</b></div>
       <div>LIVES <b id="dg-lives">♥♥♥</b></div>
-      <div>AIR SUPER <b id="dg-super">2</b></div>
-      <div>GUN <b id="dg-gun">PISTOL</b></div>
+      <div>WEAPON <b id="dg-gun">PISTOL</b></div>
       <div>TIME <b id="dg-time">120</b></div>
       <div><b id="dg-level">LV 1</b></div>
+      <div class="dg-hi">HI <b id="dg-hi">000000</b></div>
+      <div class="dg-air">AIR <b id="dg-super">2</b></div>
     </div>
     <div class="dg-audio">
       <label for="dg-vol">VOL</label>
       <input id="dg-vol" type="range" min="0" max="1" step="0.01" value="0.35" aria-label="Volume">
       <button type="button" id="dg-mute" aria-pressed="false">MUTE</button>
+      <button type="button" id="dg-pause" aria-pressed="false">PAUSE</button>
       <button type="button" id="dg-fs" aria-pressed="false">FS</button>
     </div>
   </div>
@@ -115,7 +117,9 @@ markup = (
     <span><kbd>&larr;&rarr;</kbd>/<kbd>AD</kbd> Move</span>
     <span><kbd>&uarr;&darr;</kbd> Aim</span>
     <span><kbd>SPACE</kbd> Jump · ×2 Super</span>
-    <span><kbd>Z</kbd>/<kbd>X</kbd>/<kbd>CTRL</kbd> Fire</span>
+    <span><kbd>Z</kbd>/<kbd>X</kbd> Fire</span>
+    <span><kbd>P</kbd>/<kbd>ESC</kbd> Pause</span>
+    <span><kbd>R</kbd> Retry sector</span>
   </div>
 </div>
 <script>
@@ -130,7 +134,7 @@ markup = (
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "11"
+ASSET_V = "12"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]
