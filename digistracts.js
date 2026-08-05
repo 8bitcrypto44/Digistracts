@@ -4,6 +4,17 @@
   if (!ROOT || ROOT.dataset.booted) return;
   ROOT.dataset.booted = "1";
 
+  const EMBED = /(?:\?|&)embed=1(?:&|$)/.test(location.search || "");
+  if (EMBED) {
+    document.documentElement.classList.add("dg-embed");
+    document.body && document.body.classList.add("dg-embed");
+  }
+  function postParent(data) {
+    try {
+      if (window.parent && window.parent !== window) window.parent.postMessage(data, "*");
+    } catch (err) {}
+  }
+
   const W = 800, H = 450;
   let GROUND = 390;
   const PREACHER_SRC = window.DG_PREACHER;
@@ -332,22 +343,60 @@
     }
   }
 
+  // Distinct robot classes — sprite pools map into window.DG_ROBOTS order
+  const ROLE_DEFS = {
+    walker: { sprites: [0, 3, 6, 12], h: 58, spd: 1.05, hp: 2, score: 100, kind: 0 },
+    gunner: { sprites: [4, 8, 10, 13], h: 62, spd: 0.58, hp: 3, score: 180, kind: 1, shoot: true },
+    tank: { sprites: [2, 5, 11], h: 72, spd: 0.36, hp: 8, score: 320, kind: 2, shoot: true, heavy: true },
+    dasher: { sprites: [1, 7], h: 56, spd: 0.92, hp: 2, score: 240, kind: 3, dash: true },
+    flyer: { sprites: [0, 3, 9, 12], h: 54, spd: 1.2, hp: 3, score: 260, kind: 4, flying: true, shoot: true }
+  };
+  const ROLE_WEIGHTS = [
+    { walker: 52, gunner: 28, tank: 5, dasher: 10, flyer: 5 },
+    { walker: 38, gunner: 30, tank: 12, dasher: 12, flyer: 8 },
+    { walker: 28, gunner: 30, tank: 16, dasher: 14, flyer: 12 },
+    { walker: 20, gunner: 28, tank: 22, dasher: 16, flyer: 14 },
+    { walker: 14, gunner: 26, tank: 26, dasher: 16, flyer: 18 }
+  ];
+
+  function pickRole(forceFlying) {
+    if (forceFlying) return "flyer";
+    const w = ROLE_WEIGHTS[Math.min(state.level, ROLE_WEIGHTS.length - 1)];
+    let roll = Math.random() * (w.walker + w.gunner + w.tank + w.dasher + w.flyer);
+    if ((roll -= w.walker) < 0) return "walker";
+    if ((roll -= w.gunner) < 0) return "gunner";
+    if ((roll -= w.tank) < 0) return "tank";
+    if ((roll -= w.dasher) < 0) return "dasher";
+    return "flyer";
+  }
+
+  function pickSprite(role) {
+    const pool = ROLE_DEFS[role].sprites.filter(function (i) { return i < imgs.robots.length; });
+    if (!pool.length) return Math.min(imgs.robots.length - 1, 0);
+    return pool[(Math.random() * pool.length) | 0];
+  }
+
   function spawnEnemy(x, forceFlying) {
     const L = LEVELS[state.level];
-    const type = (Math.random() * imgs.robots.length) | 0;
+    const role = pickRole(forceFlying);
+    const def = ROLE_DEFS[role];
+    const type = pickSprite(role);
     const im = imgs.robots[type];
-    const h = 48;
-    const w = im && im.complete && im.width ? Math.max(20, Math.round(im.width * (h / im.height))) : 28;
-    const kind = type % 5;
-    const flying = !!forceFlying || Math.random() < 0.3 + state.level * 0.12;
-    const baseY = 105 + Math.random() * 175;
+    const h = def.h;
+    const w = im && im.complete && im.naturalWidth
+      ? Math.max(24, Math.round(im.naturalWidth * (h / im.naturalHeight)))
+      : Math.round(h * 0.55);
+    const flying = !!def.flying;
+    const baseY = 95 + Math.random() * 160;
+    const hp = def.hp + Math.floor(state.level / 2) + (def.heavy ? Math.floor(state.level / 2) : 0);
     state.enemies.push({
-      x: x, y: flying ? baseY : GROUND - h, w: w, h: h, type: type, kind: kind,
-      vx: -L.enemySpeed * (kind === 1 ? 1.55 : kind === 2 ? 0.75 : 1.1),
-      vy: 0, hp: (kind === 2 ? 4 : 2) + (flying ? 1 : 0) + Math.floor(state.level / 2),
-      shootCD: 28 + Math.random() * 40,
-      facing: -1, alive: true, bob: Math.random() * 20,
-      walk: Math.random() * 6, flying: flying, baseY: baseY
+      x: x, y: flying ? baseY : GROUND - h, w: w, h: h, type: type, kind: def.kind,
+      role: role, vx: -L.enemySpeed * def.spd, baseSpd: L.enemySpeed * def.spd,
+      vy: 0, hp: hp, maxHp: hp, scoreValue: def.score + state.level * 25,
+      shootCD: 36 + Math.random() * 40, flash: 0, charge: 0, dashCD: 40 + Math.random() * 50,
+      mode: "patrol", facing: -1, alive: true, bob: Math.random() * 20,
+      walk: Math.random() * 6, flying: flying, baseY: baseY,
+      heavy: !!def.heavy, canShoot: !!def.shoot, canDash: !!def.dash
     });
   }
 
@@ -356,10 +405,27 @@
     const spd = 1.7 + state.level * 0.25;
     state.enemies.push({
       x: state.camX + (fromRight ? W + 45 : 30), y: 38, w: 54, h: 30,
-      vx: fromRight ? -spd : spd, vy: 0, hp: 2 + Math.floor(state.level / 2),
-      shootCD: 28, facing: fromRight ? -1 : 1, alive: true,
-      bob: Math.random() * 20, walk: 0, flying: true, drone: true, kind: 4, type: 0, baseY: 38
+      vx: fromRight ? -spd : spd, vy: 0, hp: 2 + Math.floor(state.level / 2), maxHp: 2,
+      shootCD: 28, facing: fromRight ? -1 : 1, alive: true, flash: 0,
+      bob: Math.random() * 20, walk: 0, flying: true, drone: true,
+      role: "drone", kind: 5, type: 0, baseY: 38, scoreValue: 150 + state.level * 20
     });
+  }
+
+  function enemyFire(e, p, opts) {
+    opts = opts || {};
+    const dir = p.x < e.x ? -1 : 1;
+    const muzzle = { x: e.x + (dir < 0 ? 2 : e.w - 10), y: e.y + (opts.heavy ? 28 : 22) };
+    const aimY = e.flying ? Math.max(-3.4, Math.min(3.4, (p.y + 25 - muzzle.y) / 50)) : (opts.arc || 0);
+    const spd = opts.heavy ? 2.6 + state.level * 0.2 : 3.6 + state.level * 0.35;
+    state.bullets.push({
+      x: muzzle.x, y: muzzle.y, w: opts.heavy ? 14 : 9, h: opts.heavy ? 10 : 6,
+      vx: dir * spd, vy: aimY, life: opts.heavy ? 110 : 90, from: "enemy",
+      fire: !!opts.heavy, lime: opts.lime || 0
+    });
+    e.flash = 8;
+    e.facing = dir;
+    beep(opts.heavy ? 160 : 240, 0.05, "sawtooth", 0.045);
   }
 
   function gunPose(p, aim) {
@@ -477,13 +543,14 @@
       return;
     }
     e.hp -= damage;
-    e.x += dir * 18;
-    explode(e.x + e.w / 2, e.y + e.h / 2, "#00e5ff", 6);
+    e.x += dir * (e.heavy ? 8 : 18);
+    e.flash = 6;
+    explode(e.x + e.w / 2, e.y + e.h / 2, e.heavy ? "#67e8f9" : "#00e5ff", e.heavy ? 8 : 6);
     beep(300, 0.05, "square", 0.05);
     if (e.hp <= 0) {
       e.alive = false;
-      state.score += 100 + e.kind * 50;
-      explode(e.x + e.w / 2, e.y + e.h / 2, "#ff2bd6", 14);
+      state.score += e.scoreValue || (100 + e.kind * 50);
+      explode(e.x + e.w / 2, e.y + e.h / 2, "#ff2bd6", e.heavy ? 22 : 14);
       beep(180, 0.12, "triangle", 0.07);
     }
   }
@@ -657,6 +724,7 @@
     hud.startBtn.textContent = btn || "START";
     hud.startBtn.style.display = "";
     ROOT.classList.add("dg-menu");
+    postParent({ type: "dg-chrome", inGame: false });
   }
 
   function hideOverlay() {
@@ -676,6 +744,7 @@
     buildLevel(state.level);
     startTechno();
     updateHUD();
+    postParent({ type: "dg-chrome", inGame: true });
   }
 
   function advanceFromClear() {
@@ -1004,6 +1073,8 @@
           const hunter = groundBots[0];
           hunter.flying = true;
           hunter.hunter = true;
+          hunter.role = "flyer";
+          hunter.canShoot = true;
           hunter.baseY = hunter.y;
           hunter.hp += 1;
           hunter.shootCD = 22;
@@ -1073,10 +1144,62 @@
       const e = state.enemies[i];
       if (!e.alive) continue;
       e.bob += 0.1;
+      if (e.flash > 0) e.flash--;
       if (calm) continue;
-      e.walk += Math.abs(e.vx) * (e.flying ? 0.18 : 0.32);
-      if (e.drone) e.vx = (p.x < e.x ? -1 : 1) * (1.8 + state.level * 0.25);
-      if (e.hunter) e.vx = (p.x < e.x ? -1 : 1) * (1.3 + state.level * 0.14);
+      e.walk += Math.abs(e.vx || e.baseSpd || 1) * (e.flying ? 0.18 : 0.32);
+      const dx = p.x - e.x;
+      const dist = Math.abs(dx);
+
+      if (e.drone) {
+        e.vx = (p.x < e.x ? -1 : 1) * (1.8 + state.level * 0.25);
+      } else if (e.hunter) {
+        e.vx = (p.x < e.x ? -1 : 1) * (1.3 + state.level * 0.14);
+      } else if (e.role === "dasher" && !e.flying) {
+        if (e.dashCD > 0) e.dashCD--;
+        if (e.mode === "patrol") {
+          e.vx = -e.baseSpd;
+          if (dist < 220 && dist > 40 && e.dashCD <= 0 && p.y + p.h > GROUND - 20) {
+            e.mode = "telegraph";
+            e.charge = 22;
+            e.vx = 0;
+            e.facing = dx < 0 ? -1 : 1;
+            beep(520, 0.08, "square", 0.05);
+          }
+        } else if (e.mode === "telegraph") {
+          e.vx = 0;
+          e.charge--;
+          e.flash = 4;
+          if (e.charge <= 0) {
+            e.mode = "dash";
+            e.charge = 28;
+            e.vx = e.facing * (6.2 + state.level * 0.35);
+            beep(180, 0.1, "sawtooth", 0.06);
+          }
+        } else if (e.mode === "dash") {
+          e.charge--;
+          if (e.charge <= 0) {
+            e.mode = "recover";
+            e.charge = 36;
+            e.vx = 0;
+            e.dashCD = 90;
+          }
+        } else if (e.mode === "recover") {
+          e.vx = 0;
+          e.charge--;
+          if (e.charge <= 0) e.mode = "patrol";
+        }
+      } else if (e.role === "gunner" && !e.flying) {
+        e.facing = dx < 0 ? -1 : 1;
+        if (dist < 90) e.vx = (dx < 0 ? 1 : -1) * e.baseSpd * 0.85;
+        else if (dist < 280) e.vx = 0;
+        else e.vx = -e.baseSpd;
+      } else if (e.role === "tank" && !e.flying) {
+        e.facing = dx < 0 ? -1 : 1;
+        e.vx = (dx < 0 ? -1 : 1) * e.baseSpd * 0.7;
+      } else if (e.role === "flyer" || e.flying) {
+        e.vx = (dx < 0 ? -1 : 1) * e.baseSpd;
+      }
+
       e.x += e.vx;
       if (e.flying) {
         if (e.drone) {
@@ -1087,7 +1210,9 @@
           const rise = (p.y + 8 - e.y) * 0.06;
           e.y += Math.max(-2.2, Math.min(2.2, rise));
         } else {
-          e.y = e.baseY + Math.sin(e.bob) * 18;
+          const target = Math.max(70, Math.min(GROUND - 120, e.baseY + Math.sin(e.bob) * 22));
+          const chaseY = p.y + 10;
+          e.y += Math.max(-1.8, Math.min(1.8, (chaseY * 0.35 + target * 0.65 - e.y) * 0.05));
         }
       } else {
         if (e.falling || isHoleAt(e.x + e.w / 2)) {
@@ -1096,7 +1221,7 @@
           e.y += e.vy;
           if (e.y > H + 40) e.alive = false;
         } else {
-          if (e.kind === 3 && e.vy === 0 && Math.random() < 0.01) e.vy = -7;
+          if (e.role === "dasher" && e.mode === "patrol" && e.vy === 0 && Math.random() < 0.008) e.vy = -6.5;
           if (e.vy !== 0) {
             e.vy += 0.4;
             e.y += e.vy;
@@ -1106,28 +1231,32 @@
           }
         }
       }
-      e.facing = e.vx < 0 ? -1 : 1;
+      if (!(e.role === "dasher" && (e.mode === "telegraph" || e.mode === "dash" || e.mode === "recover"))) {
+        if (e.vx) e.facing = e.vx < 0 ? -1 : 1;
+      }
+
       if (e.drone) {
         e.shootCD--;
-        if (e.shootCD <= 0 && Math.abs(e.x - p.x) < 420) {
+        if (e.shootCD <= 0 && dist < 420) {
           e.shootCD = Math.max(26, 48 - state.level * 4);
           const cx = e.x + e.w / 2, cy = e.y + e.h - 2;
           [[0, 7.2, cx - 2, cy, 5, 16], [-7.4, 0, e.x - 12, e.y + 11, 16, 5], [7.4, 0, e.x + e.w - 4, e.y + 11, 16, 5]].forEach(function (d) {
             state.bullets.push({ x: d[2], y: d[3], w: d[4], h: d[5], vx: d[0], vy: d[1], life: 80, from: "enemy", lime: 1 });
           });
+          e.flash = 6;
           beep(980, 0.04, "square", 0.045);
         }
-      } else if (e.hunter || e.kind === 4 || e.kind === 2) {
+      } else if (e.canShoot || e.hunter) {
         e.shootCD--;
-        if (e.shootCD <= 0 && Math.abs(e.x - p.x) < 360) {
-          e.shootCD = Math.max(18, 48 - state.level * 7);
-          const dir = p.x < e.x ? -1 : 1;
-          const aimY = e.flying ? Math.max(-3.2, Math.min(3.2, (p.y + 25 - e.y) / 55)) : 0;
-          state.bullets.push({
-            x: e.x + e.w / 2, y: e.y + 18, w: 8, h: 6,
-            vx: dir * (3.5 + state.level * 0.4), vy: aimY, life: 90, from: "enemy"
-          });
-          beep(220, 0.05, "sawtooth", 0.04);
+        const range = e.role === "tank" ? 400 : e.flying ? 380 : 320;
+        const ready = e.role === "gunner" ? (e.vx === 0 || dist < 280) : true;
+        if (e.shootCD <= 0 && dist < range && ready) {
+          e.shootCD = e.role === "tank"
+            ? Math.max(40, 78 - state.level * 5)
+            : e.role === "gunner"
+              ? Math.max(22, 42 - state.level * 4)
+              : Math.max(24, 50 - state.level * 5);
+          enemyFire(e, p, { heavy: e.role === "tank", arc: e.role === "tank" ? -0.4 : 0 });
         }
       }
       if (rectsOverlap({ x: p.x + 6, y: p.y + 8, w: p.w - 12, h: p.h - 10 }, e) && state.invuln <= 0) hurtPlayer();
@@ -1299,18 +1428,48 @@
     const img = imgs.robots[e.type];
     if (!img || !img.complete || !img.naturalWidth) return;
     const w = e.w, h = e.h;
-    const bob = e.flying ? Math.sin(e.walk) * 2.5 : Math.abs(Math.sin(e.walk)) * 1.5;
+    const bob = e.flying ? Math.sin(e.walk) * 2.5 : Math.abs(Math.sin(e.walk)) * 1.8;
+    const lean = e.mode === "dash" ? e.facing * 0.14 : e.mode === "telegraph" ? -e.facing * 0.08 : 0;
     ctx.save();
-    ctx.translate(x + (e.facing > 0 ? w : 0), e.y + bob);
-    if (e.facing > 0) ctx.scale(-1, 1);
-    ctx.drawImage(img, 0, 0, w, h);
+    ctx.translate(x + w / 2, e.y + bob + h / 2);
+    ctx.rotate(lean);
+    ctx.scale(e.facing > 0 ? -1 : 1, 1);
+
+    if (e.mode === "telegraph" || e.mode === "dash") {
+      ctx.globalAlpha = 0.32;
+      ctx.fillStyle = e.mode === "dash" ? "#ff2b2b" : "#ffd400";
+      ctx.fillRect(-w / 2 - 4, -h / 2 - 4, w + 8, h + 8);
+      ctx.globalAlpha = 1;
+    }
+    if (e.heavy) {
+      ctx.shadowColor = "#00e5ff";
+      ctx.shadowBlur = 12;
+    }
+    if (e.flash > 0) ctx.globalAlpha = 0.55 + (e.flash % 2) * 0.35;
+    ctx.drawImage(img, -w / 2, -h / 2, w, h);
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+
     if (e.flying) {
       ctx.fillStyle = "#67e8f9";
-      ctx.fillRect(w * 0.24, h - 2, 4, 8 + Math.sin(e.walk) * 3);
-      ctx.fillRect(w * 0.66, h - 2, 4, 8 - Math.sin(e.walk) * 3);
+      ctx.fillRect(-w * 0.26, h / 2 - 2, 4, 8 + Math.sin(e.walk) * 3);
+      ctx.fillRect(w * 0.16, h / 2 - 2, 4, 8 - Math.sin(e.walk) * 3);
       ctx.fillStyle = "#ff2bd6";
-      ctx.fillRect(w * 0.27, h + 5, 2, 5);
-      ctx.fillRect(w * 0.69, h + 5, 2, 5);
+      ctx.fillRect(-w * 0.23, h / 2 + 5, 2, 5);
+      ctx.fillRect(w * 0.19, h / 2 + 5, 2, 5);
+    }
+    if (e.flash > 0 && e.canShoot) {
+      ctx.fillStyle = "#fff7ad";
+      ctx.fillRect(w / 2 - 12, -8, 12, 7);
+      ctx.fillStyle = "#ff7a12";
+      ctx.fillRect(w / 2 - 10, -6, 8, 4);
+    }
+    if (e.heavy && e.maxHp) {
+      const pct = Math.max(0, e.hp / e.maxHp);
+      ctx.fillStyle = "#03101e";
+      ctx.fillRect(-w / 2 + 4, -h / 2 - 10, w - 8, 5);
+      ctx.fillStyle = pct > 0.45 ? "#00e5ff" : "#ff2bd6";
+      ctx.fillRect(-w / 2 + 4, -h / 2 - 10, (w - 8) * pct, 5);
     }
     ctx.restore();
   }
