@@ -2156,7 +2156,7 @@
 
   window.addEventListener("message", function (e) {
     if (!e.data || typeof e.data !== "object" || e.data.type !== "dg-fs-state") return;
-    // Ignore false while user still wants FULL — native FS drops on iframe clicks
+    // Ignore false while user still wants FULL — browser cancels native fullscreen on iframe clicks
     // and used to clear parentFs, flash-resize the canvas, and look like an exit.
     if (e.data.active) parentFs = true;
     else if (!fsWanted) parentFs = false;
