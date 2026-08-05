@@ -47,6 +47,7 @@
     fxBtn: ROOT.querySelector("#dg-fx"),
     pauseBtn: ROOT.querySelector("#dg-pause"),
     assistBtn: ROOT.querySelector("#dg-assist"),
+    ngBtn: ROOT.querySelector("#dg-ng"),
     diffBtn: ROOT.querySelector("#dg-diff"),
     dailyBtn: ROOT.querySelector("#dg-daily"),
     shareBtn: ROOT.querySelector("#dg-share"),
@@ -513,6 +514,7 @@
 
   function addScore(n) {
     if (!n) return;
+    if (state.ngPlus && !state.demo) n = Math.round(n * 1.5);
     state.score += n;
     while (state.score >= state.nextLifeAt && state.lives < MAX_LIVES) {
       state.nextLifeAt += LIFE_EVERY;
@@ -593,7 +595,9 @@
     return "Kills " + state.kills + " · Max Combo ×" + state.maxCombo +
       "\nNo-Hit Clears " + state.noHitClears + " · Bonus " + state.bonusScore +
       "\nSecrets " + secN + "/3 · Graze " + (state.grazeCount || 0) +
-      "\nDIFF " + currentDiff().label + (state.daily ? (" · DAILY " + (state.dailyKey || "")) : "");
+      "\nDIFF " + currentDiff().label +
+      (state.ngPlus ? " · NG+" : "") +
+      (state.daily ? (" · DAILY " + (state.dailyKey || "")) : "");
   }
 
   function formatClearBreakdown(detail) {
@@ -618,8 +622,27 @@
     { id: "graze", label: "GRAZER" },
     { id: "daily", label: "DAILY" },
     { id: "clear", label: "CLEAR" },
-    { id: "boss", label: "BOSS" }
+    { id: "boss", label: "BOSS" },
+    { id: "ng", label: "NG+", hot: true }
   ];
+  const CLEARED_KEY = "dg-cleared";
+
+  function hasClearedOnce() {
+    if (GOD_QS) return true;
+    try { return localStorage.getItem(CLEARED_KEY) === "1"; } catch (e) { return false; }
+  }
+
+  function markGameCleared() {
+    try { localStorage.setItem(CLEARED_KEY, "1"); } catch (e) {}
+  }
+
+  function styleRank(n) {
+    if (n >= 20) return { label: "LEGENDARY", color: "#ff2bd6" };
+    if (n >= 12) return { label: "STYLISH", color: "#a78bfa" };
+    if (n >= 6) return { label: "NICE", color: "#67e8f9" };
+    if (n >= 3) return { label: "COOL", color: "#39ff14" };
+    return { label: "GRAZE", color: "#67e8f9" };
+  }
   const DEATH_TIPS = {
     bullet: "Enemy shots — jump or weave the gaps",
     enemy: "Don't body-check hunters — shoot first",
@@ -758,6 +781,7 @@
     if ((state.grazeCount || 0) >= 8) take("graze");
     if (state.daily) take("daily");
     if (opts.boss) take("boss");
+    if (state.ngPlus) take("ng");
     if (fresh.length) {
       sfxMedal();
       const labels = fresh.map(function (id) {
@@ -783,8 +807,8 @@
       formatRunSummary(),
       formatMedalsLine(state.runMedals),
       (state.daily ? ("Daily " + (state.dailyKey || dailyId()) + " · " + dailyBestLine() + "\n") : "") +
-        "DIFF " + currentDiff().label,
-      PAGES_SHARE + "?v=32"
+        "DIFF " + currentDiff().label + (state.ngPlus ? " · NG+" : ""),
+      PAGES_SHARE + "?v=34"
     ];
     return lines.join("\n");
   }
@@ -1123,7 +1147,9 @@
     overclockUsed: false,
     shareKind: null,
     demo: false,
-    demoAt: 0
+    demoAt: 0,
+    ngPlus: false,
+    lastStand: false
   };
 
   const CREDIT_LINES = ["DIGISTRACTS","by 8bitcrypto_44","","THANKS WEB3 COMMUNITY","OpenSea · Amazon","Technocade / Soundimage.org","","THANK YOU FOR PLAYING"];
@@ -1953,7 +1979,19 @@
   ];
 
   function currentDiff() {
-    return DIFFS[state.diff] || DIFFS.normal;
+    const base = DIFFS[state.diff] || DIFFS.normal;
+    if (!state.ngPlus) return base;
+    return {
+      id: base.id,
+      label: base.label + "+",
+      lives: base.lives,
+      timeMult: base.timeMult * 0.9,
+      spawnMult: base.spawnMult * 0.8,
+      hpMult: base.hpMult * 1.3,
+      bulletSpd: base.bulletSpd * 1.12,
+      invuln: Math.max(85, Math.floor(base.invuln * 0.88)),
+      hitPad: Math.max(2, (base.hitPad || 4) - 1)
+    };
   }
 
   function sectorTimeBudget() {
@@ -2004,7 +2042,7 @@
       : Math.round(h * 0.55);
     const flying = !!def.flying;
     const baseY = 95 + Math.random() * 160;
-    const eliteChance = state.inSecret ? 0.16 : (0.07 + state.level * 0.012);
+    const eliteChance = (state.inSecret ? 0.16 : (0.07 + state.level * 0.012)) * (state.ngPlus ? 1.55 : 1);
     const elite = !forceFlying && rnd() < eliteChance;
     const rawHp = def.hp + Math.floor(state.level / 2) + (def.heavy ? Math.floor(state.level / 2) : 0);
     const hp = Math.max(1, Math.round(rawHp * (currentDiff().hpMult || 1) * (elite ? 2.2 : 1)));
@@ -2456,15 +2494,25 @@
       return;
     }
     const deathX = p.x;
+    const wasLastLife = state.lives === 1;
     state.lives = Math.max(0, state.lives - 1);
     state.flash = 18;
     deathBeep();
     explode(p.x + 14, p.y + 28, "#ffd400", 10);
-    addJuice({ shake: 14, hitStop: 8, flash: 20, flashColor: "rgba(255,60,60,0.4)" });
+    addJuice({ shake: 14, hitStop: wasLastLife ? 14 : 8, flash: 20, flashColor: "rgba(255,60,60,0.4)" });
     if (state.lives <= 0) {
       state.failRespawnX = respawnX != null ? respawnX : deathX;
+      state.lastStand = false;
       failTeam();
       return;
+    }
+    if (state.lives === 1 && !state.lastStand) {
+      state.lastStand = true;
+      addJuice({ shake: 10, hitStop: 18, flash: 16, flashColor: "rgba(255,43,214,0.45)" });
+      state.banner = "⚠ LAST STAND — ONE LIFE LEFT";
+      state.messageTimer = 90;
+      beep(180, 0.18, "sawtooth", 0.09);
+      beep(90, 0.22, "square", 0.07, 0.08);
     }
     // Still have lives — respawn at furthest checkpoint / safe ground
     let rx = state.checkpointX || 80;
@@ -2524,6 +2572,7 @@
     hideOverlay();
     state.mode = "play";
     state.lives = currentDiff().lives;
+    state.lastStand = false;
     state.score = sc;
     state.nextLifeAt = nextLife;
     state.failAt = 0;
@@ -2670,16 +2719,18 @@
   }
 
   function missionDoneOverlay() {
+    markGameCleared();
     const record = saveHiScore(state.score);
     const dailyRec = saveDailyBest(state.score);
     evaluateSectorMedals({ boss: true });
     const medals = formatMedalsLine(state.runMedals);
     sfxClear();
     showOverlay(
-      "MISSION COMPLETE",
+      state.ngPlus ? "NG+ COMPLETE" : "MISSION COMPLETE",
       "Warehouse core secure!\nFinal Score: " + state.score +
         (record ? "\n★ NEW HIGH SCORE!" : "\nHI: " + state.hiScore) +
         (dailyRec ? "\n★ NEW DAILY BEST!" : (state.daily ? "\n" + dailyBestLine() : "")) +
+        (state.ngPlus ? "\n★ NEW GAME+ · 1.5× SCORE" : (hasClearedOnce() ? "\n★ NG+ unlocked on title" : "")) +
         "\n" + formatRunSummary() +
         "\n" + medals +
         "\nby 8bitcrypto_44",
@@ -2728,6 +2779,15 @@
     if (onTitle) renderMedalsUI(true, null, true);
     else renderMedalsUI(shareable, opts.medals || state.lastMedals || state.runMedals, false);
     if (hud.dailyBtn) hud.dailyBtn.style.display = onTitle ? "" : "none";
+    if (hud.ngBtn) {
+      const showNg = onTitle && hasClearedOnce();
+      hud.ngBtn.style.display = showNg ? "" : "none";
+      if (showNg) {
+        hud.ngBtn.classList.remove("is-on");
+        hud.ngBtn.setAttribute("aria-pressed", "false");
+        hud.ngBtn.textContent = "NG+";
+      }
+    }
     if (hud.assistBtn) {
       hud.assistBtn.style.display = onTitle ? "" : "none";
       if (onTitle) syncAssistBtn();
@@ -2787,7 +2847,8 @@
       ? "by 8bitcrypto_44\nHI " + state.hiScore + " · " + dailyBestLine() + bootHint +
         "\nDAILY · AIM assist · stick + JUMP / FIRE / SWAP"
       : "by 8bitcrypto_44\nHI " + state.hiScore + " · " + dailyBestLine() + bootHint +
-        "\nPRESS START or DAILY · Q swap guns · idle = demo";
+        "\nPRESS START or DAILY · Q swap guns · idle = demo" +
+        (hasClearedOnce() ? " · NG+ ready" : "");
   }
 
   function startAttract() {
@@ -2996,6 +3057,8 @@
       state.dailyKey = null;
       clearRunSeed();
     }
+    if (!opts.keepNg) state.ngPlus = !!opts.ngPlus;
+    state.lastStand = false;
     state.score = 0;
     state.lives = currentDiff().lives;
     state.level = 0;
@@ -3015,6 +3078,11 @@
     hideOverlay();
     state.mode = "play";
     buildLevel(state.level);
+    if (state.player && state.ngPlus) {
+      grantWeapon("RIFLE", 0.85);
+      state.banner = "NEW GAME+ · 1.5× SCORE · HARDER HUNTERS";
+      state.messageTimer = 110;
+    }
     if (state.godMode) setGodMode(true);
     startTechno();
     updateHUD();
@@ -3027,9 +3095,22 @@
     }
   }
 
+  function startNgPlusRun() {
+    if (!hasClearedOnce()) {
+      state.banner = "CLEAR THE GAME TO UNLOCK NG+";
+      state.messageTimer = 70;
+      sfxUi();
+      return;
+    }
+    state.ngPlus = true;
+    sfxUi();
+    startGame({ ngPlus: true, keepNg: true });
+  }
+
   function startDailyRun() {
     state.daily = true;
     state.dailyKey = dailyId();
+    state.ngPlus = false;
     setRunSeed(hashSeed(state.dailyKey + "|" + (state.diff || "normal")));
     sfxUi();
     startGame({ keepDaily: true });
@@ -3143,12 +3224,15 @@
     sfxArenaLock();
     sfxPhase2();
     explode(b.x + b.w / 2, b.y + b.h / 2, b.accentHot || "#39ff14", 48);
+    pushScorePop(b.x + b.w / 2, b.y, "PHASE 2", b.accentHot || "#39ff14");
     addJuice({
-      shake: 16,
-      hitStop: 10,
-      flash: 22,
-      flashColor: b.midBoss ? "rgba(232,121,249,0.5)" : "rgba(57,255,20,0.45)"
+      shake: 18,
+      hitStop: 14,
+      flash: 26,
+      flashColor: b.midBoss ? "rgba(232,121,249,0.55)" : "rgba(57,255,20,0.5)"
     });
+    beep(120, 0.25, "sawtooth", 0.1);
+    beep(60, 0.3, "square", 0.08, 0.1);
     if (b.midBoss) {
       addHazard({
         kind: "laser", x: 220, y: 30, w: 10, h: GROUND - 140,
@@ -3470,7 +3554,8 @@
     hud.score.textContent = String(state.score).padStart(6, "0");
     hud.lives.textContent = "♥".repeat(Math.max(0, state.lives)) || "—";
     hud.level.textContent = state.inSecret ? "SEC" : ("LV " + (state.level + 1));
-    if (state.godMode && hud.level) hud.level.textContent = (state.inSecret ? "SEC" : ("LV " + (state.level + 1))) + " · GOD";
+    if (state.ngPlus && hud.level) hud.level.textContent = (state.inSecret ? "SEC" : ("LV " + (state.level + 1))) + " · NG+";
+    if (state.godMode && hud.level) hud.level.textContent = (state.inSecret ? "SEC" : ("LV " + (state.level + 1))) + (state.ngPlus ? " · NG+" : "") + " · GOD";
     hud.time.textContent = Math.max(0, Math.ceil(state.levelTime / 1000));
     if (hud.time) {
       hud.time.style.color = (state.mode === "play" && state.levelTime > 0 && state.levelTime < 30000) ? "#fb7185" : "";
@@ -4291,11 +4376,12 @@
           addScore(gPts);
           state.grazeScore = (state.grazeScore || 0) + gPts;
           state.bonusScore += gPts;
-          pushScorePop(pcx, p.y, "GRAZE +" + gPts, "#67e8f9");
+          const rank = styleRank(state.grazeCount);
+          pushScorePop(pcx, p.y, rank.label + " +" + gPts, rank.color);
           sfxGraze();
-          if (state.grazeCount === 1 || state.grazeCount % 5 === 0) {
-            state.banner = "GRAZE ×" + state.grazeCount;
-            state.messageTimer = 35;
+          if (state.grazeCount === 1 || state.grazeCount % 5 === 0 || state.grazeCount === 3 || state.grazeCount === 6 || state.grazeCount === 12 || state.grazeCount === 20) {
+            state.banner = rank.label + " ×" + state.grazeCount;
+            state.messageTimer = 40;
           }
         }
       }
@@ -4812,6 +4898,27 @@
     const heat = p.beaming ? 1 : Math.min(1, p.shootCD / 8);
     const charge = !p.weapon ? Math.min(1, (p.charge || 0) / 28) : 0;
     const t = performance.now() / 110;
+    // Aim laser / charge sight
+    if (state.mode === "play" && !state.demo) {
+      const tipX = s.x - state.camX, tipY = s.y;
+      const aim = p.beamAim || 0;
+      let dx = p.facing * 220, dy = 0;
+      if (aim < 0) { dx = p.facing * 40; dy = -200; }
+      else if (aim > 0) { dx = p.facing * 40; dy = 200; }
+      const showing = p.beaming || p.fireHeld || charge > 0.15 || assistOn;
+      if (showing) {
+        ctx.save();
+        ctx.globalAlpha = charge > 0 ? (0.25 + charge * 0.45) : (p.beaming ? 0.45 : 0.22);
+        ctx.strokeStyle = charge > 0.9 ? "#fff27a" : (glow || "#67e8f9");
+        ctx.lineWidth = charge > 0 ? 2 : 1;
+        ctx.beginPath();
+        ctx.moveTo(tipX, tipY);
+        ctx.lineTo(tipX + dx, tipY + dy);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.restore();
+      }
+    }
     ctx.save();
     ctx.translate(s.grip.x - state.camX, s.grip.y);
     ctx.rotate(s.a);
@@ -5453,6 +5560,15 @@
       bumpTitleIdle();
       ensureAudio();
       if (state.mode === "title" || state.mode === "credits") startDailyRun();
+    });
+  }
+  if (hud.ngBtn) {
+    hud.ngBtn.addEventListener("click", function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      bumpTitleIdle();
+      ensureAudio();
+      if (state.mode === "title" || state.mode === "credits") startNgPlusRun();
     });
   }
   if (hud.shareBtn) {

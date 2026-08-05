@@ -65,6 +65,13 @@ body.dg-embed #digistracts-root.dg-menu .dg-help{position:absolute}
 }
 #digistracts-root #dg-assist[aria-pressed="false"]{border-color:#64748b;color:#94a3b8}
 #digistracts-root #dg-assist:active{transform:scale(.97);background:#2e1065}
+#digistracts-root #dg-ng{
+  background:#111827;color:#ff2bd6;border:2px solid #ff2bd6;border-radius:8px;
+  padding:10px 16px;font-family:inherit;font-weight:700;cursor:pointer;min-height:48px;
+  box-shadow:0 0 12px rgba(255,43,214,.25)
+}
+#digistracts-root #dg-ng:active{transform:scale(.97);background:#500724}
+#digistracts-root #dg-ng.is-on{color:#fff;background:#831843}
 #digistracts-root #dg-swap{
   border-color:#a78bfa;color:#c4b5fd;min-width:72px
 }
