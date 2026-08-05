@@ -5,11 +5,13 @@
   ROOT.dataset.booted = "1";
 
   const EMBED = /(?:\?|&)embed=1(?:&|$)/.test(location.search || "");
+  // Dev/test chrome (GOD toggle + level select) only with ?god=1 or ?test=1
   const GOD_QS = /(?:\?|&)(?:god|test)=1(?:&|$)/.test(location.search || "");
   if (EMBED) {
     document.documentElement.classList.add("dg-embed");
     document.body && document.body.classList.add("dg-embed");
   }
+  if (GOD_QS) ROOT.classList.add("dg-test");
   function postParent(data) {
     try {
       if (window.parent && window.parent !== window) window.parent.postMessage(data, "*");
@@ -1783,16 +1785,18 @@
       if (onTitle) syncDiffBtn();
     }
     if (hud.godBtn) {
-      hud.godBtn.style.display = onTitle ? "" : "none";
-      if (onTitle) {
+      const showGod = GOD_QS && onTitle;
+      hud.godBtn.style.display = showGod ? "" : "none";
+      if (showGod) {
         hud.godBtn.textContent = state.godMode ? "GOD: ON" : "GOD: OFF";
         hud.godBtn.setAttribute("aria-pressed", state.godMode ? "true" : "false");
         hud.godBtn.classList.toggle("is-on", state.godMode);
       }
     }
     if (hud.levels) {
-      hud.levels.classList.toggle("is-on", onTitle);
-      hud.levels.style.display = onTitle ? "" : "none";
+      const showLevels = GOD_QS && onTitle;
+      hud.levels.classList.toggle("is-on", showLevels);
+      hud.levels.style.display = showLevels ? "" : "none";
     }
     ROOT.classList.add("dg-menu");
     if (!opts || !opts.keepPlaying) {
@@ -3992,7 +3996,7 @@
       if (now - lastSpaceTap < 420) superJump();
       lastSpaceTap = now;
     }
-    if ((e.key === "g" || e.key === "G") && !e.repeat) {
+    if (GOD_QS && (e.key === "g" || e.key === "G") && !e.repeat) {
       e.preventDefault();
       ensureAudio();
       toggleGodMode();
@@ -4295,14 +4299,26 @@
 
   let bootHint = "";
   try { if (localStorage.getItem("dg-secret") === "1") bootHint = "\n★ Ember Vault discovered"; } catch (e) {}
-  if (state.godMode) bootHint += "\nGOD MODE ready · press G anytime";
-  const bootSub = wantsTouchUI()
-    ? "by 8bitcrypto_44 · TEST BUILD\nHI " + state.hiScore + bootHint +
-      "\nGOD + level buttons · stick + JUMP / FIRE"
-    : "by 8bitcrypto_44 · TEST / GOD MODE\nHI " + state.hiScore + bootHint +
-      "\nToggle GOD · pick a level · G key in-game";
-  buildLevelSelect();
-  if (state.godMode) setGodMode(true);
+  let bootSub;
+  if (GOD_QS) {
+    if (state.godMode) bootHint += "\nGOD MODE ready · press G anytime";
+    bootSub = wantsTouchUI()
+      ? "by 8bitcrypto_44 · TEST BUILD\nHI " + state.hiScore + bootHint +
+        "\nGOD + level buttons · stick + JUMP / FIRE"
+      : "by 8bitcrypto_44 · TEST / GOD MODE\nHI " + state.hiScore + bootHint +
+        "\nToggle GOD · pick a level · G key in-game";
+    buildLevelSelect();
+    if (state.godMode) setGodMode(true);
+  } else {
+    bootSub = wantsTouchUI()
+      ? "by 8bitcrypto_44\nHI " + state.hiScore + bootHint + "\nstick + JUMP / FIRE"
+      : "by 8bitcrypto_44\nHI " + state.hiScore + bootHint;
+    if (hud.godBtn) hud.godBtn.style.display = "none";
+    if (hud.levels) {
+      hud.levels.innerHTML = "";
+      hud.levels.style.display = "none";
+    }
+  }
   syncDiffBtn();
   showOverlay("DIGISTRACTS", bootSub, "PRESS START");
   updateHUD();
