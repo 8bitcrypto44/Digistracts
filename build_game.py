@@ -98,18 +98,18 @@ markup = (
   <div class="dg-stage">
     <canvas id="dg-canvas" width="800" height="450" aria-label="Digistracts game canvas"></canvas>
     <div id="dg-msg">NEON DOCKS</div>
+    <div class="dg-controls" aria-label="Touch controls">
+      <div id="dg-stick" class="dg-stick" aria-label="Move joystick"><div id="dg-knob" class="dg-knob"></div></div>
+      <div class="dg-actions">
+        <button type="button" id="dg-jump">JUMP</button>
+        <button type="button" id="dg-shoot">FIRE</button>
+      </div>
+    </div>
   </div>
   <div id="dg-overlay">
     <h2 id="dg-title">DIGISTRACTS</h2>
     <p id="dg-sub">by 8bitcrypto_44</p>
     <button type="button" id="dg-start">PRESS START</button>
-  </div>
-  <div class="dg-controls" aria-label="Touch controls">
-    <div id="dg-stick" class="dg-stick" aria-label="Move joystick"><div id="dg-knob" class="dg-knob"></div></div>
-    <div class="dg-actions">
-      <button type="button" id="dg-jump">JUMP</button>
-      <button type="button" id="dg-shoot">FIRE</button>
-    </div>
   </div>
   <div class="dg-help" aria-label="Keyboard controls">
     <span><kbd>&larr;&rarr;</kbd>/<kbd>AD</kbd> Move</span>
@@ -130,7 +130,7 @@ markup = (
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "9"
+ASSET_V = "10"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]
@@ -211,6 +211,20 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
   flex:1!important;min-height:0!important;aspect-ratio:auto!important;height:auto!important;border:0!important;border-radius:0!important
 }}
 .dg-gd.is-fs-mode .dg-gd-play iframe{{position:absolute!important;inset:0!important;width:100%!important;height:100%!important}}
+/* Phone portrait open: still expand to a tall play shell (not trapped 16:9 card) */
+.dg-gd.is-open.is-phone:not(.is-fs-mode):not(.is-land){{
+  position:fixed!important;inset:0!important;width:100vw!important;width:100dvw!important;
+  height:100vh!important;height:100dvh!important;max-width:none!important;margin:0!important;z-index:2147483645!important;
+  background:#020617!important;padding:0!important
+}}
+.dg-gd.is-open.is-phone:not(.is-fs-mode):not(.is-land) .dg-gd-card{{
+  height:100%!important;border:0!important;border-radius:0!important;padding:0!important;box-shadow:none!important;
+  display:flex!important;flex-direction:column!important
+}}
+.dg-gd.is-open.is-phone:not(.is-fs-mode):not(.is-land) .dg-gd-top{{display:none!important}}
+.dg-gd.is-open.is-phone:not(.is-fs-mode):not(.is-land) .dg-gd-stage{{
+  flex:1!important;min-height:0!important;aspect-ratio:auto!important;height:auto!important;border:0!important;border-radius:0!important
+}}
 /* GoDaddy traps fixed positioning via parent transforms — JS moves #dg-gd onto document.body.
    Native fullscreen is requested on the iframe element so in-game clicks do not cancel it. */
 @media (max-width:700px){{
@@ -219,6 +233,7 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
   .dg-gd-brand{{font-size:13px}}
   .dg-gd-enter{{padding:14px 22px;min-height:48px;width:min(100%,280px);font-size:16px}}
   .dg-gd-title{{font-size:clamp(28px,9vw,44px)}}
+  .dg-gd-tip{{font-size:13px}}
 }}
 </style>
 <div class="dg-gd" id="dg-gd">
@@ -237,7 +252,7 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
         <div class="dg-gd-veil">
           <h2 class="dg-gd-title">DIGISTRACTS</h2>
           <p class="dg-gd-tag">Neon streets · Robot hunters · Staff magic · Boss core</p>
-          <p class="dg-gd-tip">Play → PRESS START · Phone landscape goes full screen</p>
+          <p class="dg-gd-tip">Play → PRESS START · Phone: fullscreen + stick / JUMP / FIRE</p>
           <button type="button" class="dg-gd-enter" id="dg-gd-enter" aria-expanded="false">PLAY DIGISTRACTS</button>
           <p class="dg-gd-promo">Also: Primal Odyssey · Thank You For Your Service kids books</p>
         </div>
@@ -285,7 +300,9 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
     root.classList.toggle("is-fs", root.classList.contains("is-fs-mode"));
   }}
   function syncLand(){{
-    root.classList.toggle("is-land", root.classList.contains("is-open") && playing && phone() && land());
+    var onPhone=phone();
+    root.classList.toggle("is-phone", onPhone && root.classList.contains("is-open"));
+    root.classList.toggle("is-land", root.classList.contains("is-open") && playing && onPhone && land());
     syncFsClass();
   }}
   function notifyFrame(){{
@@ -394,7 +411,8 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
     playing=true;
     btn.setAttribute("aria-expanded","true");
     syncLand();
-    if(phone()&&land())enterFs();
+    // Phones: expand to fullscreen shell immediately (portrait or landscape)
+    if(phone())enterFs();
     try{{frame.focus();}}catch(e){{}}
     setTimeout(function(){{root.classList.remove("is-fading");}},600);
   }}
@@ -404,14 +422,15 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
   }});
   setTimeout(function(){{root.classList.remove("is-loading");}},8000);
   root.addEventListener("touchstart",function(){{
-    if(!root.classList.contains("is-land")||isFs())return;
-    enterFs();
+    if(!phone()||isFs())return;
+    if(root.classList.contains("is-open"))enterFs();
   }},{{passive:true}});
   window.addEventListener("message",function(e){{
     if(!e.data||typeof e.data!=="object")return;
     if(e.data.type==="dg-chrome"){{
       if(typeof e.data.inGame==="boolean")playing=!!e.data.inGame;
       syncLand();
+      if(e.data.inGame&&phone()&&!isFs())enterFs();
     }}
     if(e.data.type==="dg-fs")enterFs();
     if(e.data.type==="dg-fs-exit")exitFs();

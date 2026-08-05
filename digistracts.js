@@ -746,6 +746,12 @@
     startTechno();
     updateHUD();
     postParent({ type: "dg-chrome", inGame: true });
+    // Mobile: jump into fullscreen as soon as play starts
+    if (wantsTouchUI()) {
+      enterFullscreen();
+      setTimeout(fit, 100);
+      setTimeout(fit, 300);
+    }
   }
 
   function advanceFromClear() {
@@ -1960,6 +1966,7 @@
     function down(ev) {
       ev.preventDefault();
       touch[prop] = true;
+      el.classList.add("is-held");
       ensureAudio();
       if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
       if (prop === "jump" && state.mode === "play") {
@@ -1969,8 +1976,9 @@
       }
     }
     function up(ev) {
-      ev.preventDefault();
+      if (ev && ev.preventDefault) ev.preventDefault();
       touch[prop] = false;
+      el.classList.remove("is-held");
     }
     el.addEventListener("touchstart", down, { passive: false });
     el.addEventListener("touchend", up, { passive: false });
@@ -1978,6 +1986,7 @@
     el.addEventListener("mousedown", down);
     el.addEventListener("mouseup", up);
     el.addEventListener("mouseleave", up);
+    el.addEventListener("contextmenu", function (ev) { ev.preventDefault(); });
   }
 
   function bindJoystick() {
@@ -1985,9 +1994,13 @@
     const knob = ROOT.querySelector("#dg-knob");
     if (!stick || !knob) return;
     let active = false, pid = null;
+    function travel() {
+      return Math.max(22, stick.clientWidth * 0.28);
+    }
     function setKnob(nx, ny) {
       touch.jx = nx; touch.jy = ny;
-      knob.style.transform = "translate(calc(-50% + " + (nx * 28) + "px), calc(-50% + " + (ny * 28) + "px))";
+      const t = travel();
+      knob.style.transform = "translate(calc(-50% + " + (nx * t) + "px), calc(-50% + " + (ny * t) + "px))";
     }
     function read(clientX, clientY) {
       const r = stick.getBoundingClientRect();
@@ -2034,6 +2047,7 @@
     stick.addEventListener("touchend", end, { passive: false });
     stick.addEventListener("touchcancel", end, { passive: false });
     stick.addEventListener("mousedown", start);
+    stick.addEventListener("contextmenu", function (ev) { ev.preventDefault(); });
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", end);
   }
@@ -2128,23 +2142,25 @@
     const land = window.matchMedia("(orientation: landscape)").matches || vw > vh;
     const fs = isFullscreen();
     ROOT.classList.toggle("dg-phone", phone);
-    const phoneLand = phone && land && vh <= 520;
+    // Landscape on any phone height — overlay controls so playfield stays large
+    const phoneLand = phone && land;
     ROOT.classList.toggle("dg-land", phoneLand);
     ROOT.classList.toggle("dg-fs", fs);
 
     const top = ROOT.querySelector(".dg-top");
     const help = ROOT.querySelector(".dg-help");
-    const ctrl = ROOT.querySelector(".dg-controls");
-    const pad = phone ? 12 : 20;
-    let chrome = (top ? top.offsetHeight : 0) + pad;
-    if (phone && ctrl && ctrl.offsetParent !== null) chrome += ctrl.offsetHeight;
-    else if (!phone && help && help.offsetParent !== null && !ROOT.classList.contains("dg-menu")) chrome += help.offsetHeight;
+    const pad = phone ? 8 : 20;
+    let chrome = (top && top.offsetParent !== null ? top.offsetHeight : 0) + pad;
+    // Touch controls overlay the stage — do not reserve vertical chrome for them
+    if (!phone && help && help.offsetParent !== null && !ROOT.classList.contains("dg-menu")) {
+      chrome += help.offsetHeight;
+    }
 
     // Always fit canvas into the visible viewport so the ground/player stay on-screen
     const needFit = EMBED || fs || phone || vh < 620;
     if (needFit) {
       const availH = Math.max(120, vh - chrome);
-      const availW = Math.max(160, (ROOT.clientWidth || vw) - (phone ? 8 : 16));
+      const availW = Math.max(160, (ROOT.clientWidth || vw) - (phone ? 4 : 16));
       let cw = availW, ch = cw * H / W;
       if (ch > availH) { ch = availH; cw = ch * W / H; }
       canvas.style.width = Math.floor(cw) + "px";
@@ -2181,13 +2197,17 @@
     });
   }
   ROOT.addEventListener("touchstart", function () {
-    if (!ROOT.classList.contains("dg-land")) return;
+    if (!ROOT.classList.contains("dg-phone")) return;
     if (isFullscreen()) return;
-    enterFullscreen();
+    // Nudge into fullscreen on first touch while playing
+    if (state.mode === "play") enterFullscreen();
   }, { passive: true });
   fit();
 
-  showOverlay("DIGISTRACTS", "by 8bitcrypto_44\nHard mode: clear before 2:15\nBlast bots · Jump pits · 3 lives\nJump×2 = Super", "PRESS START");
+  const bootSub = wantsTouchUI()
+    ? "by 8bitcrypto_44\nHard mode · clear before 2:15\nRotate landscape · stick + JUMP / FIRE\nJump×2 = Super"
+    : "by 8bitcrypto_44\nHard mode: clear before 2:15\nBlast bots · Jump pits · 3 lives\nJump×2 = Super";
+  showOverlay("DIGISTRACTS", bootSub, "PRESS START");
   updateHUD();
   fit();
   loop();
