@@ -13,6 +13,9 @@
 #digistracts-root .dg-hud{display:flex;gap:14px;flex-wrap:wrap;font-size:13px}
 #digistracts-root .dg-hud b{color:var(--cyan)}
 #digistracts-root .dg-hi b{color:var(--gold)}
+#digistracts-root .dg-combo b{color:#94a3b8;transition:color .15s}
+#digistracts-root .dg-combo.is-hot b{color:var(--cyan);text-shadow:0 0 8px rgba(0,229,255,.55)}
+#digistracts-root .dg-combo.is-max b{color:var(--pink);text-shadow:0 0 10px rgba(255,43,214,.7)}
 #digistracts-root .dg-air{opacity:.9}
 #digistracts-root .dg-audio{display:flex;align-items:center;gap:8px;font-size:12px}
 #digistracts-root .dg-audio input[type=range]{width:90px;accent-color:#00e5ff}

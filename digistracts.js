@@ -33,6 +33,7 @@
     superJumps: ROOT.querySelector("#dg-super"),
     staff: ROOT.querySelector("#dg-gun"),
     hi: ROOT.querySelector("#dg-hi"),
+    combo: ROOT.querySelector("#dg-combo"),
     msg: ROOT.querySelector("#dg-msg"),
     overlay: ROOT.querySelector("#dg-overlay"),
     title: ROOT.querySelector("#dg-title"),
@@ -352,17 +353,64 @@
     if (state.score > state.hiScore) saveHiScore(state.score);
   }
 
-  function noteKill() {
+  function pushScorePop(x, y, text, color) {
+    if (!state.scorePops) state.scorePops = [];
+    state.scorePops.push({
+      x: x, y: y, text: String(text),
+      color: color || "#ffd400",
+      life: 48, vy: -1.2
+    });
+    if (state.scorePops.length > 24) state.scorePops.shift();
+  }
+
+  function noteKill(opts) {
+    opts = opts || {};
     state.combo += 1;
-    state.comboTimer = 130;
+    state.comboTimer = 145;
+    state.kills++;
+    if (state.combo > state.maxCombo) state.maxCombo = state.combo;
+    if (opts.points && opts.x != null) {
+      pushScorePop(opts.x, opts.y, "+" + opts.points, opts.color || "#ffd400");
+    }
     if (state.combo >= 3) {
       const bonus = Math.min(8, state.combo - 2) * 30;
       addScore(bonus);
+      state.bonusScore += bonus;
+      if (opts.x != null) {
+        pushScorePop(opts.x, (opts.y || 0) - 16, "×" + state.combo + " +" + bonus, "#ff2bd6");
+      }
       if (state.combo === 3 || state.combo % 5 === 0) {
         state.banner = "COMBO ×" + state.combo + "!";
         state.messageTimer = 45;
       }
     }
+  }
+
+  function resetRunStats() {
+    state.kills = 0;
+    state.maxCombo = 0;
+    state.bonusScore = 0;
+    state.noHitClears = 0;
+    state.sectorsCleared = 0;
+    state.scorePops = [];
+    state.lastClear = null;
+  }
+
+  function formatRunSummary() {
+    return "Kills " + state.kills + " · Max Combo ×" + state.maxCombo +
+      "\nNo-Hit Clears " + state.noHitClears + " · Bonus " + state.bonusScore +
+      "\nDIFF " + currentDiff().label;
+  }
+
+  function formatClearBreakdown(detail) {
+    if (!detail) return "";
+    const lines = [];
+    if (detail.clear) lines.push("CLEAR +" + detail.clear);
+    if (detail.time) lines.push("TIME +" + detail.time);
+    if (detail.noHit) lines.push("NO-HIT +" + detail.noHit);
+    if (detail.combo) lines.push("COMBO +" + detail.combo);
+    if (detail.arena) lines.push("ARENA +" + detail.arena);
+    return lines.join(" · ");
   }
 
   const DIFFS = {
@@ -462,6 +510,13 @@
     hitThisLevel: false,
     combo: 0,
     comboTimer: 0,
+    kills: 0,
+    maxCombo: 0,
+    bonusScore: 0,
+    noHitClears: 0,
+    sectorsCleared: 0,
+    scorePops: [],
+    lastClear: null,
     pauseMusicWasOn: false,
     hazards: [],
     arena: null,
@@ -1072,7 +1127,12 @@
         e.alive = false;
         const mid = !!e.midBoss;
         addScore(mid ? 3000 : 5000);
-        noteKill();
+        noteKill({
+          points: mid ? 3000 : 5000,
+          x: e.x + e.w / 2,
+          y: e.y + 20,
+          color: mid ? "#e879f9" : "#00e5ff"
+        });
         explode(e.x + e.w / 2, e.y + e.h / 2, mid ? "#e879f9" : "#00e5ff", 50);
         saveHiScore(state.score);
         state.bossMode = false;
@@ -1096,8 +1156,9 @@
     sfxHit();
     if (e.hp <= 0) {
       e.alive = false;
-      addScore(e.scoreValue || (100 + e.kind * 50));
-      noteKill();
+      const pts = e.scoreValue || (100 + e.kind * 50);
+      addScore(pts);
+      noteKill({ points: pts, x: e.x + e.w / 2, y: e.y + e.h / 2 });
       explode(e.x + e.w / 2, e.y + e.h / 2, "#ff2bd6", e.heavy ? 22 : 14);
       sfxKill();
     }
@@ -1230,6 +1291,7 @@
       "YOUR TEAM HAS FAILED",
       "Score: " + state.score + (record ? " ★ NEW HI!" : "") +
         "\nHI: " + state.hiScore +
+        "\n" + formatRunSummary() +
         "\nSector " + (state.level + 1) + " · Continue keeps score",
       "CONTINUE"
     );
@@ -1303,6 +1365,7 @@
     showOverlay(
       "PAUSED",
       "Score " + state.score + " · HI " + state.hiScore +
+        "\nCombo ×" + state.combo + " · Max ×" + state.maxCombo +
         "\nP / ESC resume · R retry sector",
       "RESUME",
       { keepPlaying: true }
@@ -1366,6 +1429,7 @@
       "MISSION COMPLETE",
       "Warehouse core secure!\nFinal Score: " + state.score +
         (record ? "\n★ NEW HIGH SCORE!" : "\nHI: " + state.hiScore) +
+        "\n" + formatRunSummary() +
         "\nby 8bitcrypto_44",
       "PLAY AGAIN"
     );
@@ -1431,6 +1495,7 @@
     state.combo = 0;
     state.comboTimer = 0;
     state.checkpointX = 80;
+    resetRunStats();
     hideOverlay();
     state.mode = "play";
     buildLevel(state.level);
@@ -1460,23 +1525,31 @@
 
   function onLevelComplete() {
     const leftover = state.qrs.filter(function (q) { return !q.taken; }).length;
-    let clearBonus = Math.max(0, 500 - leftover * 20) + Math.ceil(state.levelTime / 1000) * 10;
-    if (!state.hitThisLevel) clearBonus += 1000;
-    if (state.combo >= 5) clearBonus += state.combo * 40;
+    const clearPts = Math.max(0, 500 - leftover * 20);
+    const timePts = Math.ceil(state.levelTime / 1000) * 10;
+    const noHitPts = !state.hitThisLevel ? 1000 : 0;
+    const comboPts = state.combo >= 5 ? state.combo * 40 : 0;
+    const clearBonus = clearPts + timePts + noHitPts + comboPts;
     addScore(clearBonus);
+    state.bonusScore += clearBonus;
+    state.sectorsCleared++;
+    if (noHitPts) state.noHitClears++;
+    state.lastClear = {
+      clear: clearPts, time: timePts, noHit: noHitPts, combo: comboPts
+    };
     saveHiScore(state.score);
-    const extras = [];
-    if (!state.hitThisLevel) extras.push("NO-HIT +1000");
-    if (state.combo >= 5) extras.push("COMBO BONUS");
+    const breakdown = formatClearBreakdown(state.lastClear);
     if (state.level >= LEVELS.length - 1) {
       startCredits();
     } else {
       state.mode = "clear";
       showOverlay(
         "SECTOR CLEAR",
-        LEVELS[state.level].name + " complete!\nScore: " + state.score +
-          (extras.length ? "\n" + extras.join(" · ") : "") +
-          "\nHI: " + state.hiScore,
+        LEVELS[state.level].name + " complete!" +
+          (breakdown ? "\n" + breakdown : "") +
+          "\nScore " + String(state.score).padStart(6, "0") +
+          " · HI " + String(state.hiScore).padStart(6, "0") +
+          "\nMax Combo ×" + state.maxCombo + " · Kills " + state.kills,
         "NEXT LEVEL"
       );
     }
@@ -1641,6 +1714,15 @@
     hud.level.textContent = "LV " + (state.level + 1);
     hud.time.textContent = Math.max(0, Math.ceil(state.levelTime / 1000));
     if (hud.hi) hud.hi.textContent = String(state.hiScore).padStart(6, "0");
+    if (hud.combo) {
+      const c = state.combo;
+      hud.combo.textContent = "×" + c;
+      const wrap = hud.combo.parentElement;
+      if (wrap) {
+        wrap.classList.toggle("is-hot", c >= 3);
+        wrap.classList.toggle("is-max", c >= 10);
+      }
+    }
     hud.superJumps.textContent = state.player ? Math.max(0, 2 - state.player.airSupers) : 2;
     let gun = "PISTOL";
     if (state.player) {
@@ -1654,7 +1736,7 @@
       hud.msg.style.opacity = "1";
     } else if (state.combo >= 3 && state.mode === "play") {
       hud.msg.textContent = "COMBO ×" + state.combo;
-      hud.msg.style.opacity = "0.85";
+      hud.msg.style.opacity = "0.9";
     } else {
       hud.msg.style.opacity = "0";
     }
@@ -1877,10 +1959,15 @@
     if (a.spawnLeft <= 0 && foes <= 0) {
       a.active = false;
       a.cleared = true;
-      addScore(750 + state.level * 150);
+      const arenaPts = 750 + state.level * 150;
+      addScore(arenaPts);
+      state.bonusScore += arenaPts;
       state.checkpointX = Math.max(state.checkpointX, a.x + 200);
       state.banner = "ARENA CLEAR · GATE OPEN!";
       state.messageTimer = 100;
+      if (state.player) {
+        pushScorePop(state.player.x + state.player.w / 2, state.player.y, "ARENA +" + arenaPts, "#39ff14");
+      }
       sfxArenaClear();
     }
   }
@@ -2045,7 +2132,19 @@
     }
     if (state.comboTimer > 0) {
       state.comboTimer--;
-      if (state.comboTimer <= 0) state.combo = 0;
+      if (state.comboTimer <= 0) {
+        if (state.combo >= 3) {
+          state.banner = "COMBO BREAK ×" + state.combo;
+          state.messageTimer = 35;
+        }
+        state.combo = 0;
+      }
+    }
+    for (let i = state.scorePops.length - 1; i >= 0; i--) {
+      const sp = state.scorePops[i];
+      sp.y += sp.vy;
+      sp.life--;
+      if (sp.life <= 0) state.scorePops.splice(i, 1);
     }
     const campingHigh = p.onGround && p.y + p.h < GROUND - 2;
     p.platformCamp = campingHigh ? p.platformCamp + 1 : 0;
@@ -2880,6 +2979,8 @@
     ctx.fillStyle = "rgba(0,0,0,0.12)";
     for (let y = 0; y < H; y += 4) ctx.fillRect(0, y, W, 1);
 
+    drawScoreAttackUI();
+
     if (state.talkQ && state.talkI < state.talkQ.length) {
       const line = state.talkQ[state.talkI];
       const you = line.who === "YOU";
@@ -2894,6 +2995,45 @@
       ctx.fillStyle = "#e2e8f0";
       ctx.font = "13px monospace";
       ctx.fillText(line.line, bx + 10, 98);
+    }
+  }
+
+  function drawScoreAttackUI() {
+    // Floating score pops
+    for (let i = 0; i < state.scorePops.length; i++) {
+      const sp = state.scorePops[i];
+      const sx = sp.x - state.camX;
+      if (sx < -40 || sx > W + 40) continue;
+      ctx.globalAlpha = Math.max(0, Math.min(1, sp.life / 24));
+      ctx.fillStyle = "#000";
+      ctx.font = "bold 13px monospace";
+      ctx.fillText(sp.text, sx + 1, sp.y + 1);
+      ctx.fillStyle = sp.color;
+      ctx.fillText(sp.text, sx, sp.y);
+    }
+    ctx.globalAlpha = 1;
+
+    // Always-on combo meter (bottom-left)
+    const c = state.combo;
+    const t = Math.max(0, Math.min(1, state.comboTimer / 145));
+    const mx = 14, my = H - 28, mw = 140, mh = 8;
+    ctx.fillStyle = "rgba(2,6,23,0.72)";
+    ctx.fillRect(mx - 6, my - 16, mw + 12, 30);
+    ctx.fillStyle = c >= 10 ? "#ff2bd6" : c >= 5 ? "#ffd400" : c >= 3 ? "#00e5ff" : "#64748b";
+    ctx.font = "bold 11px monospace";
+    ctx.fillText(c > 0 ? ("COMBO ×" + c) : "COMBO", mx, my - 4);
+    if (state.maxCombo > 0) {
+      ctx.fillStyle = "#94a3b8";
+      ctx.font = "10px monospace";
+      ctx.fillText("MAX ×" + state.maxCombo, mx + 78, my - 4);
+    }
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(mx, my, mw, mh);
+    ctx.fillStyle = c >= 10 ? "#ff2bd6" : c >= 5 ? "#ffd400" : "#00e5ff";
+    ctx.fillRect(mx, my, mw * (c > 0 ? Math.max(0.06, t) : 0), mh);
+    if (c >= 3) {
+      ctx.strokeStyle = c >= 10 ? "#ff2bd6" : "#ffd400";
+      ctx.strokeRect(mx - 0.5, my - 0.5, mw + 1, mh + 1);
     }
   }
 

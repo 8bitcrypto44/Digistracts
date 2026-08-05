@@ -84,6 +84,7 @@ markup = (
       <div>SCORE <b id="dg-score">000000</b></div>
       <div>LIVES <b id="dg-lives">♥♥♥</b></div>
       <div>WEAPON <b id="dg-gun">PISTOL</b></div>
+      <div class="dg-combo">COMBO <b id="dg-combo">×0</b></div>
       <div>TIME <b id="dg-time">120</b></div>
       <div><b id="dg-level">LV 1</b></div>
       <div class="dg-hi">HI <b id="dg-hi">000000</b></div>
@@ -137,7 +138,7 @@ markup = (
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "15"
+ASSET_V = "16"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]
