@@ -121,7 +121,7 @@ markup = (
     <span><kbd>&larr;&rarr;</kbd>/<kbd>AD</kbd> Move</span>
     <span><kbd>&uarr;&darr;</kbd> Aim</span>
     <span><kbd>SPACE</kbd> Jump · ×2 Super</span>
-    <span><kbd>Z</kbd>/<kbd>X</kbd> Fire</span>
+    <span><kbd>Z</kbd>/<kbd>X</kbd> Fire · hold charge</span>
     <span><kbd>P</kbd>/<kbd>ESC</kbd> Pause</span>
     <span><kbd>R</kbd> Retry sector</span>
   </div>
@@ -138,7 +138,7 @@ markup = (
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "17"
+ASSET_V = "18"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]

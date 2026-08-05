@@ -176,7 +176,7 @@
     slideBeep(880, 220, 0.07, "square", 0.05);
   }
   function sfxBeam(kind) {
-    const hi = kind === "MAXI" ? 1600 : kind === "SPREAD" ? 1300 : 1100;
+    const hi = kind === "MAXI" ? 1600 : kind === "SPREAD" ? 1300 : kind === "HOMING" ? 1500 : 1100;
     noiseBurst(0.05, 0.05, 0, hi);
     beep(hi, 0.07, "sawtooth", 0.055);
     beep(hi * 0.5, 0.05, "square", 0.03, 0.02);
@@ -539,8 +539,71 @@
       vx: 0, vy: 0, facing: 1, onGround: false,
       shootCD: 0, run: 0, crouch: false, platformCamp: 0,
       airSupers: 0, weapon: 0, beamFuel: 0, beamTick: 0, beaming: false, beamAim: 0, fireHeld: false,
-      safeX: 80, speedT: 0, goldT: 0
+      safeX: 80, speedT: 0, goldT: 0, charge: 0
     };
+  }
+
+  const WEAPON_DEFS = {
+    RIFLE: { kind: "beam", rows: 1, cd: 8, color: "#00e5ff", ammo: 220, dmg: 2, label: "RIFLE" },
+    SPREAD: { kind: "beam", rows: 4, cd: 10, color: "#ffd400", ammo: 160, dmg: 2, label: "SPREAD" },
+    MAXI: { kind: "beam", rows: 8, cd: 12, color: "#ff2bd6", ammo: 120, dmg: 3, label: "MAXI" },
+    HOMING: { kind: "proj", color: "#a78bfa", ammo: 48, cd: 13, dmg: 2, label: "HOMING" },
+    RICOCHET: { kind: "proj", color: "#34d399", ammo: 42, cd: 11, dmg: 2, label: "RICO" }
+  };
+
+  function weaponDef(type) {
+    return WEAPON_DEFS[type] || null;
+  }
+
+  function weaponColor(type) {
+    const d = weaponDef(type);
+    return d ? d.color : "#cbd5e1";
+  }
+
+  function grantWeapon(type, ammoScale) {
+    const p = state.player;
+    const d = weaponDef(type);
+    if (!p || !d) return;
+    p.weapon = type;
+    p.beamFuel = Math.max(p.weapon === type ? p.beamFuel : 0, Math.floor(d.ammo * (ammoScale || 1)));
+    p.beamTick = 0;
+    p.charge = 0;
+  }
+
+  function clearWeapon() {
+    const p = state.player;
+    if (!p) return;
+    p.weapon = 0;
+    p.beamFuel = 0;
+    p.beaming = false;
+    p.charge = 0;
+  }
+
+  function muzzleSparks(tip, color) {
+    for (let i = 0; i < 6; i++) {
+      state.particles.push({
+        x: tip.x, y: tip.y,
+        vx: (Math.random() - 0.5) * 4 + (state.player ? state.player.facing * 2 : 0),
+        vy: (Math.random() - 0.5) * 4,
+        life: 8 + Math.random() * 10,
+        color: color || "#fff6c2"
+      });
+    }
+  }
+
+  function nearestEnemy(ox, oy, facing) {
+    let best = null, bestD = 1e9;
+    const list = state.enemies.slice();
+    if (state.bossMode && state.boss && state.boss.alive) list.push(state.boss);
+    for (let i = 0; i < list.length; i++) {
+      const e = list[i];
+      if (e.alive === false) continue;
+      const ex = e.x + e.w / 2, ey = e.y + e.h / 2;
+      if (facing && (ex - ox) * facing < -40) continue;
+      const d = Math.hypot(ex - ox, ey - oy);
+      if (d < bestD && d < 560) { bestD = d; best = e; }
+    }
+    return best;
   }
 
   function addPlatform(x, y, w, extra) {
@@ -627,11 +690,12 @@
         w: 24, h: 24, bob: 4.2, taken: false, power: "life"
       });
     }
-    ["RIFLE", "SPREAD", "MAXI"].forEach(function (type, i) {
+    ["RIFLE", "SPREAD", "MAXI", "HOMING", "RICOCHET"].forEach(function (type, i) {
       if (!staffPlats.length) return;
       const plat = staffPlats[i % staffPlats.length];
+      const spread = Math.floor(i / staffPlats.length);
       state.staffs.push({
-        x: plat.x + plat.w / 2 - 7, y: plat.y - 28,
+        x: plat.x + plat.w / 2 - 7 + spread * 18, y: plat.y - 28 - (i % 3) * 4,
         w: 14, h: 20, type: type, bob: i, taken: false
       });
     });
@@ -851,7 +915,7 @@
     return elevated;
   }
 
-  function buildLevel(idx, skipTalk) {
+  function buildLevel(idx, skipTalk, keepGun) {
     const L = LEVELS[idx];
     state.level = idx;
     GROUND = L.ground;
@@ -873,7 +937,13 @@
     state.spawnTimer = 220;
     state.grace = skipTalk ? 120 : 0;
     state.invuln = 135;
+    const prevGun = keepGun && state.player && state.player.weapon && state.player.beamFuel > 0
+      ? { weapon: state.player.weapon, ammo: state.player.beamFuel } : null;
     state.player = makePlayer();
+    if (prevGun) {
+      state.player.weapon = prevGun.weapon;
+      state.player.beamFuel = prevGun.ammo;
+    }
     state.messageTimer = 100;
     const tips = {
       docks: "DOCK CRANES · RIDE THE MOVERS",
@@ -1062,11 +1132,16 @@
 
   function shootGun(aim) {
     const p = state.player;
-    if (!p || p.shootCD > 0) return;
+    if (!p || p.shootCD > 0) return false;
     const tip = gunPose(p, aim);
-    const rows = p.weapon === "MAXI" ? 8 : p.weapon === "SPREAD" ? 4 : p.weapon === "RIFLE" ? 1 : 0;
-    if (rows) {
-      p.shootCD = rows === 8 ? 12 : rows === 4 ? 10 : 8;
+    const def = weaponDef(p.weapon);
+
+    // Beam weapons (RIFLE / SPREAD / MAXI)
+    if (def && def.kind === "beam") {
+      if (p.beamFuel <= 0) return false;
+      const rows = def.rows;
+      p.shootCD = def.cd;
+      p.beamFuel--;
       const vertical = aim !== 0;
       const ox = tip.x, oy = tip.y;
       const targets = state.bossMode && state.boss ? state.enemies.concat([state.boss]) : state.enemies;
@@ -1087,20 +1162,82 @@
             if (rayY >= e.y - 3 && rayY <= e.y + e.h + 3) hit = true;
           }
         }
-        if (e.alive && visible && ahead && hit) damageEnemy(e, rows === 8 ? 3 : 2, p.facing);
+        if (e.alive && visible && ahead && hit) damageEnemy(e, def.dmg, p.facing);
       }
+      muzzleSparks(tip, def.color);
       sfxBeam(p.weapon);
-      return;
+      return true;
     }
+
+    // Homing bolts
+    if (def && p.weapon === "HOMING") {
+      if (p.beamFuel <= 0) return false;
+      p.shootCD = def.cd;
+      p.beamFuel--;
+      const spd = 7.2;
+      let vx = p.facing * spd, vy = aim ? aim * spd * 0.85 : 0;
+      state.bullets.push({
+        x: tip.x - 4, y: tip.y - 4, w: 10, h: 10,
+        vx: vx, vy: vy, life: 110, from: "player",
+        homing: true, dmg: def.dmg, color: def.color
+      });
+      muzzleSparks(tip, def.color);
+      slideBeep(900, 1400, 0.08, "square", 0.05);
+      return true;
+    }
+
+    // Ricochet bolts
+    if (def && p.weapon === "RICOCHET") {
+      if (p.beamFuel <= 0) return false;
+      p.shootCD = def.cd;
+      p.beamFuel--;
+      if (aim) {
+        state.bullets.push({
+          x: tip.x - 4, y: tip.y - 4, w: 8, h: 8,
+          vx: p.facing * 3.2, vy: aim * 9.5, life: 140, from: "player",
+          rico: true, bounces: 5, dmg: def.dmg, color: def.color
+        });
+      } else {
+        state.bullets.push({
+          x: tip.x - (p.facing < 0 ? 8 : 0), y: tip.y - 3, w: 10, h: 6,
+          vx: p.facing * 10, vy: -2.2, life: 140, from: "player",
+          rico: true, bounces: 5, dmg: def.dmg, color: def.color
+        });
+      }
+      muzzleSparks(tip, def.color);
+      beep(520, 0.05, "triangle", 0.06);
+      beep(780, 0.04, "square", 0.04, 0.03);
+      return true;
+    }
+
+    // Charged pistol blast
+    if (!def && p.charge >= 28) {
+      p.shootCD = 16;
+      const power = Math.min(3, 1 + Math.floor(p.charge / 20));
+      state.bullets.push({
+        x: tip.x - 6, y: tip.y - 6, w: 14, h: 12,
+        vx: (aim ? 0 : p.facing * 13), vy: aim ? aim * 12 : 0,
+        life: 70, from: "player", charged: true, dmg: power, color: "#fff27a"
+      });
+      muzzleSparks(tip, "#ffd400");
+      explode(tip.x, tip.y, "#ffd400", 10);
+      slideBeep(200, 900, 0.12, "sawtooth", 0.08);
+      p.charge = 0;
+      return true;
+    }
+
+    // Default pistol burst
     p.shootCD = 10;
     for (let i = -1; i <= 1; i++) {
       if (aim) {
-        state.bullets.push({ x: tip.x - 4 + i * 6, y: tip.y - 4, w: 6, h: 10, vx: i * 1.1, vy: aim * 11, life: 55, from: "player", slug: true });
+        state.bullets.push({ x: tip.x - 4 + i * 6, y: tip.y - 4, w: 6, h: 10, vx: i * 1.1, vy: aim * 11, life: 55, from: "player", slug: true, dmg: 1 });
       } else {
-        state.bullets.push({ x: tip.x - (p.facing < 0 ? 10 : 0), y: tip.y - 2 + i * 5, w: 10, h: 4, vx: p.facing * 11, vy: i * 0.9, life: 80, from: "player", slug: true });
+        state.bullets.push({ x: tip.x - (p.facing < 0 ? 10 : 0), y: tip.y - 2 + i * 5, w: 10, h: 4, vx: p.facing * 11, vy: i * 0.9, life: 80, from: "player", slug: true, dmg: 1 });
       }
     }
+    muzzleSparks(tip, "#cbd5e1");
     sfxShoot();
+    return true;
   }
 
   function explode(x, y, color, n) {
@@ -1193,7 +1330,7 @@
     state.playerHP = mid ? 2 : 3;
     state.grace = 0;
     p.x = 55; p.y = GROUND - p.h; p.vx = 0; p.vy = 0; p.safeX = 55;
-    p.weapon = 0; p.beamFuel = 0; p.speedT = 0; p.goldT = 0;
+    p.weapon = 0; p.beamFuel = 0; p.speedT = 0; p.goldT = 0; p.charge = 0;
     const hp = mid ? Math.floor(58 * (state.diff === "easy" ? 0.85 : state.diff === "hard" ? 1.2 : 1))
       : Math.floor(120 * (state.diff === "easy" ? 0.85 : state.diff === "hard" ? 1.15 : 1));
     state.boss = {
@@ -1252,6 +1389,7 @@
     state.comboTimer = 0;
     p.weapon = 0;
     p.beamFuel = 0;
+    p.charge = 0;
     if (state.bossMode && state.playerHP > 1) {
       state.playerHP--;
       state.invuln = 100;
@@ -1319,7 +1457,7 @@
     state.score = sc;
     state.nextLifeAt = nextLife;
     state.failAt = 0;
-    buildLevel(lvl, true);
+    buildLevel(lvl, true, true);
     if (state.player) {
       state.player.x = Math.max(80, ck);
       state.player.safeX = state.player.x;
@@ -1346,7 +1484,7 @@
     const sc = state.score;
     const lives = Math.max(1, state.lives);
     const nextLife = state.nextLifeAt;
-    buildLevel(state.level, true);
+    buildLevel(state.level, true, true);
     state.score = sc;
     state.lives = lives;
     state.nextLifeAt = nextLife;
@@ -1406,7 +1544,7 @@
     const ck = state.checkpointX || 80;
     const sc = state.score;
     const nextLife = state.nextLifeAt;
-    buildLevel(state.level, true);
+    buildLevel(state.level, true, true);
     state.score = sc;
     state.nextLifeAt = nextLife;
     if (state.player) {
@@ -1525,7 +1663,7 @@
     state.level += 1;
     hideOverlay();
     state.mode = "play";
-    buildLevel(state.level);
+    buildLevel(state.level, false, true);
     if (!musicOn) startTechno();
     updateHUD();
   }
@@ -1708,10 +1846,8 @@
         state.playerHP = 4;
         state.banner = "ENERGY SHIELD: 4 HITS!";
       } else {
-        p.weapon = "MAXI";
-        p.beamFuel = 12000;
-        p.beamTick = 0;
-        state.banner = "MAXI GUN: 12 SECONDS!";
+        grantWeapon("MAXI", 1.25);
+        state.banner = "MAXI GUN ARMED!";
       }
       state.messageTimer = 80;
       sfxPickup(q.type === "health" ? "life" : "weapon");
@@ -1923,7 +2059,12 @@
     if (state.player) {
       if (state.player.goldT > 0) gun = "GOLD " + Math.ceil(state.player.goldT / 60) + "s";
       else if (state.player.speedT > 0) gun = "SPD " + Math.ceil(state.player.speedT / 60) + "s";
-      else if (state.player.weapon) gun = state.player.weapon + " " + Math.ceil(state.player.beamFuel / 1000) + "s";
+      else if (state.player.weapon) {
+        const d = weaponDef(state.player.weapon);
+        gun = (d ? d.label : state.player.weapon) + " ×" + state.player.beamFuel;
+      } else if (state.player.charge >= 10) {
+        gun = state.player.charge >= 28 ? "CHARGE!" : "CHG " + Math.floor(state.player.charge / 28 * 100) + "%";
+      }
     }
     hud.staff.textContent = gun;
     if (state.messageTimer > 0) {
@@ -2368,24 +2509,46 @@
 
     const firing = inputShoot();
     const firePressed = firing && !p.fireHeld;
+    const fireReleased = !firing && p.fireHeld;
     p.fireHeld = firing;
     p.beamAim = p.aimUp ? -1 : p.crouch ? 1 : 0;
-    p.beaming = !state.talkQ && !!p.weapon && firing && p.beamFuel > 0;
-    if (p.beaming) {
-      const now = performance.now();
-      p.beamFuel -= p.beamTick ? Math.min(50, now - p.beamTick) : 0;
-      p.beamTick = now;
-      shootGun(p.beamAim);
-      if (p.beamFuel <= 0) {
-        p.weapon = 0;
-        p.beaming = false;
-        state.banner = "SPECIAL GUN EMPTY!";
-        state.messageTimer = 55;
+    const def = weaponDef(p.weapon);
+
+    if (!state.talkQ && def && def.kind === "beam") {
+      p.beaming = firing && p.beamFuel > 0;
+      if (p.beaming) {
+        shootGun(p.beamAim);
+        if (p.beamFuel <= 0) {
+          clearWeapon();
+          state.banner = "SPECIAL GUN EMPTY!";
+          state.messageTimer = 55;
+        }
       }
-    } else if (!state.talkQ && !p.weapon && firePressed) {
-      p.beamTick = 0;
-      shootGun(p.beamAim);
+    } else if (!state.talkQ && def && def.kind === "proj") {
+      p.beaming = false;
+      if (firing && p.beamFuel > 0) {
+        shootGun(p.beamAim);
+        if (p.beamFuel <= 0) {
+          clearWeapon();
+          state.banner = "SPECIAL GUN EMPTY!";
+          state.messageTimer = 55;
+        }
+      }
+    } else if (!state.talkQ && !p.weapon) {
+      p.beaming = false;
+      if (firePressed) {
+        p.charge = 1;
+        shootGun(p.beamAim);
+      } else if (firing) {
+        p.charge = Math.min(45, (p.charge || 0) + 1);
+      } else if (fireReleased && p.charge >= 28) {
+        shootGun(p.beamAim);
+        p.charge = 0;
+      } else if (!firing) {
+        p.charge = 0;
+      }
     } else {
+      p.beaming = false;
       p.beamTick = 0;
     }
     if (state.talkQ && (firePressed || inputJump())) state.talkT = 89;
@@ -2414,6 +2577,24 @@
 
     for (let i = 0; i < state.bullets.length; i++) {
       const b = state.bullets[i];
+      if (b.from === "player" && b.homing) {
+        const tgt = nearestEnemy(b.x + b.w / 2, b.y + b.h / 2, Math.sign(b.vx) || 1);
+        if (tgt) {
+          const tx = tgt.x + tgt.w / 2 - (b.x + b.w / 2);
+          const ty = tgt.y + tgt.h / 2 - (b.y + b.h / 2);
+          const len = Math.hypot(tx, ty) || 1;
+          const spd = 7.4;
+          b.vx += (tx / len * spd - b.vx) * 0.18;
+          b.vy += (ty / len * spd - b.vy) * 0.18;
+        }
+      }
+      if (b.from === "player" && b.rico && b.bounces > 0) {
+        if (b.y < 12) { b.y = 12; b.vy = Math.abs(b.vy); b.bounces--; beep(660, 0.03, "triangle", 0.03); }
+        if (b.y + b.h > GROUND) { b.y = GROUND - b.h; b.vy = -Math.abs(b.vy); b.bounces--; beep(660, 0.03, "triangle", 0.03); }
+        if (b.x < state.camX + 4) { b.x = state.camX + 4; b.vx = Math.abs(b.vx); b.bounces--; }
+        if (b.x > state.camX + W - 12) { b.x = state.camX + W - 12; b.vx = -Math.abs(b.vx); b.bounces--; }
+        if (b.bounces <= 0) b.life = Math.min(b.life, 8);
+      }
       b.x += b.vx; b.y += b.vy; b.life--;
     }
     state.bullets = state.bullets.filter(function (b) {
@@ -2549,13 +2730,26 @@
           const e = state.enemies[j];
           if (!e.alive) continue;
           if (rectsOverlap({ x: b.x - 4, y: b.y - 4, w: b.w + 8, h: b.h + 8 }, e)) {
-            b.life = 0;
-            damageEnemy(e, 1, Math.sign(b.vx));
+            damageEnemy(e, b.dmg || 1, Math.sign(b.vx) || state.player.facing);
+            explode(b.x + b.w / 2, b.y + b.h / 2, b.color || "#ffd400", b.charged ? 12 : 5);
+            if (b.rico && b.bounces > 0) {
+              b.vx *= -1;
+              b.vy = -Math.abs(b.vy) - 1;
+              b.bounces--;
+              b.x += b.vx * 2;
+            } else {
+              b.life = 0;
+            }
           }
         }
         if (state.bossMode && state.boss && state.boss.alive && rectsOverlap({ x: b.x - 4, y: b.y - 4, w: b.w + 8, h: b.h + 8 }, state.boss)) {
-          b.life = 0;
-          damageEnemy(state.boss, 1, Math.sign(b.vx));
+          damageEnemy(state.boss, b.dmg || 1, Math.sign(b.vx) || state.player.facing);
+          explode(b.x + b.w / 2, b.y + b.h / 2, b.color || "#39ff14", 6);
+          if (b.rico && b.bounces > 0) {
+            b.vx *= -1; b.vy *= -1; b.bounces--;
+          } else {
+            b.life = 0;
+          }
         }
       } else if (b.from === "enemy" && rectsOverlap(b, p)) {
         b.life = 0;
@@ -2603,11 +2797,9 @@
       const hit = { x: s.x, y: s.y + Math.sin(s.bob) * 3, w: s.w, h: s.h };
       if (rectsOverlap(p, hit)) {
         s.taken = true;
-        p.weapon = s.type;
-        p.beamFuel = 5000;
-        p.beamTick = 0;
+        grantWeapon(s.type);
         addScore(100);
-        state.banner = s.type + " READY!";
+        state.banner = s.type + " ARMED · UNTIL DEATH!";
         state.messageTimer = 55;
         sfxPickup("weapon");
       }
@@ -2950,6 +3142,37 @@
   }
 
   function drawBullet(b, bx) {
+    if (b.homing) {
+      const ang = Math.atan2(b.vy, b.vx || 1);
+      ctx.save();
+      ctx.translate(bx + b.w / 2, b.y + b.h / 2);
+      ctx.rotate(ang);
+      ctx.fillStyle = b.color || "#a78bfa";
+      ctx.fillRect(-6, -3, 12, 6);
+      ctx.fillStyle = "#f5f3ff";
+      ctx.fillRect(2, -2, 6, 4);
+      ctx.fillStyle = "#c4b5fd";
+      ctx.fillRect(-8, -1, 4, 2);
+      ctx.restore();
+      return;
+    }
+    if (b.rico) {
+      const g = Math.floor(performance.now() / 60) % 2;
+      ctx.fillStyle = b.color || "#34d399";
+      ctx.fillRect(bx, b.y, b.w, b.h);
+      ctx.fillStyle = g ? "#ecfdf5" : "#6ee7b7";
+      ctx.fillRect(bx + 2, b.y + 1, b.w - 4, b.h - 2);
+      return;
+    }
+    if (b.charged) {
+      ctx.fillStyle = "#ffd400";
+      ctx.fillRect(bx - 2, b.y - 2, b.w + 4, b.h + 4);
+      ctx.fillStyle = "#fff27a";
+      ctx.fillRect(bx, b.y, b.w, b.h);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(bx + 3, b.y + 2, 4, 4);
+      return;
+    }
     const ang = Math.atan2(b.vy, b.vx || 1);
     ctx.save();
     ctx.translate(bx + b.w / 2, b.y + b.h / 2);
@@ -2987,8 +3210,9 @@
 
   function drawPlayerGun(p) {
     const s = gunPose(p, p.beamAim);
-    const glow = p.weapon === "MAXI" ? "#ff2bd6" : p.weapon === "SPREAD" ? "#ffd400" : p.weapon === "RIFLE" ? "#00e5ff" : "#cbd5e1";
+    const glow = weaponColor(p.weapon);
     const heat = p.beaming ? 1 : Math.min(1, p.shootCD / 8);
+    const charge = !p.weapon ? Math.min(1, (p.charge || 0) / 28) : 0;
     const t = performance.now() / 110;
     ctx.save();
     ctx.translate(s.grip.x - state.camX, s.grip.y);
@@ -3002,15 +3226,22 @@
       ctx.fillStyle = GUN[i] === 10 ? glow : GUNP[GUN[i]];
       ctx.fillRect(GUN[i + 1], GUN[i + 2], GUN[i + 3], GUN[i + 4]);
     }
+    // charge glow on pistol
+    if (charge > 0.2) {
+      ctx.globalAlpha = 0.25 + charge * 0.55;
+      ctx.fillStyle = charge >= 1 ? "#ffd400" : "#00e5ff";
+      ctx.fillRect(-2, -8, 34, 16);
+      ctx.globalAlpha = 1;
+    }
     // muzzle flash
-    ctx.globalAlpha = 0.45 + Math.sin(t) * 0.15 + heat * 0.35;
-    ctx.fillStyle = glow;
-    ctx.fillRect(28, -3, 6 + heat * 8, 6);
-    if (heat > 0.35) {
+    ctx.globalAlpha = 0.45 + Math.sin(t) * 0.15 + heat * 0.35 + charge * 0.4;
+    ctx.fillStyle = charge >= 1 ? "#ffd400" : glow;
+    ctx.fillRect(28, -3, 6 + heat * 8 + charge * 10, 6);
+    if (heat > 0.35 || charge > 0.5) {
       ctx.fillStyle = "#fff6c2";
-      ctx.fillRect(32, -5, 8, 10);
+      ctx.fillRect(32, -5, 8 + charge * 6, 10);
       ctx.fillStyle = glow;
-      ctx.fillRect(36, -7, 5, 14);
+      ctx.fillRect(36, -7, 5 + charge * 4, 14);
     }
     ctx.globalAlpha = 1;
     ctx.restore();
@@ -3039,7 +3270,8 @@
   }
 
   function drawPickupGun(sx, sy, type) {
-    const color = type === "MAXI" ? "#ff2bd6" : type === "SPREAD" ? "#ffd400" : "#00e5ff";
+    const color = weaponColor(type);
+    const tag = type === "RICOCHET" ? "RIC" : type.slice(0, 3);
     ctx.globalAlpha = 0.28; ctx.fillStyle = color; ctx.fillRect(sx - 4, sy + 24, 30, 4); ctx.globalAlpha = 1;
     ctx.fillStyle = "#334155"; ctx.fillRect(sx - 3, sy + 7, 6, 5); ctx.fillRect(sx - 4, sy + 10, 4, 5);
     ctx.fillStyle = "#0f172a"; ctx.fillRect(sx + 2, sy + 6, 14, 8);
@@ -3050,6 +3282,13 @@
       ctx.fillStyle = color; ctx.fillRect(sx + 26, sy + 5, 3, 9);
     } else if (type === "MAXI") {
       ctx.fillRect(sx + 14, sy + 4, 14, 9); ctx.fillStyle = color; ctx.fillRect(sx + 26, sy + 5, 4, 7);
+    } else if (type === "HOMING") {
+      ctx.fillRect(sx + 14, sy + 6, 12, 5);
+      ctx.fillStyle = color; ctx.beginPath();
+      ctx.moveTo(sx + 26, sy + 4); ctx.lineTo(sx + 34, sy + 8); ctx.lineTo(sx + 26, sy + 13); ctx.fill();
+    } else if (type === "RICOCHET") {
+      ctx.fillRect(sx + 14, sy + 5, 10, 7);
+      ctx.fillStyle = color; ctx.fillRect(sx + 24, sy + 3, 4, 4); ctx.fillRect(sx + 28, sy + 10, 4, 4);
     } else {
       ctx.fillRect(sx + 15, sy + 7, 13, 4);
       ctx.fillStyle = "#475569"; ctx.fillRect(sx + 6, sy + 3, 7, 3);
@@ -3060,7 +3299,7 @@
     ctx.fillStyle = "#334155"; ctx.fillRect(sx + 11, sy + 13, 4, 8);
     ctx.fillStyle = "#020617"; ctx.fillRect(sx, sy - 9, 20, 9);
     ctx.strokeStyle = color; ctx.strokeRect(sx, sy - 9, 20, 9);
-    ctx.fillStyle = color; ctx.font = "bold 7px monospace"; ctx.fillText(type.slice(0, 3), sx + 2, sy - 2);
+    ctx.fillStyle = color; ctx.font = "bold 7px monospace"; ctx.fillText(tag, sx + 2, sy - 2);
   }
 
   function drawBossHealth(x, y) {
@@ -3137,10 +3376,10 @@
     }
 
     const p = state.player;
-    if (p && p.beaming && p.weapon) {
-      const rows = p.weapon === "MAXI" ? 8 : p.weapon === "SPREAD" ? 4 : 1;
+    if (p && p.beaming && p.weapon && weaponDef(p.weapon) && weaponDef(p.weapon).kind === "beam") {
+      const rows = weaponDef(p.weapon).rows;
       const tip = gunPose(p, p.beamAim), muzzle = tip.x - state.camX, muzzleY = tip.y;
-      const col = p.weapon === "MAXI" ? "#ff2bd6" : p.weapon === "SPREAD" ? "#ffd400" : "#00e5ff";
+      const col = weaponColor(p.weapon);
       for (let i = 0; i < rows; i++) {
         const angle = (i - (rows - 1) / 2) * 0.085;
         ctx.save();
