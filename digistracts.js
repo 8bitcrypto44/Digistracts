@@ -60,11 +60,266 @@
   const touch = { left: false, right: false, up: false, down: false, jump: false, shoot: false, jx: 0, jy: 0 };
 
   const MUSIC_URL = "https://opengameart.org/sites/default/files/technocade_0.mp3";
-  const musicTrack = new Audio(MUSIC_URL);
+  const musicTrack = new Audio();
+  musicTrack.crossOrigin = "anonymous";
   musicTrack.loop = true;
   musicTrack.preload = "auto";
-  let audioCtx = null, masterGain = null, muted = false, volume = 0.35, musicOn = false;
+  musicTrack.src = MUSIC_URL;
+  let audioCtx = null, masterGain = null, sfxGain = null, musicGain = null;
+  let muted = false, volume = 0.35, musicOn = false, musicFallback = false;
+  let musicTimer = null, musicStep = 0, noiseBuf = null;
   let lastSpaceTap = 0;
+
+  function ensureAudio() {
+    if (audioCtx) {
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      return;
+    }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    audioCtx = new AC();
+    masterGain = audioCtx.createGain();
+    sfxGain = audioCtx.createGain();
+    musicGain = audioCtx.createGain();
+    masterGain.gain.value = muted ? 0 : volume;
+    sfxGain.gain.value = 1;
+    musicGain.gain.value = 0.55;
+    sfxGain.connect(masterGain);
+    musicGain.connect(masterGain);
+    masterGain.connect(audioCtx.destination);
+    // Shared noise buffer for punchier impacts
+    const n = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.25, audioCtx.sampleRate);
+    const d = n.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    noiseBuf = n;
+  }
+
+  function setVolume(v) {
+    volume = Math.max(0, Math.min(1, v));
+    if (masterGain) masterGain.gain.value = muted ? 0 : volume;
+    musicTrack.volume = muted ? 0 : volume * 0.7;
+  }
+
+  function setMuted(m) {
+    muted = m;
+    if (masterGain) masterGain.gain.value = muted ? 0 : volume;
+    musicTrack.muted = muted;
+    musicTrack.volume = muted ? 0 : volume * 0.7;
+    hud.mute.textContent = muted ? "UNMUTE" : "MUTE";
+    hud.mute.setAttribute("aria-pressed", muted ? "true" : "false");
+  }
+
+  function beep(freq, dur, type, gain, when, dest) {
+    if (!audioCtx || muted) return;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = type || "square";
+    o.frequency.setValueAtTime(freq, audioCtx.currentTime + (when || 0));
+    o.connect(g);
+    g.connect(dest || sfxGain || masterGain);
+    const t = audioCtx.currentTime + (when || 0);
+    const amp = gain || 0.08;
+    g.gain.setValueAtTime(amp, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + Math.max(0.02, dur));
+    o.start(t);
+    o.stop(t + dur + 0.03);
+  }
+
+  function noiseBurst(dur, gain, when, filterFreq) {
+    if (!audioCtx || muted || !noiseBuf) return;
+    const src = audioCtx.createBufferSource();
+    src.buffer = noiseBuf;
+    const g = audioCtx.createGain();
+    const f = audioCtx.createBiquadFilter();
+    f.type = "bandpass";
+    f.frequency.value = filterFreq || 1200;
+    f.Q.value = 0.8;
+    src.connect(f);
+    f.connect(g);
+    g.connect(sfxGain || masterGain);
+    const t = audioCtx.currentTime + (when || 0);
+    g.gain.setValueAtTime(gain || 0.08, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.start(t);
+    src.stop(t + dur + 0.02);
+  }
+
+  function slideBeep(f0, f1, dur, type, gain, when) {
+    if (!audioCtx || muted) return;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = type || "square";
+    const t = audioCtx.currentTime + (when || 0);
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t + dur);
+    o.connect(g);
+    g.connect(sfxGain || masterGain);
+    g.gain.setValueAtTime(gain || 0.08, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.start(t);
+    o.stop(t + dur + 0.03);
+  }
+
+  // —— Named arcade SFX ——
+  function sfxJump() {
+    slideBeep(320, 720, 0.1, "square", 0.07);
+    beep(880, 0.05, "triangle", 0.04, 0.05);
+  }
+  function sfxSuperJump() {
+    slideBeep(280, 980, 0.16, "sawtooth", 0.08);
+    beep(1200, 0.1, "triangle", 0.06, 0.08);
+    noiseBurst(0.06, 0.04, 0.02, 1800);
+  }
+  function sfxShoot() {
+    noiseBurst(0.045, 0.06, 0, 2200);
+    slideBeep(880, 220, 0.07, "square", 0.05);
+  }
+  function sfxBeam(kind) {
+    const hi = kind === "MAXI" ? 1600 : kind === "SPREAD" ? 1300 : 1100;
+    noiseBurst(0.05, 0.05, 0, hi);
+    beep(hi, 0.07, "sawtooth", 0.055);
+    beep(hi * 0.5, 0.05, "square", 0.03, 0.02);
+  }
+  function sfxHit() {
+    noiseBurst(0.05, 0.05, 0, 900);
+    beep(260, 0.05, "square", 0.05);
+  }
+  function sfxKill() {
+    noiseBurst(0.08, 0.07, 0, 700);
+    slideBeep(480, 120, 0.14, "sawtooth", 0.07);
+    beep(180, 0.1, "triangle", 0.05, 0.06);
+  }
+  function sfxHurt() {
+    noiseBurst(0.1, 0.08, 0, 400);
+    slideBeep(240, 80, 0.18, "sawtooth", 0.1);
+  }
+  function deathBeep() {
+    noiseBurst(0.16, 0.1, 0, 350);
+    slideBeep(220, 55, 0.28, "sawtooth", 0.11);
+    beep(90, 0.25, "square", 0.08, 0.12);
+    beep(45, 0.35, "triangle", 0.1, 0.22);
+  }
+  function sfxPickup(kind) {
+    if (kind === "life") {
+      beep(880, 0.08, "square", 0.07);
+      beep(1175, 0.1, "triangle", 0.07, 0.07);
+      beep(1568, 0.14, "square", 0.06, 0.14);
+    } else if (kind === "gold") {
+      beep(700, 0.08, "triangle", 0.07);
+      beep(1050, 0.12, "square", 0.06, 0.07);
+    } else if (kind === "speed") {
+      slideBeep(600, 1400, 0.12, "square", 0.07);
+    } else if (kind === "weapon") {
+      beep(900, 0.08, "square", 0.07);
+      beep(1200, 0.1, "triangle", 0.06, 0.07);
+      noiseBurst(0.06, 0.04, 0.05, 2000);
+    } else {
+      beep(990, 0.07, "square", 0.06);
+      beep(1320, 0.08, "triangle", 0.05, 0.05);
+    }
+  }
+  function sfxOneUp() {
+    beep(784, 0.07, "square", 0.07);
+    beep(988, 0.07, "square", 0.07, 0.07);
+    beep(1175, 0.07, "square", 0.07, 0.14);
+    beep(1568, 0.16, "triangle", 0.08, 0.21);
+  }
+  function sfxCheckpoint() {
+    beep(660, 0.04, "square", 0.035);
+    beep(990, 0.05, "triangle", 0.03, 0.04);
+  }
+  function sfxArenaLock() {
+    noiseBurst(0.12, 0.08, 0, 500);
+    slideBeep(200, 420, 0.16, "sawtooth", 0.08);
+    beep(160, 0.12, "square", 0.06, 0.1);
+  }
+  function sfxArenaClear() {
+    beep(784, 0.08, "square", 0.07);
+    beep(988, 0.08, "triangle", 0.06, 0.07);
+    beep(1319, 0.14, "square", 0.07, 0.14);
+  }
+  function sfxBossHit() {
+    noiseBurst(0.06, 0.06, 0, 800);
+    beep(200, 0.05, "square", 0.06);
+  }
+  function sfxBossLaser() {
+    noiseBurst(0.2, 0.07, 0, 1500);
+    slideBeep(1400, 400, 0.25, "sawtooth", 0.07);
+  }
+  function sfxUi() {
+    beep(720, 0.05, "square", 0.045);
+  }
+  function sfxCrumble() {
+    noiseBurst(0.1, 0.07, 0, 500);
+    beep(120, 0.1, "sawtooth", 0.05);
+  }
+  function sfxBounce() {
+    slideBeep(400, 900, 0.1, "triangle", 0.06);
+    beep(1100, 0.05, "square", 0.04, 0.05);
+  }
+
+  function stopFallbackMusic() {
+    if (musicTimer) {
+      clearInterval(musicTimer);
+      musicTimer = null;
+    }
+  }
+
+  function stopMusic() {
+    try { musicTrack.pause(); } catch (e) {}
+    stopFallbackMusic();
+    musicOn = false;
+  }
+
+  function startFallbackMusic() {
+    ensureAudio();
+    stopFallbackMusic();
+    if (!audioCtx || muted) { musicOn = false; return; }
+    musicFallback = true;
+    musicOn = true;
+    musicStep = 0;
+    // Simple techno-ish loop: kick + bass + arp (no external file needed)
+    const bass = [98, 98, 110, 98, 87, 87, 110, 130];
+    const arp = [392, 0, 494, 0, 587, 494, 392, 330];
+    musicTimer = setInterval(function () {
+      if (!musicOn || muted || !audioCtx) return;
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      const i = musicStep % 8;
+      const t = 0;
+      // kick
+      slideBeep(140, 45, 0.09, "sine", 0.09, t);
+      noiseBurst(0.04, 0.05, 0, 200);
+      // bass
+      beep(bass[i], 0.12, "triangle", 0.05, 0.01, musicGain);
+      // arp
+      if (arp[i]) beep(arp[i], 0.08, "square", 0.035, 0.02, musicGain);
+      // hi-hat every other
+      if (i % 2 === 1) noiseBurst(0.03, 0.03, 0, 6000);
+      musicStep++;
+    }, 165);
+  }
+
+  function startTechno() {
+    ensureAudio();
+    stopMusic();
+    musicOn = true;
+    if (musicFallback) {
+      startFallbackMusic();
+      return;
+    }
+    musicTrack.currentTime = 0;
+    musicTrack.volume = muted ? 0 : volume * 0.7;
+    const trackPromise = musicTrack.play();
+    if (trackPromise) {
+      trackPromise.catch(function () {
+        startFallbackMusic();
+      });
+    }
+    musicTrack.onerror = function () {
+      startFallbackMusic();
+    };
+  }
+
   const HS_KEY = "dg-hiscore";
   const LIFE_EVERY = 5000;
   const MAX_LIVES = 9;
@@ -92,8 +347,7 @@
       state.lives++;
       state.banner = "1-UP! ♥×" + state.lives;
       state.messageTimer = 80;
-      beep(1320, 0.1, "square", 0.08);
-      beep(1760, 0.12, "triangle", 0.07, 0.08);
+      sfxOneUp();
     }
     if (state.score > state.hiScore) saveHiScore(state.score);
   }
@@ -108,71 +362,6 @@
         state.banner = "COMBO ×" + state.combo + "!";
         state.messageTimer = 45;
       }
-    }
-  }
-
-  function ensureAudio() {
-    if (audioCtx) return;
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    audioCtx = new AC();
-    masterGain = audioCtx.createGain();
-    masterGain.gain.value = muted ? 0 : volume;
-    masterGain.connect(audioCtx.destination);
-  }
-
-  function setVolume(v) {
-    volume = Math.max(0, Math.min(1, v));
-    if (masterGain) masterGain.gain.value = muted ? 0 : volume;
-    musicTrack.volume = muted ? 0 : volume;
-  }
-
-  function setMuted(m) {
-    muted = m;
-    if (masterGain) masterGain.gain.value = muted ? 0 : volume;
-    musicTrack.muted = muted;
-    musicTrack.volume = muted ? 0 : volume;
-    hud.mute.textContent = muted ? "UNMUTE" : "MUTE";
-    hud.mute.setAttribute("aria-pressed", muted ? "true" : "false");
-  }
-
-  function beep(freq, dur, type, gain, when) {
-    if (!audioCtx || muted) return;
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    o.type = type || "square";
-    o.frequency.value = freq;
-    o.connect(g);
-    g.connect(masterGain);
-    const t = audioCtx.currentTime + (when || 0);
-    g.gain.setValueAtTime(gain || 0.08, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    o.start(t);
-    o.stop(t + dur + 0.02);
-  }
-
-  function deathBeep() {
-    beep(220, 0.1, "sawtooth", 0.12, 0);
-    beep(120, 0.2, "square", 0.11, 0.1);
-    beep(55, 0.35, "triangle", 0.12, 0.24);
-  }
-
-  function stopMusic() {
-    musicTrack.pause();
-    musicOn = false;
-  }
-
-  function startTechno() {
-    ensureAudio();
-    stopMusic();
-    musicOn = true;
-    musicTrack.currentTime = 0;
-    musicTrack.volume = muted ? 0 : volume;
-    const trackPromise = musicTrack.play();
-    if (trackPromise) {
-      trackPromise.catch(function () {
-        musicOn = false;
-      });
     }
   }
 
@@ -332,13 +521,12 @@
       state.invuln = 135;
       state.banner = "FIGHT! LOOT CACHE!";
       state.messageTimer = 110;
-      beep(520, 0.1, "square", 0.08);
-      beep(780, 0.12, "triangle", 0.07, 0.08);
+      sfxArenaClear();
     } else {
       state.banner = "GO! JUMP×2=SUPER";
       state.messageTimer = 90;
       state.invuln = 135;
-      beep(660, 0.1, "square", 0.07);
+      sfxUi();
     }
   }
 
@@ -703,7 +891,7 @@
     const i = DIFF_ORDER.indexOf(state.diff);
     state.diff = DIFF_ORDER[(i + 1) % DIFF_ORDER.length];
     syncDiffBtn();
-    beep(660, 0.06, "square", 0.05);
+    sfxUi();
   }
 
   function pickRole(forceFlying) {
@@ -846,7 +1034,7 @@
         }
         if (e.alive && visible && ahead && hit) damageEnemy(e, rows === 8 ? 3 : 2, p.facing);
       }
-      beep(rows === 8 ? 1500 : rows === 4 ? 1250 : 1050, 0.08, "sawtooth", 0.055);
+      sfxBeam(p.weapon);
       return;
     }
     p.shootCD = 10;
@@ -857,8 +1045,7 @@
         state.bullets.push({ x: tip.x - (p.facing < 0 ? 10 : 0), y: tip.y - 2 + i * 5, w: 10, h: 4, vx: p.facing * 11, vy: i * 0.9, life: 80, from: "player", slug: true });
       }
     }
-    beep(420, 0.05, "square", 0.07);
-    beep(780, 0.04, "triangle", 0.04);
+    sfxShoot();
   }
 
   function explode(x, y, color, n) {
@@ -880,7 +1067,7 @@
       e.hp -= Math.max(1, damage | 0);
       addScore(25);
       explode(e.x + e.w / 2, e.y + 35, "#39ff14", 5);
-      beep(190, 0.05, "square", 0.06);
+      sfxBossHit();
       if (e.hp <= 0) {
         e.alive = false;
         const mid = !!e.midBoss;
@@ -906,13 +1093,13 @@
     e.x += dir * (e.heavy ? 8 : 18);
     e.flash = 6;
     explode(e.x + e.w / 2, e.y + e.h / 2, e.heavy ? "#67e8f9" : "#00e5ff", e.heavy ? 8 : 6);
-    beep(300, 0.05, "square", 0.05);
+    sfxHit();
     if (e.hp <= 0) {
       e.alive = false;
       addScore(e.scoreValue || (100 + e.kind * 50));
       noteKill();
       explode(e.x + e.w / 2, e.y + e.h / 2, "#ff2bd6", e.heavy ? 22 : 14);
-      beep(180, 0.12, "triangle", 0.07);
+      sfxKill();
     }
   }
 
@@ -1002,7 +1189,7 @@
       state.invuln = 100;
       state.flash = 14;
       p.vx = -p.facing * 4;
-      beep(110, 0.2, "sawtooth", 0.1);
+      sfxHurt();
       explode(p.x + 14, p.y + 28, "#ffd400", 10);
       return;
     }
@@ -1326,7 +1513,7 @@
         state.banner = "MAXI GUN: 12 SECONDS!";
       }
       state.messageTimer = 80;
-      beep(q.type === "health" ? 760 : 1400, 0.18, "square", 0.08);
+      sfxPickup(q.type === "health" ? "life" : "weapon");
     }
     const busy = b.mode === "jump" || b.mode === "jumpCharge" || b.mode === "laser" || b.mode === "laserCharge"
       || b.mode === "skyRise" || b.mode === "skyHold" || b.mode === "skySlam";
@@ -1355,7 +1542,7 @@
         b.laserAimX = p.x + p.w / 2;
         b.laserAimY = p.y + p.h / 2;
         b.timer = b.phase === 2 ? 26 : 38;
-        beep(420, 0.3, "sawtooth", 0.05);
+        slideBeep(420, 280, 0.3, "sawtooth", 0.05);
       } else if (roll < 0.52) {
         b.mode = "eyeCharge";
         b.timer = b.phase === 2 ? 20 : 30;
@@ -1373,7 +1560,7 @@
     } else if (b.mode === "laserCharge" && b.timer <= 0) {
       b.mode = "laser";
       b.timer = b.phase === 2 ? 34 : 26;
-      beep(980, 0.35, "sawtooth", 0.09);
+      sfxBossLaser();
     } else if (b.mode === "laser") {
       const h = bossHand(b), dx = Math.cos(h.a) * 900, dy = Math.sin(h.a) * 900;
       const cx = p.x + p.w / 2, cy = p.y + p.h / 2;
@@ -1506,8 +1693,7 @@
     state.player.onGround = false;
     state.invuln = Math.max(state.invuln, 20);
     explode(state.player.x + state.player.w / 2, state.player.y + state.player.h, "#00e5ff", 18);
-    beep(760, 0.08, "square", 0.07);
-    beep(1140, 0.15, "triangle", 0.06);
+    sfxSuperJump();
     state.banner = "SUPER JUMP!";
     state.messageTimer = 35;
   }
@@ -1533,7 +1719,7 @@
         if (plat.bounce) {
           p.vy = -11.5;
           p.onGround = false;
-          beep(720, 0.07, "triangle", 0.05);
+          sfxBounce();
           explode(p.x + p.w / 2, plat.y, "#c084fc", 8);
           return true;
         }
@@ -1542,7 +1728,7 @@
           if (plat.life <= 0) {
             plat.gone = true;
             explode(plat.x + plat.w / 2, plat.y, "#94a3b8", 10);
-            beep(140, 0.08, "sawtooth", 0.05);
+            sfxCrumble();
           }
         }
         return true;
@@ -1669,8 +1855,7 @@
       a.timer = 0;
       state.banner = "ARENA LOCK · CLEAR THE WAVE!";
       state.messageTimer = 90;
-      beep(200, 0.12, "sawtooth", 0.08);
-      beep(400, 0.1, "square", 0.06, 0.1);
+      sfxArenaLock();
     }
     if (!a.active) return;
 
@@ -1696,8 +1881,7 @@
       state.checkpointX = Math.max(state.checkpointX, a.x + 200);
       state.banner = "ARENA CLEAR · GATE OPEN!";
       state.messageTimer = 100;
-      beep(880, 0.1, "square", 0.07);
-      beep(1200, 0.12, "triangle", 0.06, 0.08);
+      sfxArenaClear();
     }
   }
 
@@ -1802,7 +1986,7 @@
         if (state.grace === 0 && !state.talkQ) {
           state.banner = "GO! JUMP×2=SUPER";
           state.messageTimer = 90;
-          beep(660, 0.1, "square", 0.07);
+          sfxUi();
         }
       }
     } else {
@@ -1829,7 +2013,7 @@
     if (inputJump() && p.onGround && !state.talkQ) {
       p.vy = -8.6;
       p.onGround = false;
-      beep(520, 0.06, "triangle", 0.05);
+      sfxJump();
     }
 
     p.vy += 0.42;
@@ -1856,7 +2040,7 @@
       p.safeX = p.x;
       if (p.x > (state.checkpointX || 0) + 280) {
         state.checkpointX = p.x;
-        beep(880, 0.04, "square", 0.03);
+        sfxCheckpoint();
       }
     }
     if (state.comboTimer > 0) {
@@ -2098,22 +2282,21 @@
           addScore(300);
           state.banner = "1-UP QR! ♥×" + state.lives;
           state.messageTimer = 80;
-          beep(1320, 0.1, "square", 0.08);
-          beep(1760, 0.12, "triangle", 0.07, 0.08);
+          sfxOneUp();
         } else {
           addScore(q.power === "gold" ? 500 : q.power === "speed" ? 400 : 250);
           if (q.power === "speed") {
             p.speedT = 300;
             state.banner = "SPEED BOOST 5s!";
             state.messageTimer = 70;
-            beep(1200, 0.1, "square", 0.07);
+            sfxPickup("speed");
           } else if (q.power === "gold") {
             p.goldT = 300;
             state.banner = "INVINCIBLE 5s!";
             state.messageTimer = 70;
-            beep(700, 0.12, "triangle", 0.08);
+            sfxPickup("gold");
           } else {
-            beep(990, 0.08, "square", 0.06);
+            sfxPickup();
           }
         }
         explode(q.x + 8, q.y + 8, q.power === "life" ? "#ff2bd6" : q.power === "gold" ? "#ffd400" : q.power === "speed" ? "#3b82f6" : "#39ff14", 12);
@@ -2132,7 +2315,7 @@
         addScore(100);
         state.banner = s.type + " READY!";
         state.messageTimer = 55;
-        beep(s.type === "MAXI" ? 1400 : s.type === "SPREAD" ? 1100 : 900, 0.15, "square", 0.07);
+        sfxPickup("weapon");
       }
     }
 
