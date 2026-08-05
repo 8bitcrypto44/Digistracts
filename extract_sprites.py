@@ -71,20 +71,40 @@ for i, (minx, miny, maxx, maxy, area) in enumerate(blobs):
     robot_uris.append(base64.b64encode(buf.getvalue()).decode("ascii"))
     print(i, crop.size, area)
 
+# Preacher has white robes — never chroma-key all whites. Use edge flood-fill.
+from collections import deque as _deque
 preacher = Image.open("assets/preacher.png").convert("RGBA")
-px = preacher.load()
-pw, ph = preacher.size
-for y in range(ph):
-    for x in range(pw):
-        r, g, b, a = px[x, y]
-        if r > 245 and g > 245 and b > 245:
-            px[x, y] = (0, 0, 0, 0)
+_px = preacher.load()
+_pw, _ph = preacher.size
+def _is_bg(x, y, t=248):
+    r, g, b, a = _px[x, y]
+    return a > 0 and r >= t and g >= t and b >= t
+_seen = [[False] * _pw for _ in range(_ph)]
+_q = _deque()
+for _x in range(_pw):
+    for _y in (0, _ph - 1):
+        if _is_bg(_x, _y) and not _seen[_y][_x]:
+            _seen[_y][_x] = True; _q.append((_x, _y))
+for _y in range(_ph):
+    for _x in (0, _pw - 1):
+        if _is_bg(_x, _y) and not _seen[_y][_x]:
+            _seen[_y][_x] = True; _q.append((_x, _y))
+while _q:
+    _x, _y = _q.popleft()
+    _px[_x, _y] = (0, 0, 0, 0)
+    for _nx, _ny in ((_x + 1, _y), (_x - 1, _y), (_x, _y + 1), (_x, _y - 1)):
+        if 0 <= _nx < _pw and 0 <= _ny < _ph and not _seen[_ny][_nx] and _is_bg(_nx, _ny):
+            _seen[_ny][_nx] = True; _q.append((_nx, _ny))
+for _y in range(_ph):
+    for _x in range(_pw):
+        r, g, b, a = _px[_x, _y]
+        if a >= 8 and r >= 250 and g >= 250 and b >= 250:
+            _px[_x, _y] = (245, 245, 248, 255)
 bbox = preacher.getbbox()
 preacher = preacher.crop(bbox)
-nh = 56
-nw = max(16, int(preacher.width * nh / preacher.height))
+nh = 96
+nw = max(24, int(preacher.width * nh / preacher.height))
 preacher_s = preacher.resize((nw, nh), Image.NEAREST)
-preacher_s = compact_png(preacher_s)
 preacher_s.save("assets/sprites/preacher.png", optimize=True)
 buf = io.BytesIO()
 preacher_s.save(buf, format="PNG", optimize=True)

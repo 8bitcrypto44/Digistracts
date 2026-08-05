@@ -219,7 +219,7 @@
 
   function makePlayer() {
     return {
-      x: 80, y: GROUND - 56, w: 28, h: 56,
+      x: 80, y: GROUND - 64, w: 32, h: 64,
       vx: 0, vy: 0, facing: 1, onGround: false,
       shootCD: 0, run: 0, crouch: false, platformCamp: 0,
       airSupers: 0, weapon: 0, beamFuel: 0, beamTick: 0, beaming: false, beamAim: 0, fireHeld: false,
