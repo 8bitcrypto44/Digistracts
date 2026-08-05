@@ -233,6 +233,34 @@
     beep(1175, 0.07, "square", 0.07, 0.14);
     beep(1568, 0.16, "triangle", 0.08, 0.21);
   }
+  function sfxOverclock() {
+    noiseBurst(0.08, 0.06, 0, 2400);
+    slideBeep(400, 1600, 0.2, "sawtooth", 0.09);
+    beep(1320, 0.1, "square", 0.07, 0.08);
+    beep(1760, 0.12, "triangle", 0.06, 0.14);
+  }
+  function sfxMedal() {
+    beep(880, 0.06, "square", 0.06);
+    beep(1175, 0.07, "triangle", 0.06, 0.06);
+    beep(1568, 0.08, "square", 0.07, 0.12);
+    beep(2093, 0.14, "triangle", 0.08, 0.18);
+  }
+  function sfxGraze() {
+    beep(1400, 0.03, "triangle", 0.035);
+    beep(1900, 0.04, "square", 0.03, 0.02);
+  }
+  function sfxPhase2() {
+    noiseBurst(0.14, 0.1, 0, 600);
+    slideBeep(180, 720, 0.28, "sawtooth", 0.11);
+    beep(90, 0.2, "square", 0.09, 0.12);
+    beep(1200, 0.12, "triangle", 0.06, 0.2);
+  }
+  function sfxClear() {
+    beep(659, 0.07, "square", 0.06);
+    beep(880, 0.07, "triangle", 0.06, 0.07);
+    beep(1175, 0.08, "square", 0.07, 0.14);
+    beep(1568, 0.16, "triangle", 0.08, 0.22);
+  }
   function sfxCheckpoint() {
     beep(660, 0.04, "square", 0.035);
     beep(990, 0.05, "triangle", 0.03, 0.04);
@@ -330,6 +358,7 @@
   }
 
   const HS_KEY = "dg-hiscore";
+  const DAILY_BEST_KEY = "dg-daily-best";
   const LIFE_EVERY = 5000;
   const MAX_LIVES = 9;
 
@@ -346,6 +375,34 @@
     state.hiScore = score;
     try { localStorage.setItem(HS_KEY, String(score)); } catch (e) {}
     return true;
+  }
+
+  function loadDailyBest() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(DAILY_BEST_KEY) || "null");
+      if (!raw || !raw.date) return { date: null, score: 0 };
+      return { date: raw.date, score: Math.max(0, raw.score | 0) };
+    } catch (e) {
+      return { date: null, score: 0 };
+    }
+  }
+
+  function saveDailyBest(score) {
+    if (!state.daily) return false;
+    const id = state.dailyKey || dailyId();
+    const cur = loadDailyBest();
+    if (cur.date === id && score <= cur.score) return false;
+    try {
+      localStorage.setItem(DAILY_BEST_KEY, JSON.stringify({ date: id, score: score | 0 }));
+    } catch (e) {}
+    return true;
+  }
+
+  function dailyBestLine() {
+    const cur = loadDailyBest();
+    const today = dailyId();
+    if (cur.date === today && cur.score > 0) return "Daily best " + cur.score;
+    return "Daily best —";
   }
 
   function addScore(n) {
@@ -521,7 +578,7 @@
     try { localStorage.setItem("dg-medals", JSON.stringify(book || {})); } catch (e) {}
   }
 
-  function awardMedal(id) {
+  function awardMedal(id, quiet) {
     if (!id) return false;
     if (!state.runMedals) state.runMedals = [];
     if (state.runMedals.indexOf(id) < 0) state.runMedals.push(id);
@@ -529,6 +586,12 @@
     if (!book[id]) {
       book[id] = 1;
       saveMedalBook(book);
+      if (!quiet) {
+        sfxMedal();
+        const label = (MEDAL_DEFS.filter(function (m) { return m.id === id; })[0] || { label: id }).label;
+        state.banner = "★ MEDAL: " + label + " ★";
+        state.messageTimer = Math.max(state.messageTimer, 70);
+      }
       return true;
     }
     book[id] = (book[id] | 0) + 1;
@@ -545,7 +608,7 @@
     }).join(" · ");
   }
 
-  function renderMedalsUI(show, highlight) {
+  function renderMedalsUI(show, highlight, useBook) {
     if (!hud.medalsEl) return;
     if (!show) {
       hud.medalsEl.classList.remove("is-on");
@@ -553,7 +616,12 @@
       return;
     }
     const got = {};
-    (highlight || state.runMedals || []).forEach(function (id) { got[id] = true; });
+    if (useBook) {
+      const book = loadMedalBook();
+      Object.keys(book).forEach(function (id) { if (book[id]) got[id] = true; });
+    } else {
+      (highlight || state.runMedals || []).forEach(function (id) { got[id] = true; });
+    }
     hud.medalsEl.innerHTML = "";
     MEDAL_DEFS.forEach(function (m) {
       const s = document.createElement("span");
@@ -570,36 +638,28 @@
   function evaluateSectorMedals(opts) {
     opts = opts || {};
     const earned = [];
-    awardMedal("clear");
-    earned.push("clear");
-    if (!state.hitThisLevel) {
-      awardMedal("nohit");
-      earned.push("nohit");
+    const fresh = [];
+    function take(id) {
+      if (awardMedal(id, true)) fresh.push(id);
+      earned.push(id);
     }
+    take("clear");
+    if (!state.hitThisLevel) take("nohit");
     const budget = sectorTimeBudget();
-    if (state.levelTime > budget * 0.45) {
-      awardMedal("speed");
-      earned.push("speed");
-    }
-    if (state.combo >= 8 || state.maxCombo >= 10) {
-      awardMedal("combo");
-      earned.push("combo");
-    }
-    if (opts.secret) {
-      awardMedal("secret");
-      earned.push("secret");
-    }
-    if ((state.grazeCount || 0) >= 8) {
-      awardMedal("graze");
-      earned.push("graze");
-    }
-    if (state.daily) {
-      awardMedal("daily");
-      earned.push("daily");
-    }
-    if (opts.boss) {
-      awardMedal("boss");
-      earned.push("boss");
+    if (state.levelTime > budget * 0.45) take("speed");
+    if (state.combo >= 8 || state.maxCombo >= 10) take("combo");
+    if (opts.secret) take("secret");
+    if ((state.grazeCount || 0) >= 8) take("graze");
+    if (state.daily) take("daily");
+    if (opts.boss) take("boss");
+    if (fresh.length) {
+      sfxMedal();
+      const labels = fresh.map(function (id) {
+        const d = MEDAL_DEFS.filter(function (m) { return m.id === id; })[0];
+        return d ? d.label : id.toUpperCase();
+      });
+      state.banner = "★ NEW MEDAL" + (fresh.length > 1 ? "S" : "") + ": " + labels.join(" · ") + " ★";
+      state.messageTimer = Math.max(state.messageTimer, 90);
     }
     state.lastMedals = earned;
     return earned;
@@ -616,9 +676,9 @@
         " · Score " + state.score + " · HI " + state.hiScore,
       formatRunSummary(),
       formatMedalsLine(state.runMedals),
-      (state.daily ? ("Daily " + (state.dailyKey || dailyId()) + " · ") : "") +
+      (state.daily ? ("Daily " + (state.dailyKey || dailyId()) + " · " + dailyBestLine() + "\n") : "") +
         "DIFF " + currentDiff().label,
-      PAGES_SHARE + "?v=29"
+      PAGES_SHARE + "?v=30"
     ];
     return lines.join("\n");
   }
@@ -684,7 +744,7 @@
     addJuice({ shake: 6, flash: 10, flashColor: "rgba(255,212,0,0.35)" });
     state.banner = "⚡ OVERCLOCK " + (secs || 8) + "s!";
     state.messageTimer = 90;
-    sfxOneUp();
+    sfxOverclock();
   }
 
   const DIFFS = {
@@ -1876,9 +1936,10 @@
     // Homing bolts
     if (def && p.weapon === "HOMING") {
       if (p.beamFuel <= 0) return false;
-      p.shootCD = def.cd;
-      p.beamFuel--;
-      const spd = 7.2;
+      p.shootCD = Math.max(4, Math.floor(def.cd * (clock ? 0.55 : 1)));
+      p.beamFuel -= clock ? 0 : 1;
+      if (clock && p.beamFuel < 8) p.beamFuel = 8;
+      const spd = clock ? 8.4 : 7.2;
       let vx = p.facing * spd, vy = aim ? aim * spd * 0.85 : 0;
       state.bullets.push({
         x: tip.x - 4, y: tip.y - 4, w: 10, h: 10,
@@ -1893,8 +1954,9 @@
     // Ricochet bolts
     if (def && p.weapon === "RICOCHET") {
       if (p.beamFuel <= 0) return false;
-      p.shootCD = def.cd;
-      p.beamFuel--;
+      p.shootCD = Math.max(4, Math.floor(def.cd * (clock ? 0.55 : 1)));
+      p.beamFuel -= clock ? 0 : 1;
+      if (clock && p.beamFuel < 8) p.beamFuel = 8;
       if (aim) {
         state.bullets.push({
           x: tip.x - 4, y: tip.y - 4, w: 8, h: 8,
@@ -1916,7 +1978,7 @@
 
     // Charged pistol blast
     if (!def && p.charge >= 28) {
-      p.shootCD = 16;
+      p.shootCD = clock ? 10 : 16;
       const power = Math.min(3, 1 + Math.floor(p.charge / 20));
       state.bullets.push({
         x: tip.x - 6, y: tip.y - 6, w: 14, h: 12,
@@ -1931,7 +1993,7 @@
     }
 
     // Default pistol burst
-    p.shootCD = 10;
+    p.shootCD = clock ? 5 : 10;
     for (let i = -1; i <= 1; i++) {
       if (aim) {
         state.bullets.push({ x: tip.x - 4 + i * 6, y: tip.y - 4, w: 6, h: 10, vx: i * 1.1, vy: aim * 11, life: 55, from: "player", slug: true, dmg: 1 });
@@ -2197,10 +2259,12 @@
     state.failAt = performance.now() + 4200;
     addJuice({ shake: 16, flash: 24, flashColor: "rgba(255,40,40,0.5)" });
     const record = saveHiScore(state.score);
+    const dailyRec = saveDailyBest(state.score);
     const tip = deathTipText(state.failRespawnX === "time" ? "time" : (state.deathCause || "default"));
     showOverlay(
       "YOUR TEAM HAS FAILED",
       "Score: " + state.score + (record ? " ★ NEW HI!" : "") +
+        (dailyRec ? "\n★ NEW DAILY BEST!" : (state.daily ? "\n" + dailyBestLine() : "")) +
         "\nHI: " + state.hiScore +
         "\n" + formatRunSummary() +
         "\nTip: " + tip +
@@ -2367,12 +2431,15 @@
 
   function missionDoneOverlay() {
     const record = saveHiScore(state.score);
+    const dailyRec = saveDailyBest(state.score);
     evaluateSectorMedals({ boss: true });
     const medals = formatMedalsLine(state.runMedals);
+    sfxClear();
     showOverlay(
       "MISSION COMPLETE",
       "Warehouse core secure!\nFinal Score: " + state.score +
         (record ? "\n★ NEW HIGH SCORE!" : "\nHI: " + state.hiScore) +
+        (dailyRec ? "\n★ NEW DAILY BEST!" : (state.daily ? "\n" + dailyBestLine() : "")) +
         "\n" + formatRunSummary() +
         "\n" + medals +
         "\nby 8bitcrypto_44",
@@ -2418,7 +2485,8 @@
     const onTitle = state.mode === "title" || title === "DIGISTRACTS";
     const shareable = !!(opts.share || state.mode === "clear" || state.mode === "failed" || title === "MISSION COMPLETE");
     setShareVisible(shareable && !onTitle);
-    renderMedalsUI(shareable && !onTitle, opts.medals || state.lastMedals || state.runMedals);
+    if (onTitle) renderMedalsUI(true, null, true);
+    else renderMedalsUI(shareable, opts.medals || state.lastMedals || state.runMedals, false);
     if (hud.dailyBtn) hud.dailyBtn.style.display = onTitle ? "" : "none";
     if (hud.diffBtn) {
       hud.diffBtn.style.display = onTitle ? "" : "none";
@@ -2669,11 +2737,13 @@
     const medals = evaluateSectorMedals({ boss: !!state._bossClear });
     state._bossClear = false;
     saveHiScore(state.score);
+    saveDailyBest(state.score);
     const breakdown = formatClearBreakdown(state.lastClear);
     if (state.level >= LEVELS.length - 1) {
       startCredits();
     } else {
       state.mode = "clear";
+      sfxClear();
       showOverlay(
         "SECTOR CLEAR",
         LEVELS[state.level].name + " complete!" +
@@ -2708,6 +2778,7 @@
     state.banner = b.midBoss ? "⚠ PULSE OVERLOAD — PHASE 2!" : "⚠ CORE PROTOCOL 2 — ENRAGED!";
     state.messageTimer = 110;
     sfxArenaLock();
+    sfxPhase2();
     explode(b.x + b.w / 2, b.y + b.h / 2, b.accentHot || "#39ff14", 48);
     addJuice({
       shake: 16,
@@ -3811,6 +3882,8 @@
             }
             state.banner = "NEON SHATTER!";
             state.messageTimer = 35;
+            sfxBounce();
+            addJuice({ shake: 5, flash: 4, flashColor: "rgba(251,191,36,0.3)" });
           }
           break;
         }
@@ -3838,6 +3911,7 @@
           state.grazeScore = (state.grazeScore || 0) + gPts;
           state.bonusScore += gPts;
           pushScorePop(pcx, p.y, "GRAZE +" + gPts, "#67e8f9");
+          sfxGraze();
           if (state.grazeCount === 1 || state.grazeCount % 5 === 0) {
             state.banner = "GRAZE ×" + state.grazeCount;
             state.messageTimer = 35;
@@ -5214,10 +5288,10 @@
     if (state.godMode) setGodMode(true);
   } else {
     bootSub = wantsTouchUI()
-      ? "by 8bitcrypto_44\nHI " + state.hiScore + bootHint +
+      ? "by 8bitcrypto_44\nHI " + state.hiScore + " · " + dailyBestLine() + bootHint +
         "\nDAILY challenge · stick + JUMP / FIRE"
-      : "by 8bitcrypto_44\nHI " + state.hiScore + bootHint +
-        "\nPRESS START or DAILY · COPY SCORE on clear";
+      : "by 8bitcrypto_44\nHI " + state.hiScore + " · " + dailyBestLine() + bootHint +
+        "\nPRESS START or DAILY · medals unlock as you play";
     if (hud.godBtn) hud.godBtn.style.display = "none";
     if (hud.levels) {
       hud.levels.innerHTML = "";
