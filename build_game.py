@@ -111,7 +111,10 @@ markup = (
   <div id="dg-overlay">
     <h2 id="dg-title">DIGISTRACTS</h2>
     <p id="dg-sub">by 8bitcrypto_44</p>
-    <button type="button" id="dg-start">PRESS START</button>
+    <div class="dg-menu-actions">
+      <button type="button" id="dg-diff">DIFF: NORMAL</button>
+      <button type="button" id="dg-start">PRESS START</button>
+    </div>
   </div>
   <div class="dg-help" aria-label="Keyboard controls">
     <span><kbd>&larr;&rarr;</kbd>/<kbd>AD</kbd> Move</span>
@@ -134,7 +137,7 @@ markup = (
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "13"
+ASSET_V = "14"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]

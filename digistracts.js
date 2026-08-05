@@ -41,6 +41,7 @@
     vol: ROOT.querySelector("#dg-vol"),
     mute: ROOT.querySelector("#dg-mute"),
     pauseBtn: ROOT.querySelector("#dg-pause"),
+    diffBtn: ROOT.querySelector("#dg-diff"),
     fs: ROOT.querySelector("#dg-fs")
   };
 
@@ -175,19 +176,31 @@
     }
   }
 
+  const DIFFS = {
+    easy: { id: "easy", label: "EASY", lives: 5, timeMult: 1.3, spawnMult: 1.4 },
+    normal: { id: "normal", label: "NORMAL", lives: 3, timeMult: 1, spawnMult: 1 },
+    hard: { id: "hard", label: "HARD", lives: 2, timeMult: 0.75, spawnMult: 0.65 }
+  };
+  const DIFF_ORDER = ["easy", "normal", "hard"];
+  const MID_BOSS_LEVEL = 2; // after MEGA SPIRE
+
   const LEVELS = [
     { name: "NEON DOCKS", theme: "docks", ground: 425, len: 14500, enemyRate: 0.36, enemySpeed: 1.85, qrCount: 14, platforms: 40 },
     { name: "DATA TUNNEL", theme: "tunnel", ground: 415, len: 15200, enemyRate: 0.28, enemySpeed: 2.35, qrCount: 16, platforms: 46 },
     { name: "MEGA SPIRE", theme: "spire", ground: 418, len: 15800, enemyRate: 0.24, enemySpeed: 2.85, qrCount: 18, platforms: 54 },
     { name: "CIRCUIT SLUMS", theme: "slums", ground: 395, len: 16400, enemyRate: 0.18, enemySpeed: 3.35, qrCount: 20, platforms: 58 },
-    { name: "CORE SEWERS", theme: "sewers", ground: 438, len: 17000, enemyRate: 0.14, enemySpeed: 3.9, qrCount: 22, platforms: 52 }
+    { name: "SKY RAIL", theme: "skyrail", ground: 420, len: 16800, enemyRate: 0.16, enemySpeed: 3.55, qrCount: 20, platforms: 56 },
+    { name: "VOID MARKET", theme: "voidmarket", ground: 410, len: 17200, enemyRate: 0.15, enemySpeed: 3.7, qrCount: 22, platforms: 54 },
+    { name: "CORE SEWERS", theme: "sewers", ground: 438, len: 17600, enemyRate: 0.12, enemySpeed: 4.0, qrCount: 24, platforms: 52 }
   ];
   const TALES = [
     [{ who: "YOU", line: "New Eden rains neon lies." }, { who: "YOU", line: "Ride the dock cranes. Keep Ember lit." }],
     [{ who: "YOU", line: "Tunnels hide quiet arrests." }, { who: "YOU", line: "Time the laser gates. Trust the map." }],
     [{ who: "YOU", line: "Spire of Unity Core ahead." }, { who: "YOU", line: "Climb high. Crushers don't forgive." }],
     [{ who: "YOU", line: "Override sells false freedom." }, { who: "YOU", line: "Spike alleys. Don't linger." }],
-    [{ who: "YOU", line: "Faith and code—walk both." }, { who: "YOU", line: "Acid rises. Clear the arena." }]
+    [{ who: "YOU", line: "Rails over black sky." }, { who: "YOU", line: "Wind will throw you. Hold the line." }],
+    [{ who: "YOU", line: "Void Market sells lies." }, { who: "YOU", line: "Fake floors. Real bullets." }],
+    [{ who: "YOU", line: "Faith and code—walk both." }, { who: "YOU", line: "Acid rises. Clear the Core." }]
   ];
   const BOSS_GROUND = 424;
 
@@ -213,6 +226,8 @@
     ["#050d14", "#39ff14", "#00c2ff"],
     ["#100818", "#ffd400", "#ff4ecd"],
     ["#0a0a12", "#67e8f9", "#fb7185"],
+    ["#06101c", "#7dd3fc", "#c084fc"],
+    ["#12061a", "#e879f9", "#22d3ee"],
     ["#0c0610", "#fbbf24", "#22d3ee"]
   ];
 
@@ -260,7 +275,8 @@
     comboTimer: 0,
     pauseMusicWasOn: false,
     hazards: [],
-    arena: null
+    arena: null,
+    diff: "normal"
   };
 
   const CREDIT_LINES = ["DIGISTRACTS","by 8bitcrypto_44","","THANKS WEB3 COMMUNITY","OpenSea · Amazon","Technocade / Soundimage.org","","THANK YOU FOR PLAYING"];
@@ -495,7 +511,58 @@
         });
       }
       buildArena(Math.floor(len * 0.5));
-    } else {
+    } else if (theme === "skyrail") {
+      // High rails + wind gusts + long movers
+      for (let i = 0; i < 8; i++) addHole(1000 + i * 1900, 160 + (i % 2) * 30);
+      for (let i = 0; i < L.platforms; i++) {
+        const x = 200 + i * ((len - 500) / L.platforms);
+        const high = i % 3 !== 2;
+        const y = GROUND - (high ? 130 + (i % 4) * 28 : 70);
+        if (i % 4 === 0) {
+          plat(x, y, 110, { mover: true, ampX: 90, ampY: 12, spd: 0.028, phase: i, fy: 1.1 });
+        } else {
+          plat(x, y, 70 + (i % 2) * 20);
+        }
+      }
+      for (let i = 0; i < 12; i++) {
+        addHazard({
+          kind: "wind", x: 900 + i * 1300, y: GROUND - 200, w: 140, h: 200,
+          push: (i % 2 === 0 ? 1 : -1) * 0.55, t: i * 15, on: 80, off: 50
+        });
+      }
+      for (let i = 0; i < 6; i++) {
+        addHazard({
+          kind: "laser", x: 1500 + i * 2400, y: 40, w: 8, h: GROUND - 160,
+          on: 45, off: 85, t: i * 19, axis: "v"
+        });
+      }
+      buildArena(Math.floor(len * 0.52));
+    } else if (theme === "voidmarket") {
+      // Fake floors, bounce pads, dark lasers
+      for (let i = 0; i < 14; i++) addHole(700 + i * 1100, 100 + (i % 3) * 20);
+      for (let i = 0; i < L.platforms; i++) {
+        const x = 220 + i * ((len - 450) / L.platforms);
+        const y = GROUND - (60 + (i % 5) * 30);
+        const fake = i % 6 === 2;
+        const bounce = i % 6 === 4;
+        plat(x, y, 68 + (i % 2) * 22, fake
+          ? { crumble: true, life: 18, maxLife: 18, gone: false, voidFake: true }
+          : bounce ? { bounce: true } : null);
+      }
+      for (let i = 0; i < 14; i++) {
+        addHazard({
+          kind: "laser", x: 950 + i * 1150, y: 20, w: 12, h: GROUND - 30,
+          on: 30, off: 70, t: i * 11, axis: "v"
+        });
+      }
+      for (let i = 0; i < 8; i++) {
+        addHazard({
+          kind: "spike", x: 1200 + i * 1900, y: GROUND - 14, w: 70, h: 14,
+          on: 50, off: 40, t: i * 7, hurt: true
+        });
+      }
+      buildArena(Math.floor(len * 0.54));
+    } else if (theme === "sewers") {
       // Sewers: acid pools + drip hazards + movers over acid
       for (let i = 0; i < 12; i++) {
         const hx = 800 + i * 1300;
@@ -528,6 +595,13 @@
         });
       }
       buildArena(Math.floor(len * 0.58));
+    } else {
+      // Fallback generic
+      for (let i = 0; i < 10; i++) addHole(800 + i * 1400, 110);
+      for (let i = 0; i < L.platforms; i++) {
+        plat(220 + i * ((len - 400) / L.platforms), GROUND - (70 + (i % 4) * 30), 80);
+      }
+      buildArena(Math.floor(len * 0.5));
     }
 
     placePickups(elevated, L);
@@ -563,11 +637,13 @@
       tunnel: "LASER GATES · TIME YOUR RUN",
       spire: "CLIMB THE SPIRE · WATCH CRUSHERS",
       slums: "SPIKE ALLEYS · CRUMBLE LEDGES",
+      skyrail: "HIGH RAILS · WIND GUSTS",
+      voidmarket: "FAKE FLOORS · BOUNCE PADS",
       sewers: "ACID POOLS · CLEAR THE ARENA"
     };
     state.banner = L.name + " · " + (tips[L.theme] || "GO!");
     state.antiCampCD = 0;
-    state.levelTime = 135000;
+    state.levelTime = sectorTimeBudget();
     state.levelTick = performance.now();
     state.droneTimer = 280 + Math.random() * 80;
     state.flash = 0;
@@ -603,8 +679,32 @@
     { walker: 38, gunner: 30, tank: 12, dasher: 12, flyer: 8 },
     { walker: 28, gunner: 30, tank: 16, dasher: 14, flyer: 12 },
     { walker: 20, gunner: 28, tank: 22, dasher: 16, flyer: 14 },
-    { walker: 14, gunner: 26, tank: 26, dasher: 16, flyer: 18 }
+    { walker: 16, gunner: 26, tank: 20, dasher: 18, flyer: 20 },
+    { walker: 12, gunner: 24, tank: 24, dasher: 18, flyer: 22 },
+    { walker: 10, gunner: 22, tank: 28, dasher: 16, flyer: 24 }
   ];
+
+  function currentDiff() {
+    return DIFFS[state.diff] || DIFFS.normal;
+  }
+
+  function sectorTimeBudget() {
+    return Math.floor(135000 * currentDiff().timeMult);
+  }
+
+  function syncDiffBtn() {
+    if (!hud.diffBtn) return;
+    const d = currentDiff();
+    hud.diffBtn.textContent = "DIFF: " + d.label;
+    hud.diffBtn.setAttribute("data-diff", d.id);
+  }
+
+  function cycleDiff() {
+    const i = DIFF_ORDER.indexOf(state.diff);
+    state.diff = DIFF_ORDER[(i + 1) % DIFF_ORDER.length];
+    syncDiffBtn();
+    beep(660, 0.06, "square", 0.05);
+  }
 
   function pickRole(forceFlying) {
     if (forceFlying) return "flyer";
@@ -783,11 +883,22 @@
       beep(190, 0.05, "square", 0.06);
       if (e.hp <= 0) {
         e.alive = false;
-        addScore(5000);
+        const mid = !!e.midBoss;
+        addScore(mid ? 3000 : 5000);
         noteKill();
-        explode(e.x + e.w / 2, e.y + e.h / 2, "#00e5ff", 50);
+        explode(e.x + e.w / 2, e.y + e.h / 2, mid ? "#e879f9" : "#00e5ff", 50);
         saveHiScore(state.score);
-        startCredits();
+        state.bossMode = false;
+        state.boss = null;
+        state.hazards = [];
+        state.arena = null;
+        if (mid) {
+          state.banner = "PULSE WARDEN DOWN!";
+          state.messageTimer = 90;
+          onLevelComplete();
+        } else {
+          startCredits();
+        }
       }
       return;
     }
@@ -805,13 +916,14 @@
     }
   }
 
-  function startBoss() {
+  function startBossFight(kind) {
+    const mid = kind === "mid";
     const p = state.player;
     state.bossMode = true;
     GROUND = BOSS_GROUND;
     state.camX = 0;
     state.endX = W;
-    state.levelTime = 135000;
+    state.levelTime = sectorTimeBudget();
     state.levelTick = performance.now();
     state.enemies = [];
     state.bullets = [];
@@ -823,30 +935,57 @@
     state.platforms = [];
     addPlatform(130, GROUND - 290, 120);
     addPlatform(500, GROUND - 340, 120);
-    state.playerHP = 3;
+    if (mid) {
+      addPlatform(320, GROUND - 160, 140);
+      addHazard({
+        kind: "laser", x: 380, y: 40, w: 10, h: GROUND - 180,
+        on: 40, off: 70, t: 0, axis: "v"
+      });
+    }
+    state.playerHP = mid ? 2 : 3;
     state.grace = 0;
     p.x = 55; p.y = GROUND - p.h; p.vx = 0; p.vy = 0; p.safeX = 55;
     p.weapon = 0; p.beamFuel = 0; p.speedT = 0; p.goldT = 0;
+    const hp = mid ? Math.floor(58 * (state.diff === "easy" ? 0.85 : state.diff === "hard" ? 1.2 : 1))
+      : Math.floor(120 * (state.diff === "easy" ? 0.85 : state.diff === "hard" ? 1.15 : 1));
     state.boss = {
-      boss: true, alive: true, vulnerable: false, x: 620, y: GROUND - 112, w: 78, h: 112,
-      hp: 120, maxHp: 120, hitCD: 0, mode: "idle", timer: 9999, vx: 0, vy: 0,
-      facing: -1, laserAimX: 200, laserAimY: 280, slamX: 400, phase: 1, walk: 0, eyeCD: 0
+      boss: true, midBoss: mid, alive: true, vulnerable: false, x: mid ? 580 : 620, y: GROUND - (mid ? 96 : 112),
+      w: mid ? 68 : 78, h: mid ? 96 : 112,
+      hp: hp, maxHp: hp, hitCD: 0, mode: "idle", timer: 9999, vx: 0, vy: 0,
+      facing: -1, laserAimX: 200, laserAimY: 280, slamX: 400, phase: 1, walk: 0, eyeCD: 0,
+      title: mid ? "PULSE WARDEN" : "BLUE SENTINEL",
+      aggro: mid ? 1.35 : 1
     };
     state.bossPickups = [
       { x: 160, y: GROUND - 336, w: 32, h: 36, type: "health", taken: false, respawn: 0 },
       { x: 520, y: GROUND - 386, w: 36, h: 34, type: "weapon", taken: false, respawn: 0 }
     ];
-    state.talkQ = [
-      { who: "YOU", line: "Blue Sentinel—stand down!" },
-      { who: "BOSS", line: "THE CORE IS OURS." },
-      { who: "YOU", line: "Faith and code will free it." },
-      { who: "BOSS", line: "THEN BE ERASED." }
-    ];
+    state.talkQ = mid
+      ? [
+        { who: "YOU", line: "Pulse Warden—stand aside!" },
+        { who: "BOSS", line: "SPIRE SIGNAL LOCKED." },
+        { who: "YOU", line: "Then I'll break the lock." },
+        { who: "BOSS", line: "PULSE… OVERLOAD." }
+      ]
+      : [
+        { who: "YOU", line: "Blue Sentinel—stand down!" },
+        { who: "BOSS", line: "THE CORE IS OURS." },
+        { who: "YOU", line: "Faith and code will free it." },
+        { who: "BOSS", line: "THEN BE ERASED." }
+      ];
     state.talkI = 0;
     state.talkT = 0;
-    state.banner = "WAREHOUSE CORE";
+    state.banner = mid ? "PULSE WARDEN" : "WAREHOUSE CORE";
     state.messageTimer = 100;
     state.invuln = 9999;
+  }
+
+  function startBoss() {
+    startBossFight("final");
+  }
+
+  function startMidBoss() {
+    startBossFight("mid");
   }
 
   function hurtPlayer(respawnX) {
@@ -920,7 +1059,7 @@
     const ck = state.checkpointX || 80;
     hideOverlay();
     state.mode = "play";
-    state.lives = 3;
+    state.lives = currentDiff().lives;
     state.score = sc;
     state.nextLifeAt = nextLife;
     state.failAt = 0;
@@ -1078,6 +1217,11 @@
     hud.sub.textContent = sub;
     hud.startBtn.textContent = btn || "START";
     hud.startBtn.style.display = "";
+    if (hud.diffBtn) {
+      const showDiff = state.mode === "title" || title === "DIGISTRACTS";
+      hud.diffBtn.style.display = showDiff ? "" : "none";
+      if (showDiff) syncDiffBtn();
+    }
     ROOT.classList.add("dg-menu");
     if (!opts || !opts.keepPlaying) {
       postParent({ type: "dg-chrome", inGame: false });
@@ -1094,7 +1238,7 @@
     ensureAudio();
     if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
     state.score = 0;
-    state.lives = 3;
+    state.lives = currentDiff().lives;
     state.level = 0;
     state.nextLifeAt = LIFE_EVERY;
     state.combo = 0;
@@ -1202,7 +1346,7 @@
       bossFireEye(b);
       b.eyeCD = b.phase === 2 ? 42 : 64;
     }
-    b.timer--;
+    b.timer -= b.aggro || 1;
     if (b.mode === "idle" && b.timer <= 0) {
       b.vulnerable = false;
       const roll = Math.random();
@@ -1386,6 +1530,13 @@
           p.x += plat.dx || 0;
           p.y += plat.dy || 0;
         }
+        if (plat.bounce) {
+          p.vy = -11.5;
+          p.onGround = false;
+          beep(720, 0.07, "triangle", 0.05);
+          explode(p.x + p.w / 2, plat.y, "#c084fc", 8);
+          return true;
+        }
         if (plat.crumble && !plat.gone) {
           plat.life = (plat.life == null ? plat.maxLife : plat.life) - 1;
           if (plat.life <= 0) {
@@ -1471,6 +1622,11 @@
         }
       } else if (h.kind === "gate" && h.arena && state.arena) {
         h.open = !state.arena.active || state.arena.cleared;
+      } else if (h.kind === "wind" && hazardActive(h) && p) {
+        const box = { x: h.x, y: h.y, w: h.w, h: h.h };
+        if (rectsOverlap({ x: p.x, y: p.y, w: p.w, h: p.h }, box)) {
+          p.x += h.push || 0.4;
+        }
       }
 
       if (!p || state.invuln > 0 || p.goldT > 0) continue;
@@ -1603,6 +1759,20 @@
         ctx.fillRect(x, h.y, h.w, h.h);
         ctx.fillStyle = "#00e5ff";
         for (let gy = 0; gy < h.h; gy += 16) ctx.fillRect(x + 2, h.y + gy, h.w - 4, 4);
+      } else if (h.kind === "wind") {
+        if (x + h.w < -20 || x > W + 20) continue;
+        if (!hazardActive(h)) continue;
+        ctx.globalAlpha = 0.2 + Math.sin(performance.now() / 120 + h.x) * 0.08;
+        ctx.fillStyle = "#7dd3fc";
+        ctx.fillRect(x, h.y, h.w, h.h);
+        ctx.globalAlpha = 0.7;
+        ctx.fillStyle = "#e0f2fe";
+        const dir = (h.push || 0) >= 0 ? 1 : -1;
+        for (let wi = 0; wi < 4; wi++) {
+          const wy = h.y + 20 + wi * 40 + (performance.now() / 30) % 40;
+          ctx.fillRect(x + (dir > 0 ? 10 : h.w - 30), wy, 20, 3);
+        }
+        ctx.globalAlpha = 1;
       }
     }
     // Arena cue
@@ -1753,7 +1923,7 @@
     } else if (!calm) {
       state.spawnTimer--;
       if (state.spawnTimer <= 0) {
-        state.spawnTimer = 62 * L.enemyRate + Math.random() * 36;
+        state.spawnTimer = 62 * L.enemyRate * currentDiff().spawnMult + Math.random() * 36;
         const x = state.camX + W + 40 + Math.random() * 120;
         if (x < state.endX - 120) spawnEnemy(x);
       }
@@ -1972,13 +2142,15 @@
     }
     state.particles = state.particles.filter(function (pt) { return pt.life > 0; });
 
-    if (!state.bossMode) updateHazards(calm);
+    if (!state.bossMode || (state.boss && state.boss.midBoss)) updateHazards(calm);
 
     if (!state.bossMode && p.x + p.w >= state.endX - 65) {
       if (state.arena && state.arena.active && !state.arena.cleared) {
         // Can't finish while arena is locked
         p.x = state.endX - 70;
-      } else if (state.level === LEVELS.length - 1) startBoss(); else onLevelComplete();
+      } else if (state.level === LEVELS.length - 1) startBossFight("final");
+      else if (state.level === MID_BOSS_LEVEL) startBossFight("mid");
+      else onLevelComplete();
       updateHUD();
       return;
     }
@@ -1986,7 +2158,7 @@
   }
 
   function drawCity() {
-    const pal = PAL[Math.min(state.level, 4)];
+    const pal = PAL[Math.min(state.level, PAL.length - 1)];
     const bi = state.bossMode ? Math.min(5, imgs.backgrounds.length - 1) : Math.min(state.level, imgs.backgrounds.length - 1);
     const bg = imgs.backgrounds[bi];
     if (bg && bg.complete && bg.naturalWidth) {
@@ -2021,11 +2193,11 @@
       if (p.gone || p.y >= GROUND) continue;
       const x = p.x - state.camX;
       if (x + p.w < 0 || x > W) continue;
-      ctx.fillStyle = p.crumble ? "#57534e" : p.mover ? "#1e3a5f" : "#1f2937";
+      ctx.fillStyle = p.crumble ? "#57534e" : p.mover ? "#1e3a5f" : p.bounce ? "#4c1d95" : "#1f2937";
       ctx.fillRect(x, p.y, p.w, p.h);
-      ctx.fillStyle = p.crumble ? "#fb923c" : p.mover ? "#38bdf8" : "#22d3ee";
+      ctx.fillStyle = p.crumble ? "#fb923c" : p.mover ? "#38bdf8" : p.bounce ? "#e879f9" : "#22d3ee";
       ctx.fillRect(x, p.y, p.w, 3);
-      ctx.fillStyle = p.mover ? "#a78bfa" : "#f472b6";
+      ctx.fillStyle = p.mover ? "#a78bfa" : p.bounce ? "#f5d0fe" : "#f472b6";
       ctx.fillRect(x, p.y + p.h - 2, p.w, 2);
       if (p.crumble && p.life != null && p.maxLife) {
         const pct = Math.max(0, p.life / p.maxLife);
@@ -2379,7 +2551,7 @@
   function drawPlay() {
     drawCity();
     drawPlatforms();
-    if (!state.bossMode) drawHazards();
+    if (!state.bossMode || (state.boss && state.boss.midBoss)) drawHazards();
 
     const gx = state.endX - 70 - state.camX;
     if (!state.bossMode && gx > -55 && gx < W) {
@@ -2470,7 +2642,7 @@
         ctx.fillRect(wx - 10, GROUND - 26, 20, 8);
       }
       ctx.fillStyle = "rgba(0,0,0,.78)"; ctx.fillRect(174, 14, 452, 31);
-      ctx.fillStyle = "#ffffff"; ctx.font = "bold 11px monospace"; ctx.fillText("BLUE SENTINEL", 180, 26);
+      ctx.fillStyle = "#ffffff"; ctx.font = "bold 11px monospace"; ctx.fillText(b.title || "BLUE SENTINEL", 180, 26);
       ctx.fillStyle = "#24283b"; ctx.fillRect(180, 31, 440, 9);
       ctx.fillStyle = b.phase === 2 ? "#39ff14" : "#00e5ff"; ctx.fillRect(180, 31, 440 * Math.max(0, b.hp) / b.maxHp, 9);
       ctx.fillStyle = "#ffffff"; ctx.fillText("SHIELD " + "■".repeat(state.playerHP), 14, 26);
@@ -2629,6 +2801,14 @@
       ensureAudio();
       if (state.mode === "paused") resumeGame();
       else if (state.mode === "play") pauseGame();
+    });
+  }
+  if (hud.diffBtn) {
+    hud.diffBtn.addEventListener("click", function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      ensureAudio();
+      if (state.mode === "title" || state.mode === "credits") cycleDiff();
     });
   }
 
@@ -2888,10 +3068,11 @@
   fit();
 
   const bootSub = wantsTouchUI()
-    ? "by 8bitcrypto_44\nHard mode · HI " + state.hiScore +
-      "\nRotate landscape · stick + JUMP / FIRE\nJump×2 = Super · pink QR = 1-UP"
-    : "by 8bitcrypto_44\nHard mode · HI " + state.hiScore +
-      "\nBlast bots · Jump pits · 3 lives\nP pause · Jump×2 = Super · pink QR = 1-UP";
+    ? "by 8bitcrypto_44 · 7 sectors + 2 bosses\nHI " + state.hiScore +
+      "\nPick DIFF · landscape · stick + JUMP / FIRE"
+    : "by 8bitcrypto_44 · 7 sectors + mid-boss + finale\nHI " + state.hiScore +
+      "\nPick DIFF · P pause · Jump×2 = Super · pink QR = 1-UP";
+  syncDiffBtn();
   showOverlay("DIGISTRACTS", bootSub, "PRESS START");
   updateHUD();
   fit();

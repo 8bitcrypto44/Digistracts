@@ -40,6 +40,12 @@ body.dg-embed #digistracts-root.dg-menu .dg-help{position:absolute}
 #digistracts-root.dg-menu .dg-top{visibility:hidden}
 #digistracts-root.dg-menu .dg-controls{visibility:hidden;pointer-events:none}
 #digistracts-root #dg-overlay{position:absolute;inset:0;z-index:40;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(2,6,23,.72);text-align:center;padding:16px;gap:10px}
+#digistracts-root .dg-menu-actions{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;align-items:center}
+#digistracts-root #dg-diff{
+  background:#111827;color:#ffd400;border:2px solid #ffd400;border-radius:8px;
+  padding:10px 16px;font-family:inherit;font-weight:700;cursor:pointer;min-height:48px
+}
+#digistracts-root #dg-diff:active{transform:scale(.97);background:#422006}
 #digistracts-root #dg-title{font-size:clamp(22px,5vw,40px);color:var(--gold);text-shadow:0 0 12px #ff2bd6,2px 2px 0 #000;letter-spacing:2px;margin:0}
 #digistracts-root #dg-sub{white-space:pre-line;color:#cbd5e1;font-size:13px;line-height:1.45;margin:0 0 6px}
 #digistracts-root #dg-msg{position:absolute;top:12px;left:0;right:0;text-align:center;color:var(--cyan);font-size:18px;letter-spacing:3px;pointer-events:none;text-shadow:0 0 8px #00e5ff;transition:opacity .3s;opacity:0;z-index:20}
