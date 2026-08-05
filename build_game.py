@@ -56,6 +56,25 @@ def compress_platform(path, height=56):
     return data_uri(im, quality=72, method=6)
 
 
+def compress_boss(path, height=112):
+    im = Image.open(path).convert("RGBA")
+    px = im.getdata()
+    cleaned = []
+    for r, g, b, a in px:
+        if a < 10:
+            cleaned.append((0, 0, 0, 0))
+        else:
+            cleaned.append((r, g, b, 255 if a > 200 else a))
+    im.putdata(cleaned)
+    bbox = im.getbbox()
+    if bbox:
+        im = im.crop(bbox)
+    h = height
+    w = max(48, round(im.width * (h / im.height)))
+    im = im.resize((w, h), Image.Resampling.NEAREST)
+    return data_uri(im, quality=78, method=6)
+
+
 # Prefer split singles (hq_01a/b); skip the dual hq_01 frame
 robot_paths = []
 for p in sorted(Path("assets/sprites").glob("hq_*.png")):
@@ -75,6 +94,11 @@ platform_paths = [
 platform_paths = [p if p.exists() else Path(str(p).replace("_game", "")) for p in platform_paths]
 platform_uris = [compress_platform(p) for p in platform_paths if p.exists()]
 
+boss_path = Path("assets/sprites/boss_redcore_game.png")
+if not boss_path.exists():
+    boss_path = Path("assets/sprites/boss_redcore.png")
+boss_uri = compress_boss(boss_path) if boss_path.exists() else ""
+
 embed_source = Path("assets/sprites/embed.js").read_text(encoding="utf-8")
 embed_source = re.sub(
     r"window\.DG_ROBOTS\s*=\s*\[(.*?)\];",
@@ -90,10 +114,17 @@ embed_source = re.sub(
     count=1,
     flags=re.S,
 )
+embed_source = re.sub(
+    r'window\.DG_BOSS\s*=\s*"[^"]*";',
+    'window.DG_BOSS="%s";' % boss_uri,
+    embed_source,
+    count=1,
+)
 embed_source = re.sub(r'window\.DG_QR\s*=\s*"[^"]*";', 'window.DG_QR="";', embed_source)
 embed = jsmin(embed_source)
 print("robots embedded", len(robot_uris), "from", [p.name for p in robot_paths])
 print("platforms embedded", len(platform_uris), "from", [p.name for p in platform_paths if p.exists()])
+print("boss embedded", bool(boss_uri), boss_path.name if boss_path.exists() else "missing")
 js = jsmin(mangle(Path("digistracts.js").read_text(encoding="utf-8")))
 
 # Hosted full-res backgrounds (Postimg). 6 slots: levels 1-5 + boss.
@@ -183,7 +214,7 @@ markup = (
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "38"
+ASSET_V = "39"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]

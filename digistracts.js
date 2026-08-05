@@ -23,6 +23,7 @@
   const PREACHER_SRC = window.DG_PREACHER;
   const ROBOT_SRCS = window.DG_ROBOTS || [];
   const PLATFORM_SRCS = window.DG_PLATFORMS || [];
+  const BOSS_SRC = window.DG_BOSS || "";
   const BACKGROUND_SRCS = window.DG_BACKGROUNDS || (window.DG_BACKGROUND ? [window.DG_BACKGROUND] : []);
 
   const canvas = ROOT.querySelector("#dg-canvas");
@@ -66,7 +67,7 @@
     return im;
   }
 
-  const imgs = { preacher: loadImg(PREACHER_SRC), backgrounds: [], robots: [], platforms: [] };
+  const imgs = { preacher: loadImg(PREACHER_SRC), backgrounds: [], robots: [], platforms: [], boss: loadImg(BOSS_SRC) };
   BACKGROUND_SRCS.forEach(function (src) { imgs.backgrounds.push(loadImg(src)); });
   ROBOT_SRCS.forEach(function (src) { imgs.robots.push(loadImg(src)); });
   PLATFORM_SRCS.forEach(function (src) { imgs.platforms.push(loadImg(src)); });
@@ -2622,10 +2623,10 @@
           points: mid ? 3000 : 5000,
           x: e.x + e.w / 2,
           y: e.y + 20,
-          color: mid ? "#e879f9" : "#00e5ff"
+          color: mid ? "#e879f9" : "#ef4444"
         });
-        explode(e.x + e.w / 2, e.y + e.h / 2, mid ? "#e879f9" : "#00e5ff", 50);
-        addJuice({ shake: 18, hitStop: 12, flash: 22, flashColor: mid ? "rgba(232,121,249,0.45)" : "rgba(0,229,255,0.4)" });
+        explode(e.x + e.w / 2, e.y + e.h / 2, mid ? "#e879f9" : "#ef4444", 50);
+        addJuice({ shake: 18, hitStop: 12, flash: 22, flashColor: mid ? "rgba(232,121,249,0.45)" : "rgba(239,68,68,0.45)" });
         saveHiScore(state.score);
         state.bossMode = false;
         state.boss = null;
@@ -2746,10 +2747,10 @@
       w: mid ? 68 : 78, h: mid ? 96 : 112,
       hp: hp, maxHp: hp, hitCD: 0, mode: "idle", timer: 9999, vx: 0, vy: 0,
       facing: -1, laserAimX: 200, laserAimY: 280, slamX: 400, phase: 1, walk: 0, eyeCD: 0,
-      title: mid ? "PULSE WARDEN" : "BLUE SENTINEL",
+      title: mid ? "PULSE WARDEN" : "REDCORE SENTINEL",
       aggro: mid ? 1.4 : 1,
-      accent: mid ? "#e879f9" : "#00e5ff",
-      accentHot: mid ? "#ff2bd6" : "#39ff14",
+      accent: mid ? "#e879f9" : "#ef4444",
+      accentHot: mid ? "#ff2bd6" : "#ff7a12",
       phaseFlash: 0,
       pulseR: 0,
       dashDir: -1,
@@ -2768,7 +2769,7 @@
         { who: "BOSS", line: "PULSE… OVERLOAD." }
       ]
       : [
-        { who: "YOU", line: "Blue Sentinel—stand down!" },
+        { who: "YOU", line: "Redcore Sentinel—stand down!" },
         { who: "BOSS", line: "THE CORE IS OURS." },
         { who: "YOU", line: "Faith and code will free it." },
         { who: "BOSS", line: "THEN BE ERASED." }
@@ -2777,10 +2778,10 @@
     state.talkT = 0;
     state.banner = mid
       ? "PULSE WARDEN — \"HEARTBEAT LOCKED\""
-      : "BLUE SENTINEL — \"WAREHOUSE OWNS YOU\"";
+      : "REDCORE SENTINEL — \"WAREHOUSE OWNS YOU\"";
     state.messageTimer = 110;
     state.invuln = 9999;
-    addJuice({ shake: 5, flash: 8, flashColor: mid ? "rgba(232,121,249,0.3)" : "rgba(0,229,255,0.28)" });
+    addJuice({ shake: 5, flash: 8, flashColor: mid ? "rgba(232,121,249,0.3)" : "rgba(239,68,68,0.32)" });
   }
 
   function startBoss() {
@@ -3402,7 +3403,7 @@
     fin.type = "button";
     fin.className = "dg-lv-boss";
     fin.textContent = "FINAL";
-    fin.title = "Blue Sentinel";
+    fin.title = "Redcore Sentinel";
     fin.addEventListener("click", function () {
       sfxUi();
       beginTestRun({ boss: "final" });
@@ -3595,7 +3596,7 @@
       shake: 18,
       hitStop: 14,
       flash: 26,
-      flashColor: b.midBoss ? "rgba(232,121,249,0.55)" : "rgba(57,255,20,0.5)"
+      flashColor: b.midBoss ? "rgba(232,121,249,0.55)" : "rgba(239,68,68,0.5)"
     });
     beep(120, 0.25, "sawtooth", 0.1);
     beep(60, 0.3, "square", 0.08, 0.1);
@@ -3652,7 +3653,7 @@
       }
       return;
     }
-    // Blue Sentinel: slam / pillars / laser / jump
+    // Redcore Sentinel: slam / pillars / laser / jump
     if (roll < (hot ? 0.34 : 0.28)) {
       b.mode = "skyRise";
       b.timer = 50;
@@ -5234,17 +5235,66 @@
   }
 
   function drawBoss(b) {
-    const sx = b.x - state.camX, sy = b.y, f = b.facing < 0 ? -1 : 1;
-    const active = b.mode === "laser" || b.mode === "laserCharge";
-    const eyeOn = b.mode === "eyeFire" || b.mode === "eyeCharge";
-    const charging = b.mode.indexOf("Charge") >= 0 || b.mode === "skyHold" || b.mode === "pulseCharge" || b.mode === "dashCharge" || b.mode === "pillarCharge";
-    const step = Math.sin(b.walk) * 0.3, jump = b.mode === "jump" || b.mode === "skySlam" || b.mode === "dash" ? 0.55 : b.mode === "jumpCharge" || b.mode === "skyHold" || b.mode === "skyRise" ? 0.32 : 0;
-    const core = b.phase === 2 ? (b.accentHot || "#39ff14") : (b.accent || "#00e5ff");
+    const sx = b.x - state.camX, sy = b.y;
+    const core = b.phase === 2 ? (b.accentHot || "#ff7a12") : (b.accent || "#ef4444");
     const pulse = 0.5 + Math.sin(performance.now() / (b.phase === 2 ? 70 : 140)) * 0.32;
-    const armor = b.midBoss ? "#4a1760" : "#0757a6";
-    const armor2 = b.midBoss ? "#7a2a9a" : "#0a4a86";
-    const armor3 = b.midBoss ? "#2a0a38" : "#052f68";
-    const trim = b.midBoss ? "#f0abfc" : "#2ea8f0";
+    const eyeOn = b.mode === "eyeFire" || b.mode === "eyeCharge";
+    const charging = b.mode.indexOf("Charge") >= 0 || b.mode === "skyHold" || b.mode === "pulseCharge"
+      || b.mode === "dashCharge" || b.mode === "pillarCharge";
+    const active = b.mode === "laser" || b.mode === "laserCharge";
+    const img = imgs.boss;
+    const useSprite = !b.midBoss && img && img.complete && img.naturalWidth;
+
+    if (b.phaseFlash > 0) {
+      ctx.globalAlpha = 0.25 + (b.phaseFlash % 6) * 0.08;
+      ctx.fillStyle = core;
+      ctx.fillRect(sx - 10, sy - 10, b.w + 20, b.h + 20);
+      ctx.globalAlpha = 1;
+    }
+
+    if (useSprite) {
+      const bob = Math.sin(b.walk || 0) * 1.6;
+      const jumpLift = (b.mode === "jump" || b.mode === "skySlam" || b.mode === "dash") ? -4
+        : (b.mode === "jumpCharge" || b.mode === "skyHold" || b.mode === "skyRise") ? -2 : 0;
+      const h = b.h;
+      const w = Math.round(img.naturalWidth * (h / img.naturalHeight));
+      const dx = sx + (b.w - w) / 2;
+      const dy = sy + bob + jumpLift;
+      ctx.save();
+      if (b.hitCD > 0) ctx.globalAlpha = 0.5 + (b.hitCD % 2) * 0.35;
+      else if (charging) ctx.globalAlpha = 0.88 + pulse * 0.12;
+      // Art faces camera-left by default (same as robots)
+      if (b.facing > 0) {
+        ctx.translate(dx + w, dy);
+        ctx.scale(-1, 1);
+        ctx.drawImage(img, 0, 0, w, h);
+      } else {
+        ctx.drawImage(img, dx, dy, w, h);
+      }
+      ctx.restore();
+      if (eyeOn || charging || active) {
+        ctx.globalAlpha = eyeOn || active ? 0.55 : pulse * 0.4;
+        ctx.fillStyle = eyeOn || charging ? "#ff7a12" : core;
+        ctx.fillRect(sx + b.w * 0.32, sy + b.h * 0.28, b.w * 0.36, b.h * 0.18);
+        ctx.globalAlpha = 1;
+      }
+      if (b.phase === 2) {
+        ctx.globalAlpha = 0.22 + pulse * 0.2;
+        ctx.fillStyle = b.accentHot || "#ff7a12";
+        ctx.fillRect(sx + 8, sy + 4, b.w - 16, 4);
+        ctx.globalAlpha = 1;
+      }
+      if (!b.vulnerable) drawGlobeShield(sx + b.w / 2, sy + b.h * 0.48, Math.max(70, b.w * 0.95), core);
+      return;
+    }
+
+    // Procedural mid-boss (Pulse Warden)
+    const f = b.facing < 0 ? -1 : 1;
+    const step = Math.sin(b.walk) * 0.3, jump = b.mode === "jump" || b.mode === "skySlam" || b.mode === "dash" ? 0.55 : b.mode === "jumpCharge" || b.mode === "skyHold" || b.mode === "skyRise" ? 0.32 : 0;
+    const armor = b.midBoss ? "#4a1760" : "#3f1212";
+    const armor2 = b.midBoss ? "#7a2a9a" : "#7f1d1d";
+    const armor3 = b.midBoss ? "#2a0a38" : "#1c0a0a";
+    const trim = b.midBoss ? "#f0abfc" : "#fca5a5";
     const p = state.player;
     const aimTx = active ? b.laserAimX : (p ? p.x + 14 : b.x);
     const aimTy = active ? b.laserAimY : (p ? p.y + 22 : sy + 46);
@@ -5262,12 +5312,6 @@
       lit(core, len - 7, -hw + 2, 3, wide - 4, pulse);
       ctx.restore();
       return { x: lx + Math.cos(a) * len, y: ly + Math.sin(a) * len };
-    }
-    if (b.phaseFlash > 0) {
-      ctx.globalAlpha = 0.25 + (b.phaseFlash % 6) * 0.08;
-      ctx.fillStyle = core;
-      ctx.fillRect(sx - 10, sy - 10, b.w + 20, b.h + 20);
-      ctx.globalAlpha = 1;
     }
     ctx.save();
     ctx.translate(sx + 39, sy);
@@ -5287,7 +5331,7 @@
     box(armor2, -14, 28, 34, 30);
     box(trim, -14, 28, 34, 3);
     box(armor, -14, 50, 34, 8);
-    box(b.midBoss ? "#d946ef" : "#0b8de0", -3, 34, 18, 14);
+    box(b.midBoss ? "#d946ef" : "#b91c1c", -3, 34, 18, 14);
     for (let i = 0; i < 3; i++) {
       box("#03101e", 7, 36 + i * 4, 7, 3); box(core, 8, 37 + i * 4, 5, 1);
     }
@@ -5972,7 +6016,7 @@
       }
       ctx.fillStyle = "rgba(0,0,0,.78)"; ctx.fillRect(174, 14, 452, 31);
       ctx.fillStyle = "#ffffff"; ctx.font = "bold 11px monospace";
-      ctx.fillText(b.title || "BLUE SENTINEL", 180, 26);
+      ctx.fillText(b.title || "REDCORE SENTINEL", 180, 26);
       if (b.phase === 2) {
         ctx.fillStyle = b.accentHot || "#39ff14";
         ctx.fillText("PHASE 2", 520, 26);
@@ -6076,11 +6120,11 @@
       const bx = you ? 40 : W - 340;
       ctx.fillStyle = "rgba(2,8,20,.9)";
       ctx.fillRect(bx, 58, 300, 52);
-      ctx.strokeStyle = you ? "#ffd400" : "#00e5ff";
+      ctx.strokeStyle = you ? "#ffd400" : ((state.boss && state.boss.accent) || "#ef4444");
       ctx.strokeRect(bx, 58, 300, 52);
-      ctx.fillStyle = you ? "#ffd400" : "#00e5ff";
+      ctx.fillStyle = you ? "#ffd400" : ((state.boss && state.boss.accent) || "#ef4444");
       ctx.font = "bold 11px monospace";
-      ctx.fillText(you ? "FATHER ELIAS" : "BLUE SENTINEL", bx + 10, 76);
+      ctx.fillText(you ? "FATHER ELIAS" : ((state.boss && state.boss.title) || "REDCORE SENTINEL"), bx + 10, 76);
       ctx.fillStyle = "#e2e8f0";
       ctx.font = "13px monospace";
       ctx.fillText(line.line, bx + 10, 98);
