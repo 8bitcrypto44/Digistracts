@@ -1043,6 +1043,31 @@
     ["#061a12", "#34d399", "#fbbf24"]  // Signal Crypt
   ];
 
+  // Locked ~32-color neon palette for world/weapon drawing
+  const NEON = {
+    void: "#05070f", ink: "#0b1220", metal: "#1f2937", metal2: "#334155",
+    steel: "#475569", silver: "#94a3b8", white: "#e2e8f0",
+    cyan: "#00e5ff", cyan2: "#67e8f9", cyanDim: "#0e7490",
+    pink: "#ff2bd6", pink2: "#fb7185", pinkDim: "#831843",
+    gold: "#ffd400", gold2: "#fbbf24", orange: "#f97316",
+    green: "#39ff14", green2: "#4ade80", greenDim: "#14532d",
+    purple: "#a78bfa", purple2: "#c084fc", purpleDim: "#4c1d95",
+    red: "#ef4444", redHot: "#ff2b2b", blue: "#38bdf8",
+    wood: "#7c4a21", wood2: "#a16207", black: "#020617"
+  };
+  function N(k) { return NEON[k] || NEON.cyan; }
+  function pxFill(c, x, y, w, h) { ctx.fillStyle = c; ctx.fillRect(x | 0, y | 0, w | 0, h | 0); }
+  function pxOutline(c, x, y, w, h) {
+    ctx.strokeStyle = c; ctx.lineWidth = 1;
+    ctx.strokeRect((x | 0) + 0.5, (y | 0) + 0.5, (w | 0) - 1, (h | 0) - 1);
+  }
+  function pxBevel(x, y, w, h, top, bot, body) {
+    pxFill(body || N("metal"), x, y, w, h);
+    pxFill(top || N("cyan"), x, y, w, 3);
+    pxFill(bot || N("pink"), x, y + h - 2, w, 2);
+    pxOutline(N("black"), x, y, w, h);
+  }
+
   function secretDef(id) {
     return (id && SECRETS[id]) || null;
   }
@@ -1081,6 +1106,7 @@
     enemies: [],
     qrs: [],
     staffs: [],
+    props: [],
     holes: [],
     platforms: [],
     particles: [],
@@ -1168,19 +1194,43 @@
       vx: 0, vy: 0, facing: 1, onGround: false,
       shootCD: 0, run: 0, crouch: false, platformCamp: 0,
       airSupers: 0, weapon: 0, beamFuel: 0, beamTick: 0, beaming: false, beamAim: 0, fireHeld: false,
-      gunBag: [],
+      gunBag: [], maxiCharge: 0,
       safeX: 80, speedT: 0, goldT: 0, charge: 0, overclockT: 0,
       coyote: 0, jumpWasDown: false
     };
   }
 
   const WEAPON_DEFS = {
-    RIFLE: { kind: "beam", rows: 1, cd: 8, color: "#00e5ff", ammo: 220, dmg: 2, label: "RIFLE", hint: "HOLD FIRE · BEAM" },
-    SPREAD: { kind: "beam", rows: 4, cd: 10, color: "#ffd400", ammo: 160, dmg: 2, label: "SPREAD", hint: "WIDE BEAM" },
-    MAXI: { kind: "beam", rows: 8, cd: 12, color: "#ff2bd6", ammo: 120, dmg: 3, label: "MAXI", hint: "MEGA BEAM" },
-    HOMING: { kind: "proj", color: "#a78bfa", ammo: 48, cd: 13, dmg: 2, label: "HOMING", hint: "AUTO-TRACK SHOTS" },
-    RICOCHET: { kind: "proj", color: "#34d399", ammo: 42, cd: 11, dmg: 2, label: "RICO", hint: "BOUNCES OFF WALLS" }
+    RIFLE: {
+      kind: "beam", rows: 1, cd: 7, color: N("cyan"), ammo: 240, dmg: 2, knock: 10,
+      pierce: true, shake: 0.8, label: "RIFLE", hint: "PIERCE BEAM · HOLD FIRE", tag: "RFL"
+    },
+    SPREAD: {
+      kind: "pellets", pellets: 5, cd: 16, color: N("gold"), ammo: 56, dmg: 1, knock: 14,
+      spread: 0.28, shake: 2.2, label: "SPREAD", hint: "SHOTGUN BURST", tag: "SPR"
+    },
+    MAXI: {
+      kind: "charge", cd: 22, color: N("pink"), ammo: 18, dmg: 5, knock: 22,
+      shake: 8, label: "MAXI", hint: "HOLD CHARGE · RELEASE", tag: "MAX"
+    },
+    HOMING: {
+      kind: "proj", color: N("purple"), ammo: 40, cd: 12, dmg: 2, knock: 8,
+      shake: 1.2, label: "HOMING", hint: "AUTO-TRACK BOLTS", tag: "HOM", homing: true
+    },
+    RICOCHET: {
+      kind: "proj", color: N("green2"), ammo: 36, cd: 10, dmg: 2, knock: 10,
+      shake: 1.4, label: "RICO", hint: "BOUNCE SHOTS", tag: "RIC", rico: true, bounces: 6
+    },
+    WAVE: {
+      kind: "wave", cd: 20, color: N("cyan2"), ammo: 28, dmg: 3, knock: 20,
+      shake: 3.5, range: 150, label: "WAVE", hint: "SHOCK CONE · CROWDS", tag: "WAV", antiShield: 2
+    },
+    PULSE: {
+      kind: "pulse", cd: 26, color: N("orange"), ammo: 16, dmg: 4, knock: 16,
+      shake: 6, label: "PULSE", hint: "LOB ORB · AOE BLAST", tag: "PLS", antiShield: 3
+    }
   };
+  const WEAPON_ORDER = ["RIFLE", "SPREAD", "MAXI", "HOMING", "RICOCHET", "WAVE", "PULSE"];
 
   function weaponDef(type) {
     return WEAPON_DEFS[type] || null;
@@ -1188,7 +1238,15 @@
 
   function weaponColor(type) {
     const d = weaponDef(type);
-    return d ? d.color : "#cbd5e1";
+    return d ? d.color : N("silver");
+  }
+
+  function dropWeaponPickup(type, ammo, x, y) {
+    if (!type || !weaponDef(type)) return;
+    state.staffs.push({
+      x: x, y: y, w: 18, h: 22, type: type, bob: Math.random() * 6,
+      taken: false, ammo: ammo | 0, dropped: true
+    });
   }
 
   function grantWeapon(type, ammoScale) {
@@ -1200,7 +1258,6 @@
     if (p.weapon === type) {
       p.beamFuel = Math.max(p.beamFuel || 0, ammo);
     } else {
-      // Merge any existing bag copy of this type
       for (let i = p.gunBag.length - 1; i >= 0; i--) {
         if (p.gunBag[i].type === type) {
           ammo = Math.max(ammo, p.gunBag[i].ammo | 0);
@@ -1208,15 +1265,23 @@
         }
       }
       if (p.weapon && p.beamFuel > 0) {
+        if (p.gunBag.length >= GUN_BAG_MAX) {
+          const kicked = p.gunBag.pop();
+          if (kicked) dropWeaponPickup(kicked.type, kicked.ammo, p.x, p.y - 10);
+        }
         p.gunBag = p.gunBag.filter(function (g) { return g.type !== p.weapon; });
         p.gunBag.unshift({ type: p.weapon, ammo: p.beamFuel });
-        while (p.gunBag.length > GUN_BAG_MAX) p.gunBag.pop();
+        while (p.gunBag.length > GUN_BAG_MAX) {
+          const overflow = p.gunBag.pop();
+          if (overflow) dropWeaponPickup(overflow.type, overflow.ammo, p.x + 20, p.y - 8);
+        }
       }
       p.weapon = type;
       p.beamFuel = ammo;
     }
     p.beamTick = 0;
     p.charge = 0;
+    p.maxiCharge = 0;
     p.beaming = false;
   }
 
@@ -1284,6 +1349,74 @@
     sfxUi();
     beep(520, 0.05, "square", 0.05);
     beep(780, 0.05, "triangle", 0.04, 0.04);
+    updateHUD();
+  }
+
+
+  function hotbarSlots(p) {
+    const slots = [{ type: 0, label: "PST", ammo: null, active: !p.weapon }];
+    if (p.weapon && p.beamFuel > 0) {
+      const d = weaponDef(p.weapon);
+      slots.push({ type: p.weapon, label: (d && d.tag) || String(p.weapon).slice(0, 3), ammo: p.beamFuel, active: true, hand: true });
+    }
+    (p.gunBag || []).forEach(function (g, i) {
+      const d = weaponDef(g.type);
+      slots.push({ type: g.type, label: (d && d.tag) || String(g.type).slice(0, 3), ammo: g.ammo | 0, bagIndex: i });
+    });
+    return slots.slice(0, 3);
+  }
+
+  function selectWeaponSlot(slot) {
+    const p = state.player;
+    if (!p || state.mode !== "play" || state.demo) return;
+    const slots = hotbarSlots(p);
+    const s = slots[slot];
+    if (!s) {
+      beep(140, 0.05, "square", 0.03);
+      return;
+    }
+    if (s.active) return;
+    if (s.type === 0) {
+      if (!p.weapon) return;
+      if (!p.gunBag) p.gunBag = [];
+      if (p.beamFuel > 0) {
+        p.gunBag.unshift({ type: p.weapon, ammo: p.beamFuel });
+        while (p.gunBag.length > GUN_BAG_MAX) {
+          const overflow = p.gunBag.pop();
+          if (overflow) dropWeaponPickup(overflow.type, overflow.ammo, p.x + 16, p.y - 8);
+        }
+      }
+      p.weapon = 0;
+      p.beamFuel = 0;
+      p.beaming = false;
+      p.maxiCharge = 0;
+      state.banner = "SWAP → PISTOL";
+      state.messageTimer = 45;
+      sfxUi();
+      updateHUD();
+      return;
+    }
+    if (s.hand) return;
+    if (typeof s.bagIndex !== "number" || !p.gunBag || !p.gunBag[s.bagIndex]) return;
+    const g = p.gunBag.splice(s.bagIndex, 1)[0];
+    if (p.weapon && p.beamFuel > 0) {
+      p.gunBag.splice(Math.min(s.bagIndex, p.gunBag.length), 0, { type: p.weapon, ammo: p.beamFuel });
+      while (p.gunBag.length > GUN_BAG_MAX) {
+        const overflow = p.gunBag.pop();
+        if (overflow) dropWeaponPickup(overflow.type, overflow.ammo, p.x + 16, p.y - 8);
+      }
+    }
+    p.weapon = g.type;
+    p.beamFuel = g.ammo | 0;
+    p.beaming = false;
+    p.charge = 0;
+    p.maxiCharge = 0;
+    p.beamTick = 0;
+    const d = weaponDef(g.type);
+    state.banner = "SWAP → " + (d ? d.label : g.type) + " ×" + p.beamFuel;
+    state.messageTimer = 55;
+    sfxUi();
+    beep(520, 0.05, "square", 0.05);
     updateHUD();
   }
 
@@ -1378,9 +1511,9 @@
       state.invuln = hitInvuln();
       queueTips([
         "JUMP ×2 = SUPER JUMP",
-        "HOLD FIRE TO CHARGE PISTOL",
-        "PICK UP GUNS · Q / SWAP TO CYCLE",
-        "AIM ASSIST HELPS ON TITLE MENU"
+        "HOLD FIRE TO CHARGE · MAXI CHARGES TOO",
+        "GUNS: Q/SWAP · 1/2/3 HOTBAR · DROP WHEN FULL",
+        "WAVE/PULSE CRACK ELITE SHIELDS · FLANK THEM"
       ]);
       state.banner = "GO! LEARN THE CONTROLS";
       state.messageTimer = 90;
@@ -1442,13 +1575,15 @@
         w: 24, h: 24, bob: 5.1, taken: false, power: "overclock"
       });
     }
-    ["RIFLE", "SPREAD", "MAXI", "HOMING", "RICOCHET"].forEach(function (type, i) {
+    WEAPON_ORDER.forEach(function (type, i) {
       if (!staffPlats.length) return;
       const plat = staffPlats[i % staffPlats.length];
       const spread = Math.floor(i / staffPlats.length);
+      const slot = (i * 3 + spread * 2) % staffPlats.length;
+      const p2 = staffPlats[slot] || plat;
       state.staffs.push({
-        x: plat.x + plat.w / 2 - 7 + spread * 18, y: plat.y - 28 - (i % 3) * 4,
-        w: 14, h: 20, type: type, bob: i, taken: false
+        x: p2.x + p2.w / 2 - 9 + (spread % 2) * 16, y: p2.y - 32 - (i % 3) * 5,
+        w: 18, h: 22, type: type, bob: i, taken: false
       });
     });
   }
@@ -1804,6 +1939,7 @@
       buildArena(Math.floor(len * 0.5));
     }
 
+    placeProps(theme, len);
     placePickups(elevated, L);
     return elevated;
   }
@@ -1840,6 +1976,7 @@
     state.bossPickups = [];
     state.playerHP = 0;
     state.platforms = [];
+    state.props = [];
     state.particles = [];
     state.spawnTimer = goingSecret ? 160 : (idx === 0 ? 300 : 220);
     state.grace = skipTalk ? 120 : (idx === 0 && !goingSecret ? 40 : 0);
@@ -2055,10 +2192,11 @@
       mode: "patrol", facing: -1, alive: true, bob: Math.random() * 20,
       walk: Math.random() * 6, flying: flying, baseY: baseY,
       heavy: !!def.heavy, canShoot: !!def.shoot, canDash: !!def.dash,
-      elite: elite
+      elite: elite,
+      shieldUp: elite, shieldHits: 0, shieldCD: 0
     });
     if (elite && state.mode === "play" && state.messageTimer < 20) {
-      state.banner = "ELITE HUNTER!";
+      state.banner = "ELITE · FRONT SHIELD!";
       state.messageTimer = 40;
       beep(220, 0.08, "sawtooth", 0.06);
       beep(440, 0.1, "square", 0.05, 0.06);
@@ -2137,7 +2275,8 @@
     beep(640, 0.08, "sawtooth", 0.07);
   }
 
-  function shootGun(aim) {
+  function shootGun(aim, opts) {
+    opts = opts || {};
     const p = state.player;
     if (!p || p.shootCD > 0) return false;
     assistFacing(p);
@@ -2145,81 +2284,180 @@
     const tip = gunPose(p, aim);
     const def = weaponDef(p.weapon);
     const clock = p.overclockT > 0;
+    const spend = function () {
+      if (clock) {
+        if (p.beamFuel < 6) p.beamFuel = 6;
+      } else {
+        p.beamFuel -= 1;
+      }
+    };
 
-    // Beam weapons (RIFLE / SPREAD / MAXI)
+    // Pierce / thin beam (RIFLE)
     if (def && def.kind === "beam") {
       if (p.beamFuel <= 0) return false;
-      const rows = def.rows;
       p.shootCD = Math.max(3, Math.floor(def.cd * (clock ? 0.55 : 1)));
-      p.beamFuel -= clock ? 0 : 1;
-      if (clock && p.beamFuel < 12) p.beamFuel = 12;
+      spend();
       const vertical = aim !== 0;
       const ox = tip.x, oy = tip.y;
       const targets = state.bossMode && state.boss ? state.enemies.concat([state.boss]) : state.enemies;
+      let hitAny = false;
       for (let i = 0; i < targets.length; i++) {
         const e = targets[i];
         const dx = e.x + e.w / 2 - ox;
         const dy = e.y + e.h / 2 - oy;
         const ahead = vertical ? dy * aim >= 0 : dx * p.facing >= 0;
         const visible = e.x + e.w > state.camX - 20 && e.x < state.camX + W + 20;
-        let hit = false;
-        for (let r = 0; r < rows; r++) {
-          const angle = (r - (rows - 1) / 2) * 0.085;
-          if (vertical) {
-            const rayX = ox + Math.abs(dy) * Math.tan(angle);
-            if (rayX >= e.x - 3 && rayX <= e.x + e.w + 3) hit = true;
-          } else {
-            const rayY = oy + Math.abs(dx) * Math.tan(angle);
-            if (rayY >= e.y - 3 && rayY <= e.y + e.h + 3) hit = true;
-          }
+        const rayY = vertical ? true : (oy >= e.y - 6 && oy <= e.y + e.h + 6);
+        const rayX = vertical ? (ox >= e.x - 6 && ox <= e.x + e.w + 6) : true;
+        if (e.alive && visible && ahead && rayX && rayY) {
+          damageEnemy(e, def.dmg, p.facing, { knock: def.knock, antiShield: def.antiShield || 0 });
+          hitAny = true;
+          if (!def.pierce && !e.elite) break;
         }
-        if (e.alive && visible && ahead && hit) damageEnemy(e, def.dmg, p.facing);
       }
       muzzleSparks(tip, def.color);
       sfxBeam(p.weapon);
+      if (def.shake) addJuice({ shake: def.shake * (hitAny ? 1.2 : 0.6) });
       return true;
     }
 
-    // Homing bolts
-    if (def && p.weapon === "HOMING") {
+    // Shotgun pellets (SPREAD)
+    if (def && def.kind === "pellets") {
       if (p.beamFuel <= 0) return false;
       p.shootCD = Math.max(4, Math.floor(def.cd * (clock ? 0.55 : 1)));
-      p.beamFuel -= clock ? 0 : 1;
-      if (clock && p.beamFuel < 8) p.beamFuel = 8;
-      const spd = clock ? 8.4 : 7.2;
-      let vx = p.facing * spd, vy = aim ? aim * spd * 0.85 : 0;
-      state.bullets.push({
-        x: tip.x - 4, y: tip.y - 4, w: 10, h: 10,
-        vx: vx, vy: vy, life: 110, from: "player",
-        homing: true, dmg: def.dmg, color: def.color
-      });
-      muzzleSparks(tip, def.color);
-      slideBeep(900, 1400, 0.08, "square", 0.05);
-      return true;
-    }
-
-    // Ricochet bolts
-    if (def && p.weapon === "RICOCHET") {
-      if (p.beamFuel <= 0) return false;
-      p.shootCD = Math.max(4, Math.floor(def.cd * (clock ? 0.55 : 1)));
-      p.beamFuel -= clock ? 0 : 1;
-      if (clock && p.beamFuel < 8) p.beamFuel = 8;
-      if (aim) {
+      spend();
+      const n = def.pellets || 5;
+      const base = aim ? Math.atan2(aim, 0.01) : (p.facing > 0 ? 0 : Math.PI);
+      for (let i = 0; i < n; i++) {
+        const t = n === 1 ? 0 : (i / (n - 1) - 0.5);
+        const ang = base + t * (def.spread || 0.3);
+        const spd = 9.5 + Math.random() * 1.5;
         state.bullets.push({
-          x: tip.x - 4, y: tip.y - 4, w: 8, h: 8,
-          vx: p.facing * 3.2, vy: aim * 9.5, life: 140, from: "player",
-          rico: true, bounces: 5, dmg: def.dmg, color: def.color
-        });
-      } else {
-        state.bullets.push({
-          x: tip.x - (p.facing < 0 ? 8 : 0), y: tip.y - 3, w: 10, h: 6,
-          vx: p.facing * 10, vy: -2.2, life: 140, from: "player",
-          rico: true, bounces: 5, dmg: def.dmg, color: def.color
+          x: tip.x - 3, y: tip.y - 3, w: 7, h: 7,
+          vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+          life: 28 + (Math.random() * 8) | 0, from: "player",
+          slug: true, dmg: def.dmg, color: def.color, knock: def.knock
         });
       }
       muzzleSparks(tip, def.color);
-      beep(520, 0.05, "triangle", 0.06);
-      beep(780, 0.04, "square", 0.04, 0.03);
+      explode(tip.x, tip.y, def.color, 6);
+      noiseBurst(0.06, 0.07, 0, 1400);
+      beep(220, 0.06, "sawtooth", 0.06);
+      addJuice({ shake: def.shake || 2 });
+      return true;
+    }
+
+    // MAXI charge release
+    if (def && def.kind === "charge") {
+      if (p.beamFuel <= 0) return false;
+      const power = Math.max(1, Math.min(3, opts.power || Math.floor((p.maxiCharge || 0) / 18) || 1));
+      p.shootCD = Math.max(8, Math.floor(def.cd * (clock ? 0.55 : 1)));
+      spend();
+      const dmg = def.dmg + power;
+      state.bullets.push({
+        x: tip.x - 8, y: tip.y - 8, w: 12 + power * 4, h: 12 + power * 3,
+        vx: aim ? 0 : p.facing * (11 + power), vy: aim ? aim * (10 + power) : 0,
+        life: 55, from: "player", charged: true, dmg: dmg, color: def.color,
+        knock: def.knock, antiShield: 2
+      });
+      muzzleSparks(tip, def.color);
+      explode(tip.x, tip.y, def.color, 8 + power * 4);
+      slideBeep(180, 1100, 0.14, "sawtooth", 0.09);
+      addJuice({ shake: (def.shake || 6) * (0.5 + power * 0.35), flash: 6 + power * 2, flashColor: "rgba(255,43,214,0.35)" });
+      p.maxiCharge = 0;
+      return true;
+    }
+
+    // Homing / Rico projectiles
+    if (def && def.kind === "proj") {
+      if (p.beamFuel <= 0) return false;
+      p.shootCD = Math.max(4, Math.floor(def.cd * (clock ? 0.55 : 1)));
+      spend();
+      if (def.homing) {
+        const spd = clock ? 8.6 : 7.4;
+        state.bullets.push({
+          x: tip.x - 4, y: tip.y - 4, w: 10, h: 10,
+          vx: p.facing * spd, vy: aim ? aim * spd * 0.85 : 0,
+          life: 120, from: "player",
+          homing: true, dmg: def.dmg, color: def.color, knock: def.knock
+        });
+        muzzleSparks(tip, def.color);
+        slideBeep(900, 1400, 0.08, "square", 0.05);
+      } else {
+        const bounces = def.bounces || 5;
+        if (aim) {
+          state.bullets.push({
+            x: tip.x - 4, y: tip.y - 4, w: 8, h: 8,
+            vx: p.facing * 3.4, vy: aim * 9.8, life: 150, from: "player",
+            rico: true, bounces: bounces, dmg: def.dmg, color: def.color, knock: def.knock
+          });
+        } else {
+          state.bullets.push({
+            x: tip.x - (p.facing < 0 ? 8 : 0), y: tip.y - 3, w: 10, h: 6,
+            vx: p.facing * 11, vy: -2.4, life: 150, from: "player",
+            rico: true, bounces: bounces, dmg: def.dmg, color: def.color, knock: def.knock
+          });
+        }
+        muzzleSparks(tip, def.color);
+        beep(520, 0.05, "triangle", 0.06);
+        beep(780, 0.04, "square", 0.04, 0.03);
+      }
+      if (def.shake) addJuice({ shake: def.shake });
+      return true;
+    }
+
+    // Shock wave cone
+    if (def && def.kind === "wave") {
+      if (p.beamFuel <= 0) return false;
+      p.shootCD = Math.max(6, Math.floor(def.cd * (clock ? 0.55 : 1)));
+      spend();
+      const range = def.range || 150;
+      const targets = state.bossMode && state.boss ? state.enemies.concat([state.boss]) : state.enemies;
+      for (let i = 0; i < targets.length; i++) {
+        const e = targets[i];
+        if (!e.alive) continue;
+        const dx = (e.x + e.w / 2) - tip.x;
+        const dy = (e.y + e.h / 2) - tip.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > range) continue;
+        const ahead = dx * p.facing >= -20;
+        const cone = Math.abs(dy) < 70 + dist * 0.35;
+        if (ahead && cone) {
+          damageEnemy(e, def.dmg, p.facing, { knock: def.knock, antiShield: def.antiShield || 2 });
+        }
+      }
+      state.particles.push({
+        x: tip.x, y: tip.y, vx: p.facing * 2, vy: 0, life: 14,
+        color: def.color, wave: true, facing: p.facing, range: range
+      });
+      for (let k = 0; k < 10; k++) {
+        state.particles.push({
+          x: tip.x, y: tip.y + (Math.random() - 0.5) * 40,
+          vx: p.facing * (3 + Math.random() * 5), vy: (Math.random() - 0.5) * 3,
+          life: 12 + Math.random() * 10, color: def.color
+        });
+      }
+      beep(300, 0.08, "sawtooth", 0.07);
+      beep(160, 0.1, "square", 0.05, 0.04);
+      addJuice({ shake: def.shake || 3, flash: 5, flashColor: "rgba(103,232,249,0.25)" });
+      return true;
+    }
+
+    // Lobbed pulse orb
+    if (def && def.kind === "pulse") {
+      if (p.beamFuel <= 0) return false;
+      p.shootCD = Math.max(8, Math.floor(def.cd * (clock ? 0.55 : 1)));
+      spend();
+      state.bullets.push({
+        x: tip.x - 6, y: tip.y - 6, w: 14, h: 14,
+        vx: p.facing * 6.2, vy: aim ? aim * 7 : -5.5,
+        life: 90, from: "player", pulse: true, dmg: def.dmg, color: def.color,
+        knock: def.knock, antiShield: def.antiShield || 3, grav: 0.28
+      });
+      muzzleSparks(tip, def.color);
+      beep(180, 0.07, "triangle", 0.06);
+      beep(420, 0.05, "square", 0.04, 0.05);
+      addJuice({ shake: 2 });
       return true;
     }
 
@@ -2230,11 +2468,12 @@
       state.bullets.push({
         x: tip.x - 6, y: tip.y - 6, w: 14, h: 12,
         vx: (aim ? 0 : p.facing * 13), vy: aim ? aim * 12 : 0,
-        life: 70, from: "player", charged: true, dmg: power, color: "#fff27a"
+        life: 70, from: "player", charged: true, dmg: power, color: N("gold"), knock: 14
       });
-      muzzleSparks(tip, "#ffd400");
-      explode(tip.x, tip.y, "#ffd400", 10);
+      muzzleSparks(tip, N("gold"));
+      explode(tip.x, tip.y, N("gold"), 10);
       slideBeep(200, 900, 0.12, "sawtooth", 0.08);
+      addJuice({ shake: 3 + power });
       p.charge = 0;
       return true;
     }
@@ -2252,12 +2491,12 @@
     }
     for (let i = -1; i <= 1; i++) {
       if (aim) {
-        state.bullets.push({ x: tip.x - 4 + i * 6, y: tip.y - 4, w: 6, h: 10, vx: i * 1.1, vy: aim * 11, life: 55, from: "player", slug: true, dmg: 1 });
+        state.bullets.push({ x: tip.x - 4 + i * 6, y: tip.y - 4, w: 6, h: 10, vx: i * 1.1, vy: aim * 11, life: 55, from: "player", slug: true, dmg: 1, knock: 6 });
       } else {
-        state.bullets.push({ x: tip.x - (p.facing < 0 ? 10 : 0), y: tip.y - 2 + i * 5, w: 10, h: 4, vx: p.facing * 11, vy: i * 0.9 + assistVy, life: 80, from: "player", slug: true, dmg: 1 });
+        state.bullets.push({ x: tip.x - (p.facing < 0 ? 10 : 0), y: tip.y - 2 + i * 5, w: 10, h: 4, vx: p.facing * 11, vy: i * 0.9 + assistVy, life: 80, from: "player", slug: true, dmg: 1, knock: 6 });
       }
     }
-    muzzleSparks(tip, "#cbd5e1");
+    muzzleSparks(tip, N("silver"));
     sfxShoot();
     return true;
   }
@@ -2271,6 +2510,24 @@
         life: 20 + Math.random() * 20,
         color: color
       });
+    }
+  }
+
+  function pulseExplode(b) {
+    const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    explode(cx, cy, b.color || N("orange"), 28);
+    addJuice({ shake: 7, hitStop: 3, flash: 8, flashColor: "rgba(249,115,22,0.35)" });
+    beep(90, 0.12, "sawtooth", 0.08);
+    const targets = state.bossMode && state.boss ? state.enemies.concat([state.boss]) : state.enemies;
+    for (let i = 0; i < targets.length; i++) {
+      const e = targets[i];
+      if (e.alive === false) continue;
+      const d = Math.hypot(e.x + e.w / 2 - cx, e.y + e.h / 2 - cy);
+      if (d < 78) {
+        damageEnemy(e, b.dmg || 4, Math.sign(cx - (e.x + e.w / 2)) || 1, {
+          knock: 18, antiShield: b.antiShield || 3
+        });
+      }
     }
   }
 
@@ -2292,7 +2549,8 @@
     }
   }
 
-  function damageEnemy(e, damage, dir) {
+  function damageEnemy(e, damage, dir, opts) {
+    opts = opts || {};
     if (e.boss) {
       if (!e.vulnerable || e.hitCD > 0) return;
       e.hitCD = 4;
@@ -2329,10 +2587,39 @@
       }
       return;
     }
+    // Elite frontal shield
+    if (e.elite && e.shieldUp) {
+      const fromFront = (dir || 0) === 0 ? true : ((e.facing || -1) * (dir || 1) < 0);
+      const crack = (opts && opts.antiShield) || 0;
+      if (fromFront && crack < 2) {
+        e.shieldHits = (e.shieldHits || 0) + 1 + crack;
+        e.flash = 5;
+        beep(880, 0.04, "square", 0.05);
+        beep(440, 0.05, "triangle", 0.03, 0.03);
+        pushScorePop(e.x + e.w / 2, e.y, "BLOCK", N("gold"));
+        if (e.shieldHits >= 6) {
+          e.shieldUp = false;
+          e.shieldCD = 90;
+          e.shieldHits = 0;
+          state.banner = "SHIELD OPEN — FLANK!";
+          state.messageTimer = 45;
+          explode(e.x + e.w / 2, e.y + 20, N("gold"), 12);
+        }
+        return;
+      }
+      if (fromFront && crack >= 2) {
+        e.shieldUp = false;
+        e.shieldCD = 70;
+        e.shieldHits = 0;
+        pushScorePop(e.x + e.w / 2, e.y, "SHIELD BREAK", N("orange"));
+        addJuice({ shake: 4, flash: 5, flashColor: "rgba(249,115,22,0.35)" });
+      }
+    }
+    const knock = (opts && opts.knock != null) ? opts.knock : (e.heavy ? 8 : 18);
     e.hp -= damage;
-    e.x += dir * (e.heavy ? 8 : 18);
+    e.x += (dir || 1) * (e.heavy ? Math.min(10, knock * 0.45) : knock * 0.7);
     e.flash = 6;
-    explode(e.x + e.w / 2, e.y + e.h / 2, e.heavy ? "#67e8f9" : "#00e5ff", e.heavy ? 8 : 6);
+    explode(e.x + e.w / 2, e.y + e.h / 2, e.heavy ? N("cyan2") : N("cyan"), e.heavy ? 8 : 6);
     sfxHit();
     addJuice({ shake: e.heavy ? 2 : 1.2, hitStop: e.heavy ? 1 : 0 });
     if (e.hp <= 0) {
@@ -2343,14 +2630,19 @@
         points: pts,
         x: e.x + e.w / 2,
         y: e.y + e.h / 2,
-        color: e.elite ? "#fbbf24" : undefined
+        color: e.elite ? N("gold2") : undefined
       });
-      explode(e.x + e.w / 2, e.y + e.h / 2, e.elite ? "#fbbf24" : "#ff2bd6", e.elite ? 28 : (e.heavy ? 22 : 14));
+      explode(e.x + e.w / 2, e.y + e.h / 2, e.elite ? N("gold2") : N("pink"), e.elite ? 28 : (e.heavy ? 22 : 14));
       sfxKill();
       if (e.elite) {
         state.banner = "ELITE DOWN! +" + pts;
         state.messageTimer = 50;
         addJuice({ shake: 8, hitStop: 3, flash: 8, flashColor: "rgba(251,191,36,0.35)" });
+        if (rnd() < 0.55) {
+          const drop = WEAPON_ORDER[(Math.random() * WEAPON_ORDER.length) | 0];
+          dropWeaponPickup(drop, Math.floor(weaponDef(drop).ammo * 0.45), e.x, e.y);
+          pushScorePop(e.x, e.y - 16, "GUN DROP", weaponColor(drop));
+        }
       } else {
         addJuice({
           shake: e.heavy ? 7 : (e.drone ? 4 : 3.5),
@@ -3580,6 +3872,9 @@
         const d = weaponDef(state.player.weapon);
         const bagN = (state.player.gunBag && state.player.gunBag.length) || 0;
         gun = (d ? d.label : state.player.weapon) + " ×" + state.player.beamFuel + (bagN ? (" +" + bagN) : "");
+        if (state.player.weapon === "MAXI" && (state.player.maxiCharge || 0) >= 12) {
+          gun += " CHG" + Math.min(3, Math.floor(state.player.maxiCharge / 18));
+        }
       } else if (state.player.charge >= 10) {
         gun = state.player.charge >= 28 ? "CHARGE!" : "CHG " + Math.floor(state.player.charge / 28 * 100) + "%";
       }
@@ -3853,88 +4148,88 @@
   }
 
   function drawHazards() {
+    const t = performance.now();
     for (let i = 0; i < state.hazards.length; i++) {
       const h = state.hazards[i];
       const x = h.x - state.camX;
       if (h.kind === "laser") {
         if (x + h.w < -20 || x > W + 20) continue;
         const on = hazardActive(h);
-        ctx.globalAlpha = on ? 0.85 : 0.15;
-        ctx.fillStyle = on ? "#ff2bd6" : "#831843";
-        ctx.fillRect(x, h.y, h.w, h.h);
+        pxFill(N("metal"), x - 4, h.y - 4, h.w + 8, 8);
+        pxFill(N("pinkDim"), x - 2, h.y - 2, h.w + 4, 4);
+        ctx.globalAlpha = on ? 0.9 : 0.18;
+        pxFill(on ? N("pink") : N("pinkDim"), x, h.y, h.w, h.h);
         if (on) {
-          ctx.fillStyle = "#fce7f3";
-          ctx.fillRect(x + 2, h.y, Math.max(2, h.w - 4), h.h);
+          pxFill(N("white"), x + Math.max(1, (h.w / 2) | 0) - 1, h.y, Math.max(2, (h.w / 3) | 0), h.h);
+          ctx.globalAlpha = 0.25 + Math.sin(t / 80) * 0.1;
+          pxFill(N("pink2"), x - 3, h.y, h.w + 6, h.h);
+        } else if (Math.sin(t / 100 + h.x) > 0.7) {
+          ctx.globalAlpha = 0.35; pxFill(N("pink2"), x, h.y, h.w, h.h);
         }
         ctx.globalAlpha = 1;
       } else if (h.kind === "spike") {
         if (x + h.w < -10 || x > W + 10) continue;
         const on = hazardActive(h);
+        const warn = !on && Math.floor(t / 140) % 2 === 0;
         const spikes = Math.max(3, Math.floor(h.w / 10));
+        pxFill(N("metal2"), x, h.y + h.h - 4, h.w, 4);
         for (let s = 0; s < spikes; s++) {
           const sx = x + s * (h.w / spikes);
-          ctx.fillStyle = on ? "#e2e8f0" : "#475569";
+          const tip = on ? 0 : (warn ? 3 : 7);
+          ctx.fillStyle = on ? N("white") : (warn ? N("orange") : N("steel"));
           ctx.beginPath();
-          ctx.moveTo(sx, h.y + h.h);
-          ctx.lineTo(sx + h.w / spikes / 2, h.y + (on ? 0 : 6));
-          ctx.lineTo(sx + h.w / spikes, h.y + h.h);
+          ctx.moveTo(sx + 1, h.y + h.h);
+          ctx.lineTo(sx + h.w / spikes / 2, h.y + tip);
+          ctx.lineTo(sx + h.w / spikes - 1, h.y + h.h);
           ctx.fill();
         }
       } else if (h.kind === "crusher") {
         if (x + h.w < -20 || x > W + 20) continue;
-        ctx.fillStyle = "#334155";
-        ctx.fillRect(x, h.y, h.w, h.h);
-        ctx.fillStyle = "#f97316";
-        ctx.fillRect(x, h.y + h.h - 4, h.w, 4);
-        ctx.fillStyle = "#64748b";
-        ctx.fillRect(x + h.w / 2 - 4, 0, 8, h.y);
+        ctx.globalAlpha = 0.25 + (h.phase === "down" ? 0.25 : 0);
+        pxFill(N("redHot"), x + 4, GROUND - 4, h.w - 8, 4);
+        ctx.globalAlpha = 1;
+        pxBevel(x, h.y, h.w, h.h, N("orange"), N("red"), N("metal2"));
+        pxFill(N("steel"), x + h.w / 2 - 5, 0, 10, h.y);
+        pxFill(N("orange"), x + h.w / 2 - 3, 0, 6, h.y);
       } else if (h.kind === "acid") {
         if (x + h.w < -20 || x > W + 20) continue;
-        ctx.fillStyle = "#14532d";
-        ctx.fillRect(x, h.y, h.w, Math.min(40, h.h));
-        ctx.globalAlpha = 0.55 + Math.sin(performance.now() / 200 + h.x) * 0.15;
-        ctx.fillStyle = "#4ade80";
-        ctx.fillRect(x, h.y - 4, h.w, 10);
+        pxFill(N("greenDim"), x, h.y, h.w, Math.min(40, h.h));
+        ctx.globalAlpha = 0.55 + Math.sin(t / 200 + h.x) * 0.15;
+        pxFill(N("green2"), x, h.y - 4, h.w, 10);
         ctx.globalAlpha = 1;
       } else if (h.kind === "drip" && h.active) {
         const dx = h.x - state.camX;
         if (dx < -20 || dx > W + 20) continue;
-        ctx.fillStyle = "#4ade80";
-        ctx.fillRect(dx, h.fallY, 10, 14);
-        ctx.fillStyle = "#bbf7d0";
-        ctx.fillRect(dx + 2, h.fallY + 2, 6, 6);
+        const stretch = 10 + Math.min(18, (h.fallY || 0) * 0.04);
+        pxFill(N("green2"), dx, h.fallY, 10, stretch);
+        pxFill(N("green"), dx + 2, h.fallY + 2, 6, 6);
       } else if (h.kind === "gate") {
         if (h.open) continue;
         if (x + h.w < -20 || x > W + 20) continue;
-        ctx.fillStyle = "#0f172a";
-        ctx.fillRect(x, h.y, h.w, h.h);
-        ctx.fillStyle = "#00e5ff";
-        for (let gy = 0; gy < h.h; gy += 16) ctx.fillRect(x + 2, h.y + gy, h.w - 4, 4);
+        pxFill(N("ink"), x, h.y, h.w, h.h);
+        for (let gy = 0; gy < h.h; gy += 14) pxFill(N("cyan"), x + 2, h.y + gy, h.w - 4, 4);
+        pxOutline(N("cyan2"), x, h.y, h.w, h.h);
       } else if (h.kind === "wind") {
         if (x + h.w < -20 || x > W + 20) continue;
         if (!hazardActive(h)) continue;
-        ctx.globalAlpha = 0.2 + Math.sin(performance.now() / 120 + h.x) * 0.08;
-        ctx.fillStyle = "#7dd3fc";
-        ctx.fillRect(x, h.y, h.w, h.h);
-        ctx.globalAlpha = 0.7;
-        ctx.fillStyle = "#e0f2fe";
+        ctx.globalAlpha = 0.22 + Math.sin(t / 120 + h.x) * 0.08;
+        pxFill(N("cyan2"), x, h.y, h.w, h.h);
+        ctx.globalAlpha = 0.75;
         const dir = (h.push || 0) >= 0 ? 1 : -1;
         for (let wi = 0; wi < 4; wi++) {
-          const wy = h.y + 20 + wi * 40 + (performance.now() / 30) % 40;
-          ctx.fillRect(x + (dir > 0 ? 10 : h.w - 30), wy, 20, 3);
+          const wy = h.y + 20 + wi * 40 + (t / 30) % 40;
+          pxFill(N("white"), x + (dir > 0 ? 10 : h.w - 30), wy, 20, 3);
         }
         ctx.globalAlpha = 1;
       }
     }
-    // Arena cue
     if (state.arena && state.arena.active && !state.arena.cleared) {
       const a = state.arena;
       const ax = a.x - state.camX;
-      ctx.globalAlpha = 0.2;
-      ctx.fillStyle = "#ff2bd6";
-      ctx.fillRect(ax, 0, a.w, H);
+      ctx.globalAlpha = 0.18;
+      pxFill(N("pink"), ax, 0, a.w, H);
       ctx.globalAlpha = 1;
-      ctx.fillStyle = "#ffd400";
+      ctx.fillStyle = N("gold");
       ctx.font = "bold 14px monospace";
       ctx.fillText("ARENA " + state.arena.spawnLeft, Math.max(20, ax + 180), 36);
     }
@@ -4099,8 +4394,26 @@
           state.messageTimer = 55;
         }
       }
-    } else if (!state.talkQ && def && def.kind === "proj") {
+    } else if (!state.talkQ && def && def.kind === "charge") {
       p.beaming = false;
+      if (firing && p.beamFuel > 0) {
+        p.maxiCharge = Math.min(54, (p.maxiCharge || 0) + 1);
+        if (p.maxiCharge === 18 || p.maxiCharge === 36 || p.maxiCharge === 54) {
+          beep(400 + p.maxiCharge * 8, 0.04, "square", 0.04);
+        }
+      } else if (fireReleased && (p.maxiCharge || 0) >= 12) {
+        shootGun(p.beamAim, { power: Math.floor(p.maxiCharge / 18) });
+        if (p.beamFuel <= 0) {
+          clearWeapon();
+          state.banner = "SPECIAL GUN EMPTY!";
+          state.messageTimer = 55;
+        }
+      } else if (!firing) {
+        p.maxiCharge = 0;
+      }
+    } else if (!state.talkQ && def && (def.kind === "proj" || def.kind === "pellets" || def.kind === "wave" || def.kind === "pulse")) {
+      p.beaming = false;
+      p.maxiCharge = 0;
       if (firing && p.beamFuel > 0) {
         shootGun(p.beamAim);
         if (p.beamFuel <= 0) {
@@ -4111,6 +4424,7 @@
       }
     } else if (!state.talkQ && !p.weapon) {
       p.beaming = false;
+      p.maxiCharge = 0;
       if (firePressed) {
         p.charge = 1;
         shootGun(p.beamAim);
@@ -4125,6 +4439,7 @@
     } else {
       p.beaming = false;
       p.beamTick = 0;
+      p.maxiCharge = 0;
     }
     if (state.talkQ && (firePressed || inputJump())) state.talkT = 89;
     if (p.shootCD > 0) p.shootCD--;
@@ -4177,6 +4492,13 @@
         if (b.x > state.camX + W - 12) { b.x = state.camX + W - 12; b.vx = -Math.abs(b.vx); b.bounces--; }
         if (b.bounces <= 0) b.life = Math.min(b.life, 8);
       }
+      if (b.from === "player" && b.pulse) {
+        b.vy += b.grav || 0.28;
+        if (b.y + b.h >= GROUND) {
+          pulseExplode(b);
+          b.life = 0;
+        }
+      }
       b.x += b.vx; b.y += b.vy; b.life--;
     }
     state.bullets = state.bullets.filter(function (b) {
@@ -4188,6 +4510,16 @@
       if (!e.alive) continue;
       e.bob += 0.1;
       if (e.flash > 0) e.flash--;
+      if (e.elite) {
+        if (e.shieldCD > 0) {
+          e.shieldCD--;
+          if (e.shieldCD <= 0) e.shieldUp = true;
+        }
+        if (e.mode === "telegraph" || e.mode === "dash") {
+          e.shieldUp = false;
+          e.shieldCD = Math.max(e.shieldCD || 0, 28);
+        }
+      }
       if (calm) continue;
       e.walk += Math.abs(e.vx || e.baseSpd || 1) * (e.flying ? 0.18 : 0.32);
       const dx = p.x - e.x;
@@ -4313,8 +4645,15 @@
           const e = state.enemies[j];
           if (!e.alive) continue;
           if (rectsOverlap({ x: b.x - 4, y: b.y - 4, w: b.w + 8, h: b.h + 8 }, e)) {
-            damageEnemy(e, b.dmg || 1, Math.sign(b.vx) || state.player.facing);
-            explode(b.x + b.w / 2, b.y + b.h / 2, b.color || "#ffd400", b.charged ? 12 : 5);
+            damageEnemy(e, b.dmg || 1, Math.sign(b.vx) || state.player.facing, {
+              knock: b.knock, antiShield: b.antiShield || (b.pulse ? 3 : (b.charged ? 2 : 0))
+            });
+            if (b.pulse) {
+              pulseExplode(b);
+              b.life = 0;
+              continue;
+            }
+            explode(b.x + b.w / 2, b.y + b.h / 2, b.color || N("gold"), b.charged ? 12 : 5);
             if (b.charged) addJuice({ shake: 5, hitStop: 2, flash: 4 });
             if (b.rico && b.bounces > 0) {
               b.vx *= -1;
@@ -4354,8 +4693,11 @@
           break;
         }
         if (state.bossMode && state.boss && state.boss.alive && rectsOverlap({ x: b.x - 4, y: b.y - 4, w: b.w + 8, h: b.h + 8 }, state.boss)) {
-          damageEnemy(state.boss, b.dmg || 1, Math.sign(b.vx) || state.player.facing);
-          explode(b.x + b.w / 2, b.y + b.h / 2, b.color || "#39ff14", 6);
+          damageEnemy(state.boss, b.dmg || 1, Math.sign(b.vx) || state.player.facing, {
+            knock: b.knock, antiShield: b.antiShield || (b.pulse ? 3 : (b.charged ? 2 : 0))
+          });
+          if (b.pulse) pulseExplode(b);
+          explode(b.x + b.w / 2, b.y + b.h / 2, b.color || N("green"), 6);
           if (b.rico && b.bounces > 0) {
             b.vx *= -1; b.vy *= -1; b.bounces--;
           } else {
@@ -4484,6 +4826,56 @@
     updateHUD();
   }
 
+
+  function placeProps(theme, len) {
+    state.props = [];
+    const step = theme === "slums" ? 160 : 220;
+    for (let x = 120; x < len - 200; x += step + ((x / 17) | 0) % 40) {
+      const roll = (x * 17 + (state.level || 0) * 13) % 7;
+      let kind = "crate";
+      if (theme === "docks") kind = roll < 3 ? "crate" : roll < 5 ? "arrow" : "coil";
+      else if (theme === "tunnel") kind = roll < 3 ? "panel" : roll < 5 ? "cable" : "vent";
+      else if (theme === "spire") kind = roll < 3 ? "mast" : roll < 5 ? "light" : "rail";
+      else if (theme === "slums") kind = roll < 3 ? "fence" : roll < 5 ? "trash" : "graffiti";
+      else if (theme === "skyrail") kind = roll < 3 ? "rail" : roll < 5 ? "signal" : "cable";
+      else if (theme === "voidmarket") kind = roll < 3 ? "stall" : roll < 5 ? "holo" : "crate";
+      else if (theme === "sewers" || theme === "secret") kind = roll < 3 ? "pipe" : roll < 5 ? "valve" : "grate";
+      else if (theme === "storm") kind = roll < 4 ? "mast" : "signal";
+      else kind = roll < 3 ? "crate" : "cable";
+      const y = GROUND - (kind === "mast" ? 70 : kind === "stall" ? 48 : 28);
+      state.props.push({ x: x, y: y, kind: kind, bob: x * 0.01 });
+    }
+  }
+
+  function drawProps() {
+    if (!state.props) return;
+    const t = performance.now() / 200;
+    for (let i = 0; i < state.props.length; i++) {
+      const pr = state.props[i];
+      const x = pr.x - state.camX;
+      if (x < -60 || x > W + 60) continue;
+      const y = pr.y;
+      if (pr.kind === "crate") { pxBevel(x, y, 22, 18, N("wood2"), N("wood"), N("wood")); pxFill(N("ink"), x + 4, y + 6, 14, 2); }
+      else if (pr.kind === "arrow") { pxFill(N("pink"), x, y + 8, 28, 4); ctx.fillStyle = N("gold"); ctx.beginPath(); ctx.moveTo(x + 28, y + 4); ctx.lineTo(x + 38, y + 10); ctx.lineTo(x + 28, y + 16); ctx.fill(); }
+      else if (pr.kind === "coil") { pxFill(N("steel"), x, y + 10, 18, 8); pxFill(N("cyanDim"), x + 2, y + 4, 14, 6); }
+      else if (pr.kind === "panel") { pxBevel(x, y, 26, 20, N("cyan"), N("cyanDim"), N("ink")); pxFill(N("green"), x + 4, y + 6, 4, 4); pxFill(N("pink"), x + 10, y + 6, 4, 4); }
+      else if (pr.kind === "cable") { ctx.strokeStyle = N("purple"); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + 20, y + 20 + Math.sin(t + pr.bob) * 4, x + 40, y + 8); ctx.stroke(); }
+      else if (pr.kind === "vent") { pxFill(N("metal2"), x, y, 24, 14); for (let v = 0; v < 4; v++) pxFill(N("cyanDim"), x + 3 + v * 5, y + 3, 3, 8); }
+      else if (pr.kind === "mast") { pxFill(N("steel"), x + 8, y, 4, 70); pxFill(N("cyan"), x + 2, y, 16, 4); pxFill(Math.sin(t) > 0 ? N("pink") : N("gold"), x + 6, y - 6, 8, 6); }
+      else if (pr.kind === "light") { pxFill(N("metal"), x, y + 10, 6, 16); ctx.globalAlpha = 0.5 + Math.sin(t * 2 + pr.bob) * 0.3; pxFill(N("cyan2"), x - 4, y, 14, 10); ctx.globalAlpha = 1; }
+      else if (pr.kind === "rail") { pxFill(N("steel"), x, y + 16, 40, 3); pxFill(N("cyan"), x, y + 14, 40, 2); }
+      else if (pr.kind === "fence") { for (let f = 0; f < 5; f++) { pxFill(N("silver"), x + f * 7, y, 2, 24); } }
+      else if (pr.kind === "trash") { pxFill(N("steel"), x, y + 8, 16, 12); pxFill(N("pinkDim"), x + 18, y + 10, 12, 10); }
+      else if (pr.kind === "graffiti") { pxFill(N("pink"), x, y, 20, 8); pxFill(N("cyan"), x + 4, y + 10, 16, 6); }
+      else if (pr.kind === "signal") { pxFill(N("metal"), x + 6, y, 4, 28); pxFill(Math.floor(t) % 2 ? N("redHot") : N("green"), x + 2, y - 4, 12, 8); }
+      else if (pr.kind === "stall") { pxFill(N("purpleDim"), x, y, 36, 10); pxFill(N("ink"), x + 2, y + 10, 32, 24); }
+      else if (pr.kind === "holo") { ctx.globalAlpha = 0.4 + Math.sin(t) * 0.2; pxFill(N("cyan2"), x, y, 14, 28); ctx.globalAlpha = 1; pxOutline(N("cyan"), x, y, 14, 28); }
+      else if (pr.kind === "pipe") { pxFill(N("greenDim"), x, y + 8, 36, 10); pxFill(N("green2"), x + 4, y + 10, 28, 4); }
+      else if (pr.kind === "valve") { pxFill(N("metal2"), x, y + 6, 16, 16); pxFill(N("orange"), x + 4, y + 10, 8, 8); }
+      else if (pr.kind === "grate") { pxFill(N("ink"), x, y + 14, 28, 8); for (let g = 0; g < 5; g++) pxFill(N("steel"), x + 2 + g * 5, y + 15, 2, 6); }
+    }
+  }
+
   function drawCity() {
     const sDef = state.inSecret ? activeSecretDef() : null;
     const pal = PAL[sDef ? sDef.palIndex : Math.min(state.level, PAL.length - 1)];
@@ -4514,6 +4906,17 @@
       ctx.fillStyle = pal[0];
       ctx.fillRect(0, 0, W, H);
     }
+    // Mid parallax neon silhouettes
+    const mid = state.camX * 0.32;
+    for (let i = 0; i < 10; i++) {
+      const bx = ((i * 140 - mid) % (W + 160)) - 40;
+      const bh = 40 + ((i * 37) % 70);
+      ctx.globalAlpha = 0.18;
+      pxFill(N("ink"), bx, GROUND - bh, 48 + (i % 3) * 12, bh);
+      ctx.globalAlpha = 0.35;
+      pxFill(i % 2 ? N("pinkDim") : N("cyanDim"), bx + 6, GROUND - bh + 8, 8, 8);
+      ctx.globalAlpha = 1;
+    }
     // Keep BG street visible — light tint only below feet line
     ctx.fillStyle = "#020617";
     ctx.globalAlpha = 0.28;
@@ -4526,47 +4929,56 @@
   }
 
   function drawPlatforms() {
+    const theme = currentLevel().theme || "docks";
     for (let i = 0; i < state.platforms.length; i++) {
       const p = state.platforms[i];
       if (p.gone || p.y >= GROUND) continue;
       const x = p.x - state.camX;
-      if (x + p.w < 0 || x > W) continue;
-      ctx.fillStyle = p.crumble ? "#57534e" : p.mover ? "#1e3a5f" : p.bounce ? "#4c1d95" : p.breakable ? "#7c2d12" : "#1f2937";
-      ctx.fillRect(x, p.y, p.w, p.h);
-      ctx.fillStyle = p.crumble ? "#fb923c" : p.mover ? "#38bdf8" : p.bounce ? "#e879f9" : p.breakable ? "#fbbf24" : "#22d3ee";
-      ctx.fillRect(x, p.y, p.w, 3);
-      ctx.fillStyle = p.mover ? "#a78bfa" : p.bounce ? "#f5d0fe" : p.breakable ? "#fdba74" : "#f472b6";
-      ctx.fillRect(x, p.y + p.h - 2, p.w, 2);
+      if (x + p.w < -20 || x > W + 20) continue;
+      const body = p.crumble ? N("steel") : p.mover ? N("ink") : p.bounce ? N("purpleDim") : p.breakable ? "#7c2d12" : N("metal");
+      const top = p.crumble ? N("orange") : p.mover ? N("blue") : p.bounce ? N("purple2") : p.breakable ? N("gold2") : N("cyan");
+      const bot = p.mover ? N("purple") : p.bounce ? N("pink2") : p.breakable ? N("orange") : N("pink");
+      if (p.h >= 10 && p.w > 40 && !p.mover) {
+        pxFill(N("metal2"), x + 6, p.y + p.h, 4, Math.min(18, GROUND - p.y - p.h));
+        pxFill(N("metal2"), x + p.w - 10, p.y + p.h, 4, Math.min(18, GROUND - p.y - p.h));
+      }
+      pxBevel(x, p.y, p.w, Math.max(8, p.h), top, bot, body);
+      pxFill(N("steel"), x + 4, p.y + 4, 2, 2);
+      pxFill(N("steel"), x + p.w - 6, p.y + 4, 2, 2);
+      if (p.mover) {
+        const chev = Math.floor(performance.now() / 200) % 3;
+        pxFill(N("cyan2"), x + 8 + chev * 6, p.y + 5, 5, 2);
+      }
       if (p.crumble && p.life != null && p.maxLife) {
-        const pct = Math.max(0, p.life / p.maxLife);
-        ctx.fillStyle = "#ef4444";
-        ctx.fillRect(x, p.y - 3, p.w * pct, 2);
+        pxFill(N("red"), x, p.y - 4, p.w * Math.max(0, p.life / p.maxLife), 2);
+      }
+      if (p.breakable || theme === "slums") {
+        for (let s = 0; s < p.w; s += 10) pxFill(N("gold2"), x + s, p.y, 5, 2);
       }
     }
     const start = Math.floor(state.camX / 32) * 32;
     for (let x = start; x < state.camX + W + 32; x += 32) {
       const sx = x - state.camX;
-      ctx.globalAlpha = 0.22;
-      ctx.fillStyle = (Math.floor(x / 32) % 2) ? "#111827" : "#0f172a";
-      ctx.fillRect(sx, GROUND, 32, H - GROUND);
-      ctx.globalAlpha = 0.7;
-      ctx.fillStyle = "#67e8f9";
-      ctx.fillRect(sx, GROUND, 32, 2);
+      pxFill((Math.floor(x / 32) % 2) ? N("ink") : N("void"), sx, GROUND, 32, H - GROUND);
+      ctx.globalAlpha = 0.35;
+      pxFill(N("metal2"), sx, GROUND, 32, H - GROUND);
       ctx.globalAlpha = 1;
+      pxFill(N("cyan"), sx, GROUND, 32, 2);
+      pxFill(N("pinkDim"), sx + 2, GROUND + 3, 28, 1);
+      pxOutline(N("black"), sx, GROUND, 32, 12);
     }
     for (let i = 0; i < state.holes.length; i++) {
       const h = state.holes[i];
       const left = h.x - state.camX;
       const right = h.x + h.w - state.camX;
       if (right < -20 || left > W + 20) continue;
-      ctx.fillStyle = "#02040c";
-      ctx.fillRect(left, GROUND, h.w, H - GROUND);
-      ctx.fillStyle = "#475569";
-      ctx.fillRect(left - 7, GROUND, 7, H - GROUND);
-      ctx.fillRect(right, GROUND, 7, H - GROUND);
-      ctx.fillStyle = "#94a3b8";
-      ctx.fillRect(left - 3, GROUND, 3, 34);
-      ctx.fillRect(right, GROUND, 3, 34);
+      pxFill(N("black"), left, GROUND, h.w, H - GROUND);
+      pxFill(N("steel"), left - 8, GROUND, 8, H - GROUND);
+      pxFill(N("steel"), right, GROUND, 8, H - GROUND);
+      pxFill(N("silver"), left - 3, GROUND, 3, 36);
+      pxFill(N("silver"), right, GROUND, 3, 36);
+      pxFill(N("orange"), left - 8, GROUND - 2, 8, 2);
+      pxFill(N("orange"), right, GROUND - 2, 8, 2);
     }
   }
 
@@ -4607,13 +5019,24 @@
       ctx.shadowBlur = 12;
     }
     if (e.elite) {
-      ctx.shadowColor = "#fbbf24";
-      ctx.shadowBlur = 16;
-      ctx.globalAlpha = 0.35;
-      ctx.strokeStyle = "#fbbf24";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(-w / 2 - 3, -h / 2 - 3, w + 6, h + 6);
-      ctx.globalAlpha = 1;
+      ctx.shadowColor = N("gold2");
+      ctx.shadowBlur = 14;
+      if (e.shieldUp) {
+        ctx.globalAlpha = 0.45 + Math.sin(performance.now() / 120) * 0.12;
+        ctx.strokeStyle = N("gold");
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        const side = e.facing > 0 ? w / 2 + 6 : -w / 2 - 6;
+        ctx.arc(side * (e.facing > 0 ? -1 : 1), 0, h * 0.42, -1.1, 1.1);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.globalAlpha = 0.3;
+        ctx.strokeStyle = N("steel");
+        ctx.lineWidth = 2;
+        ctx.strokeRect(-w / 2 - 3, -h / 2 - 3, w + 6, h + 6);
+        ctx.globalAlpha = 1;
+      }
     }
     if (e.flash > 0) ctx.globalAlpha = 0.55 + (e.flash % 2) * 0.35;
     ctx.drawImage(img, -w / 2, -h / 2, w, h);
@@ -4621,9 +5044,9 @@
     ctx.globalAlpha = 1;
 
     if (e.elite) {
-      ctx.fillStyle = "#fbbf24";
+      ctx.fillStyle = e.shieldUp ? N("gold") : N("orange");
       ctx.font = "bold 8px monospace";
-      ctx.fillText("ELITE", -14, -h / 2 - 12);
+      ctx.fillText(e.shieldUp ? "SHIELD" : "OPEN", -16, -h / 2 - 12);
     }
 
     if (e.flying) {
@@ -4848,6 +5271,23 @@
       ctx.fillRect(bx + 2, b.y + 1, b.w - 4, b.h - 2);
       return;
     }
+    if (b.pulse) {
+      const g = 0.55 + Math.sin(performance.now() / 80) * 0.25;
+      ctx.globalAlpha = g;
+      ctx.fillStyle = b.color || N("orange");
+      ctx.beginPath(); ctx.arc(bx + b.w / 2, b.y + b.h / 2, 10, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = N("gold");
+      ctx.beginPath(); ctx.arc(bx + b.w / 2, b.y + b.h / 2, 4, 0, Math.PI * 2); ctx.fill();
+      return;
+    }
+    if (b.slug) {
+      ctx.fillStyle = b.color || N("gold");
+      ctx.fillRect(bx, b.y, b.w, b.h);
+      ctx.fillStyle = N("white");
+      ctx.fillRect(bx + 1, b.y + 1, Math.max(1, b.w - 2), Math.max(1, b.h - 2));
+      return;
+    }
     if (b.charged) {
       ctx.fillStyle = "#ffd400";
       ctx.fillRect(bx - 2, b.y - 2, b.w + 4, b.h + 4);
@@ -5003,6 +5443,18 @@
     } else if (type === "RICOCHET") {
       ctx.fillRect(sx + 14, sy + 5, 10, 7);
       ctx.fillStyle = color; ctx.fillRect(sx + 24, sy + 3, 4, 4); ctx.fillRect(sx + 28, sy + 10, 4, 4);
+    } else if (type === "WAVE") {
+      ctx.fillRect(sx + 12, sy + 6, 8, 6);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(sx + 20, sy + 4); ctx.lineTo(sx + 34, sy + 9); ctx.lineTo(sx + 20, sy + 14); ctx.fill();
+      ctx.globalAlpha = 0.45; ctx.fillRect(sx + 22, sy + 5, 14, 8); ctx.globalAlpha = 1;
+    } else if (type === "PULSE") {
+      ctx.fillRect(sx + 12, sy + 5, 10, 8);
+      ctx.fillStyle = color; ctx.beginPath();
+      ctx.arc(sx + 28, sy + 9, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#fff7ed"; ctx.beginPath();
+      ctx.arc(sx + 28, sy + 9, 3, 0, Math.PI * 2); ctx.fill();
     } else {
       ctx.fillRect(sx + 15, sy + 7, 13, 4);
       ctx.fillStyle = "#475569"; ctx.fillRect(sx + 6, sy + 3, 7, 3);
@@ -5045,6 +5497,38 @@
     ctx.fillStyle = "#ffd400"; ctx.font = "bold 7px monospace"; ctx.fillText("MAXI++", x + 2, y - 3);
   }
 
+
+  function drawWeaponHotbar() {
+    if (state.mode !== "play" || !state.player || state.demo) return;
+    const p = state.player;
+    const slots = hotbarSlots(p);
+    const baseX = 14, baseY = H - 52;
+    for (let i = 0; i < slots.length; i++) {
+      const s = slots[i];
+      const x = baseX + i * 78;
+      const col = s.type ? weaponColor(s.type) : N("silver");
+      ctx.globalAlpha = s.active ? 0.92 : 0.55;
+      pxFill(N("ink"), x, baseY, 72, 38);
+      pxOutline(s.active ? col : N("steel"), x, baseY, 72, 38);
+      if (s.active) {
+        pxFill(col, x, baseY, 72, 3);
+      }
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = col;
+      ctx.font = "bold 10px monospace";
+      ctx.fillText((i + 1) + " " + s.label, x + 6, baseY + 16);
+      ctx.fillStyle = N("white");
+      ctx.font = "bold 9px monospace";
+      ctx.fillText(s.ammo == null ? "INF" : ("x" + s.ammo), x + 6, baseY + 30);
+    }
+    if (p.weapon === "MAXI" && (p.maxiCharge || 0) > 0) {
+      const ch = Math.min(1, p.maxiCharge / 54);
+      pxFill(N("ink"), baseX, baseY - 10, 228, 6);
+      pxFill(N("pink"), baseX, baseY - 10, 228 * ch, 6);
+      pxOutline(N("pink2"), baseX, baseY - 10, 228, 6);
+    }
+  }
+
   function drawPlay() {
     const shakeAmt = state.shake || 0;
     const sox = shakeAmt ? (Math.random() - 0.5) * shakeAmt : 0;
@@ -5054,6 +5538,7 @@
 
     drawCity();
     drawPlatforms();
+    drawProps();
     if (!state.bossMode || state.hazards.length) drawHazards();
 
     const gx = state.endX - 70 - state.camX;
@@ -5298,6 +5783,7 @@
     ctx.fillStyle = "rgba(0,0,0,0.12)";
     for (let y = 0; y < H; y += 4) ctx.fillRect(0, y, W, 1);
 
+    drawWeaponHotbar();
     drawScoreAttackUI();
 
     if (state.talkQ && state.talkI < state.talkQ.length) {
@@ -5463,6 +5949,11 @@
     if ((key === "q" || key === "Q" || key === "Tab") && !e.repeat && state.mode === "play") {
       e.preventDefault();
       swapWeapon();
+      return;
+    }
+    if (!e.repeat && state.mode === "play" && (key === "1" || key === "2" || key === "3")) {
+      e.preventDefault();
+      selectWeaponSlot(Number(key) - 1);
       return;
     }
     if ((key === "p" || key === "P" || key === "Escape") && !e.repeat) {
