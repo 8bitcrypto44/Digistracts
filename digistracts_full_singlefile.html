@@ -164,6 +164,19 @@ function nearestEnemy(ox,oy,bX){let best=null,bestD=1e9;const list=b9.bH.slice()
 return best;}
 function defaultPlatSkin(idx){const theme=(currentLevel()&&currentLevel().theme)||"docks";const preferB=theme==="slums"||theme==="voidmarket"||theme==="secret"||theme==="signal"||theme==="storm";if(preferB)return(idx%3===0)?0:1;return(idx%3===0)?1:0;}
 function platLen(i,base){const table=[base,base+36,base+80,base+130,base+24,base+100,base+160];return table[i%table.length];}
+const PLAT_GAP_X=48;const PLAT_GAP_Y=34;const SPIKE_HOLE_PAD=100;function holeClearance(x,w,pad){pad=pad==null?SPIKE_HOLE_PAD:pad;for(let i=0;i<b9.ce.length;i++){const h=b9.ce[i];if(x+w+pad>h.x&&x-pad<h.x+h.w)return false;}
+return true;}
+function platformsTooClose(a,b,gapX,gapY){gapX=gapX==null?PLAT_GAP_X:gapX;gapY=gapY==null?PLAT_GAP_Y:gapY;return!(a.x+a.w+gapX<=b.x||b.x+b.w+gapX<=a.x||a.y+a.h+gapY<=b.y||b.y+b.h+gapY<=a.y);}
+function findClearPlatSpot(x,y,w,others,gapX,gapY){gapX=gapX==null?PLAT_GAP_X:gapX;gapY=gapY==null?PLAT_GAP_Y:gapY;let nx=x,ny=y;for(let t=0;t<16;t++){const cand={x:nx,y:ny,w:w,h:14};let ok=true;for(let i=0;i<others.length;i++){if(platformsTooClose(cand,others[i],gapX,gapY)){ok=false;break;}}
+if(ok)return{x:nx,y:ny};const dir=(t%2===0)?1:-1;nx=x+dir*(56+t*32);if(t%3===2)ny=M.max(70,M.min(bW-48,y-36-t*6));}
+return null;}
+function addSpikeSafe(h){let x=h.x;const w=h.w||64;if(!holeClearance(x,w,SPIKE_HOLE_PAD)){let placed=null;for(let d=60;d<=520;d+=40){if(holeClearance(x+d,w,SPIKE_HOLE_PAD)){placed=x+d;break;}
+if(holeClearance(x-d,w,SPIKE_HOLE_PAD)){placed=x-d;break;}}
+if(placed==null)return null;h.x=placed;}
+return addHazard(h);}
+function sanitizeLayout(){const kept=[];for(let i=0;i<b9.hazards.length;i++){const h=b9.hazards[i];if(h.cC==="spike"&&!holeClearance(h.x,h.w||64,SPIKE_HOLE_PAD))continue;kept.push(h);}
+b9.hazards=kept;for(let i=0;i<b9.a1.length;i++){const a=b9.a1[i];if(!a||a.gone||a.y>=bW-8)continue;for(let j=0;j<i;j++){const b=b9.a1[j];if(!b||b.gone||b.y>=bW-8)continue;let guard=0;while(platformsTooClose(a,b)&&guard++<10){a.x+=(a.x+a.w/2>=b.x+b.w/2?1:-1)*36;if(a.mover){a.ox=a.x;a.prevX=a.x;}}
+if(platformsTooClose(a,b)){a.y=M.max(64,a.y-40);if(a.mover){a.oy=a.y;a.prevY=a.y;}}}}}
 function aA(x,y,w,extra){const cA={x:x,y:y,w:w,h:14,dx:0};if(extra){for(const k in extra)cA[k]=extra[k];}
 if(cA.skin==null)cA.skin=defaultPlatSkin(b9.a1.length);if(cA.mover){cA.ox=x;cA.oy=y;cA.prevX=x;cA.prevY=y;cA.cj=cA.cj||0;}
 b9.a1.push(cA);return cA;}
@@ -182,46 +195,46 @@ function removeHolesInRange(x0,x1){if(!b9.ce||!b9.ce.length)return;const next=[]
 if(hx0<x0)next.push({x:hx0,w:x0-hx0});if(hx1>x1)next.push({x:x1,w:hx1-x1});}
 b9.ce=next;}
 function solidifyPortalX(x,w){w=w||48;removeHolesInRange(x-24,x+w+24);return x;}
-function buildArena(atX){removeHolesInRange(atX-60,atX+560);b9.arena={x:atX,w:520,active:false,cleared:false,triggered:false,spawnLeft:8+b9.level*2,timer:0,lockL:atX-40,lockR:atX+480};addHazard({cC:"gate",x:atX-30,y:bW-160,w:18,h:160,open:true,arena:true});addHazard({cC:"gate",x:atX+500,y:bW-160,w:18,h:160,open:true,arena:true});aA(atX+60,bW-110,160,{skin:0});aA(atX+260,bW-150,90,{skin:1});aA(atX+140,bW-200,200,{skin:0});}
-function buildSectorLayout(idx,L){const br=[];const theme=L.theme||"docks";const len=L.len;function cA(x,y,w,extra){const p=aA(x,y,w,extra);br.push(p);return p;}
-if(theme==="docks"){for(let i=0;i<9;i++)addHole(900+i*1450,120+(i%2)*40);for(let i=0;i<L.a1;i++){const x=240+i*((len-500)/L.a1);const y=bW-(60+(i%3)*28);const w=platLen(i,88);if(i%5===2){cA(x,y,w,{mover:true,ampX:70,ampY:0,spd:0.03,cj:i});}else if(i%8===4){cA(x,y,w,{bounce:true});}else if(i%8===6){cA(x,y,M.min(80,w),{breakable:true,hp:2});}else{cA(x,y,w);}}
-for(let i=0;i<10;i++){addHazard({cC:"spike",x:1100+i*1200,y:bW-16,w:64,h:16,on:70,off:50,t:i*11,hurt:true});}
-buildArena(M.floor(len*0.48));}else if(theme==="tunnel"){for(let i=0;i<14;i++)addHole(700+i*1000,70+(i%3)*20);for(let i=0;i<L.a1;i++){const x=200+i*((len-400)/L.a1);const row=i%3;const y=bW-(55+row*48);cA(x,y,platLen(i,64));}
+function buildArena(atX){removeHolesInRange(atX-60,atX+560);b9.arena={x:atX,w:520,active:false,cleared:false,triggered:false,spawnLeft:8+b9.level*2,timer:0,lockL:atX-40,lockR:atX+480};addHazard({cC:"gate",x:atX-30,y:bW-160,w:18,h:160,open:true,arena:true});addHazard({cC:"gate",x:atX+500,y:bW-160,w:18,h:160,open:true,arena:true});aA(atX+40,bW-110,140,{skin:0});aA(atX+320,bW-160,100,{skin:1});aA(atX+140,bW-230,160,{skin:0});}
+function buildSectorLayout(idx,L){const br=[];const theme=L.theme||"docks";const len=L.len;function cA(x,y,w,extra,gaps){const gx=gaps&&gaps.gapX!=null?gaps.gapX:PLAT_GAP_X;const gy=gaps&&gaps.gapY!=null?gaps.gapY:PLAT_GAP_Y;const spot=findClearPlatSpot(x,y,w,br,gx,gy);if(!spot)return null;const p=aA(spot.x,spot.y,w,extra);br.push(p);return p;}
+if(theme==="docks"){for(let i=0;i<9;i++)addHole(900+i*1450,120+(i%2)*40);for(let i=0;i<L.a1;i++){const x=240+i*((len-500)/L.a1);const y=bW-(70+(i%3)*52);const w=platLen(i,88);if(i%5===2){cA(x,y,w,{mover:true,ampX:70,ampY:0,spd:0.03,cj:i});}else if(i%8===4){cA(x,y,w,{bounce:true});}else if(i%8===6){cA(x,y,M.min(80,w),{breakable:true,hp:2});}else{cA(x,y,w);}}
+for(let i=0;i<10;i++){addSpikeSafe({cC:"spike",x:1100+i*1200,y:bW-16,w:64,h:16,on:70,off:50,t:i*11,hurt:true});}
+buildArena(M.floor(len*0.48));}else if(theme==="tunnel"){for(let i=0;i<14;i++)addHole(700+i*1000,70+(i%3)*20);for(let i=0;i<L.a1;i++){const x=200+i*((len-400)/L.a1);const row=i%3;const y=bW-(60+row*56);cA(x,y,platLen(i,64));}
 for(let i=0;i<16;i++){const x=850+i*880;addHazard({cC:"laser",x:x,y:40,w:10,h:bW-50,on:55,off:70,t:i*17,axis:"v"});}
 for(let i=0;i<6;i++){addHazard({cC:"laser",x:1200+i*2200,y:bW-120,w:160,h:8,on:40,off:80,t:i*23,axis:"h"});}
-buildArena(M.floor(len*0.52));}else if(theme==="spire"){for(let i=0;i<7;i++)addHole(1400+i*2000,90);let x=220;for(let tower=0;tower<12;tower++){const base=280+tower*((len-800)/12);for(let step=0;step<5;step++){cA(base+(step%2)*50,bW-(70+step*42),platLen(tower*5+step,70));}
+buildArena(M.floor(len*0.52));}else if(theme==="spire"){for(let i=0;i<7;i++)addHole(1400+i*2000,90);let x=220;for(let tower=0;tower<12;tower++){const base=280+tower*((len-800)/12);for(let step=0;step<5;step++){cA(base+(step%2)*100,bW-(70+step*50),M.min(96,platLen(tower*5+step,64)),null,{gapX:24,gapY:22});}
 addHazard({cC:"crusher",x:base+30,yTop:20,yBot:bW-90,w:70,h:28,t:tower*19,down:40,hold:18,up:50,cj:"up"});x=base;}
-while(br.length<L.a1){const i=br.length;cA(300+i*((len-600)/M.max(8,L.a1)),bW-(80+(i%5)*24),platLen(i,78));}
-buildArena(M.floor(len*0.55));}else if(theme==="slums"){for(let i=0;i<16;i++)addHole(650+i*950,85+(i%2)*25);for(let i=0;i<L.a1;i++){const x=210+i*((len-450)/L.a1);const y=bW-(50+(i%5)*32);const crumbling=i%7===3;const bounce=i%7===5;const brk=i%9===1;cA(x,y,platLen(i,58),crumbling?{crumble:true,life:45,maxLife:45,gone:false}:bounce?{bounce:true}:brk?{breakable:true,hp:2}:null);}
-for(let i=0;i<18;i++){addHazard({cC:"spike",x:780+i*850,y:bW-14,w:90,h:14,on:1,off:0,t:0,hurt:true,always:true});}
+while(br.length<L.a1){const i=br.length;cA(300+i*((len-600)/M.max(8,L.a1)),bW-(80+(i%5)*44),platLen(i,78));}
+buildArena(M.floor(len*0.55));}else if(theme==="slums"){for(let i=0;i<16;i++)addHole(650+i*950,85+(i%2)*25);for(let i=0;i<L.a1;i++){const x=210+i*((len-450)/L.a1);const y=bW-(60+(i%5)*48);const crumbling=i%7===3;const bounce=i%7===5;const brk=i%9===1;cA(x,y,platLen(i,58),crumbling?{crumble:true,life:45,maxLife:45,gone:false}:bounce?{bounce:true}:brk?{breakable:true,hp:2}:null);}
+for(let i=0;i<18;i++){addSpikeSafe({cC:"spike",x:780+i*850,y:bW-14,w:90,h:14,on:1,off:0,t:0,hurt:true,always:true});}
 for(let i=0;i<8;i++){addHazard({cC:"laser",x:1600+i*1700,y:30,w:8,h:bW-40,on:35,off:90,t:i*13,axis:"v"});}
 buildArena(M.floor(len*0.5));if(!isSecretDone("signal")&&br.length>8){const keyPlat=br[M.min(br.length-1,M.floor(br.length*0.38))];b9.qrs.push({x:keyPlat.x+keyPlat.w/2-12,y:keyPlat.y-42,w:24,h:24,bob:6.4,cc:false,power:"signal"});}
-if(!isSecretDone("signal")){b9.secretPortal={x:solidifyPortalX(M.floor(len*0.62)),y:bW-96,w:48,h:96,open:false,secretId:"signal"};}}else if(theme==="skyrail"){for(let i=0;i<8;i++)addHole(1000+i*1900,160+(i%2)*30);for(let i=0;i<L.a1;i++){const x=200+i*((len-500)/L.a1);const high=i%3!==2;const y=bW-(high?130+(i%4)*28:70);if(i%4===0){cA(x,y,platLen(i,100),{mover:true,ampX:90,ampY:12,spd:0.028,cj:i,fy:1.1});}else{cA(x,y,platLen(i,72));}}
+if(!isSecretDone("signal")){b9.secretPortal={x:solidifyPortalX(M.floor(len*0.62)),y:bW-96,w:48,h:96,open:false,secretId:"signal"};}}else if(theme==="skyrail"){for(let i=0;i<8;i++)addHole(1000+i*1900,160+(i%2)*30);for(let i=0;i<L.a1;i++){const x=200+i*((len-500)/L.a1);const high=i%3!==2;const y=bW-(high?140+(i%4)*48:70);if(i%4===0){cA(x,y,platLen(i,100),{mover:true,ampX:90,ampY:12,spd:0.028,cj:i,fy:1.1});}else{cA(x,y,platLen(i,72));}}
 for(let i=0;i<12;i++){addHazard({cC:"wind",x:900+i*1300,y:bW-200,w:140,h:200,push:(i%2===0?1:-1)*0.55,t:i*15,on:80,off:50});}
 for(let i=0;i<6;i++){addHazard({cC:"laser",x:1500+i*2400,y:40,w:8,h:bW-160,on:45,off:85,t:i*19,axis:"v"});}
 buildArena(M.floor(len*0.52));if(!isSecretDone("storm")&&br.length>8){const keyPlat=br[M.min(br.length-1,M.floor(br.length*0.4))];b9.qrs.push({x:keyPlat.x+keyPlat.w/2-12,y:keyPlat.y-42,w:24,h:24,bob:6.2,cc:false,power:"storm"});}
-if(!isSecretDone("storm")){b9.secretPortal={x:solidifyPortalX(M.floor(len*0.58)),y:bW-96,w:48,h:96,open:false,secretId:"storm"};}}else if(theme==="voidmarket"){for(let i=0;i<14;i++)addHole(700+i*1100,100+(i%3)*20);for(let i=0;i<L.a1;i++){const x=220+i*((len-450)/L.a1);const y=bW-(60+(i%5)*30);const fake=i%6===2;const bounce=i%6===4;cA(x,y,platLen(i,66),fake?{crumble:true,life:18,maxLife:18,gone:false,voidFake:true}:bounce?{bounce:true}:null);}
+if(!isSecretDone("storm")){b9.secretPortal={x:solidifyPortalX(M.floor(len*0.58)),y:bW-96,w:48,h:96,open:false,secretId:"storm"};}}else if(theme==="voidmarket"){for(let i=0;i<14;i++)addHole(700+i*1100,100+(i%3)*20);for(let i=0;i<L.a1;i++){const x=220+i*((len-450)/L.a1);const y=bW-(70+(i%5)*48);const fake=i%6===2;const bounce=i%6===4;cA(x,y,platLen(i,66),fake?{crumble:true,life:18,maxLife:18,gone:false,voidFake:true}:bounce?{bounce:true}:null);}
 for(let i=0;i<14;i++){addHazard({cC:"laser",x:950+i*1150,y:20,w:12,h:bW-30,on:30,off:70,t:i*11,axis:"v"});}
-for(let i=0;i<8;i++){addHazard({cC:"spike",x:1200+i*1900,y:bW-14,w:70,h:14,on:50,off:40,t:i*7,hurt:true});}
+for(let i=0;i<8;i++){addSpikeSafe({cC:"spike",x:1200+i*1900,y:bW-14,w:70,h:14,on:50,off:40,t:i*7,hurt:true});}
 buildArena(M.floor(len*0.54));if(!isSecretDone("ember")&&br.length>8){const keyPlat=br[M.min(br.length-1,M.floor(br.length*0.35))];b9.qrs.push({x:keyPlat.x+keyPlat.w/2-12,y:keyPlat.y-42,w:24,h:24,bob:6.6,cc:false,power:"ember"});}
-if(!isSecretDone("ember")){b9.secretPortal={x:solidifyPortalX(M.floor(len*0.42)),y:bW-96,w:48,h:96,open:false,secretId:"ember"};}}else if(theme==="secret"){for(let i=0;i<16;i++)addHole(500+i*580,70+(i%3)*25);for(let i=0;i<L.a1;i++){const x=160+i*((len-360)/L.a1);const row=i%5;const y=bW-(55+row*38);const bounce=i%7===2;const crumble=i%7===5;cA(x,y,platLen(i,56),bounce?{bounce:true}:crumble?{crumble:true,life:14,maxLife:14,gone:false}:null);}
+if(!isSecretDone("ember")){b9.secretPortal={x:solidifyPortalX(M.floor(len*0.42)),y:bW-96,w:48,h:96,open:false,secretId:"ember"};}}else if(theme==="secret"){for(let i=0;i<16;i++)addHole(500+i*580,70+(i%3)*25);for(let i=0;i<L.a1;i++){const x=160+i*((len-360)/L.a1);const row=i%5;const y=bW-(60+row*48);const bounce=i%7===2;const crumble=i%7===5;cA(x,y,platLen(i,56),bounce?{bounce:true}:crumble?{crumble:true,life:14,maxLife:14,gone:false}:null);}
 for(let i=0;i<18;i++){addHazard({cC:"laser",x:420+i*500,y:16,w:10,h:bW-90,on:24,off:40,t:i*9,axis:"v"});}
-for(let i=0;i<10;i++){addHazard({cC:"spike",x:700+i*900,y:bW-14,w:56,h:14,on:40,off:35,t:i*13,hurt:true});}
+for(let i=0;i<10;i++){addSpikeSafe({cC:"spike",x:700+i*900,y:bW-14,w:56,h:14,on:40,off:35,t:i*13,hurt:true});}
 for(let i=0;i<6;i++){addHazard({cC:"crusher",x:1100+i*1400,yTop:8,yBot:bW-80,w:70,h:28,t:i*17,down:28,hold:14,up:40,cj:"up"});}
-buildArena(M.floor(len*0.55));}else if(theme==="storm"){for(let i=0;i<14;i++)addHole(480+i*620,80+(i%3)*30);for(let i=0;i<L.a1;i++){const x=140+i*((len-320)/L.a1);const row=i%6;const y=bW-(50+row*36);const mover=i%5===0;const bounce=i%5===2;cA(x,y,platLen(i,54),mover?{mover:true,ampX:70,ampY:28,spd:0.034,cj:i*0.7,fy:1.2}:bounce?{bounce:true}:null);}
+buildArena(M.floor(len*0.55));}else if(theme==="storm"){for(let i=0;i<14;i++)addHole(480+i*620,80+(i%3)*30);for(let i=0;i<L.a1;i++){const x=140+i*((len-320)/L.a1);const row=i%6;const y=bW-(55+row*48);const mover=i%5===0;const bounce=i%5===2;cA(x,y,platLen(i,54),mover?{mover:true,ampX:70,ampY:28,spd:0.034,cj:i*0.7,fy:1.2}:bounce?{bounce:true}:null);}
 for(let i=0;i<16;i++){addHazard({cC:"wind",x:360+i*540,y:bW-220,w:120,h:220,push:(i%2===0?1:-1)*0.72,t:i*11,on:70,off:40});}
 for(let i=0;i<14;i++){addHazard({cC:"laser",x:500+i*580,y:12,w:8,h:bW-100,on:22,off:48,t:i*10,axis:"v"});}
 for(let i=0;i<8;i++){addHazard({cC:"crusher",x:900+i*1000,yTop:6,yBot:bW-90,w:64,h:26,t:i*15,down:24,hold:12,up:36,cj:"up"});}
-buildArena(M.floor(len*0.56));}else if(theme==="signal"){for(let i=0;i<12;i++)addHole(420+i*680,70+(i%3)*28);for(let i=0;i<L.a1;i++){const x=130+i*((len-280)/L.a1);const row=i%5;const y=bW-(48+row*38);const bounce=i%4===1;const brk=i%5===3;cA(x,y,platLen(i,52),bounce?{bounce:true}:brk?{breakable:true,hp:3}:(i%6===0?{mover:true,ampX:50,ampY:16,spd:0.036,cj:i*0.8,fy:1.25}:null));}
+buildArena(M.floor(len*0.56));}else if(theme==="signal"){for(let i=0;i<12;i++)addHole(420+i*680,70+(i%3)*28);for(let i=0;i<L.a1;i++){const x=130+i*((len-280)/L.a1);const row=i%5;const y=bW-(55+row*48);const bounce=i%4===1;const brk=i%5===3;cA(x,y,platLen(i,52),bounce?{bounce:true}:brk?{breakable:true,hp:3}:(i%6===0?{mover:true,ampX:50,ampY:16,spd:0.036,cj:i*0.8,fy:1.25}:null));}
 for(let i=0;i<14;i++){addHazard({cC:"laser",x:380+i*560,y:16,w:8,h:bW-90,on:20,off:44,t:i*9,axis:"v"});}
-for(let i=0;i<10;i++){addHazard({cC:"spike",x:600+i*780,y:bW-14,w:70,h:14,on:50,off:40,t:i*12,hurt:true});}
+for(let i=0;i<10;i++){addSpikeSafe({cC:"spike",x:600+i*780,y:bW-14,w:70,h:14,on:50,off:40,t:i*12,hurt:true});}
 buildArena(M.floor(len*0.54));}else if(theme==="sewers"){for(let i=0;i<12;i++){const hx=800+i*1300;addHole(hx,140);addHazard({cC:"acid",x:hx+10,y:bW,w:120,h:H-bW+20,drip:true,t:i*9});}
-for(let i=0;i<L.a1;i++){const x=230+i*((len-500)/L.a1);const y=bW-(75+(i%4)*34);if(i%4===1){cA(x,y,platLen(i,96),{mover:true,ampX:55,ampY:18,spd:0.035,cj:i*0.7,fy:1.3});}else{cA(x,y,platLen(i,78));}}
+for(let i=0;i<L.a1;i++){const x=230+i*((len-500)/L.a1);const y=bW-(80+(i%4)*48);if(i%4===1){cA(x,y,platLen(i,96),{mover:true,ampX:55,ampY:18,spd:0.035,cj:i*0.7,fy:1.3});}else{cA(x,y,platLen(i,78));}}
 for(let i=0;i<14;i++){addHazard({cC:"drip",x:1000+i*1100,y:0,w:12,h:16,t:i*21,period:90,fallY:0,active:false});}
 for(let i=0;i<5;i++){addHazard({cC:"crusher",x:2000+i*2800,yTop:10,yBot:bW-70,w:80,h:30,t:i*29,down:35,hold:22,up:55,cj:"up"});}
-buildArena(M.floor(len*0.58));}else{for(let i=0;i<10;i++)addHole(800+i*1400,110);for(let i=0;i<L.a1;i++){cA(220+i*((len-400)/L.a1),bW-(70+(i%4)*30),platLen(i,76));}
+buildArena(M.floor(len*0.58));}else{for(let i=0;i<10;i++)addHole(800+i*1400,110);for(let i=0;i<L.a1;i++){cA(220+i*((len-400)/L.a1),bW-(70+(i%4)*48),platLen(i,76));}
 buildArena(M.floor(len*0.5));}
-placeProps(theme,len);placePickups(br,L);return br;}
+sanitizeLayout();placeProps(theme,len);placePickups(br,L);return br;}
 function aN(idx,skipTalk,keepGun){let secretId=null;if(idx==="secret")secretId=b9.activeSecret||b9.secretKind||"ember";else if(typeof idx==="string"&&idx.indexOf("secret:")===0)secretId=idx.slice(7);const goingSecret=!!secretId;const sDef=goingSecret?secretDef(secretId):null;const L=goingSecret?sDef.level:b6[idx];if(!goingSecret){b9.level=idx;b9.inSecret=false;b9.activeSecret=null;const hostSecret=secretForHostTheme(L.theme);if(!hostSecret)b9.secretPortal=null;}else{b9.inSecret=true;b9.activeSecret=secretId;}
 bW=L.ground;b9.cG=L.len;b9.ct=0;b9.bI=[];b9.bH=[];b9.qrs=[];b9.b3=[];b9.ce=[];b9.hazards=[];b9.arena=null;b9.bm=false;b9.boss=null;b9.aq=[];b9.bq=0;b9.a1=[];b9.props=[];b9.a2=[];b9.aK=goingSecret?160:(idx===0?300:220);b9.cn=skipTalk?120:(idx===0&&!goingSecret?40:0);b9.b0=hitInvuln();const prevGun=keepGun&&b9.player&&((b9.player.weapon&&b9.player.bo>0)||(b9.player.gunBag&&b9.player.gunBag.length))?{weapon:b9.player.weapon,ammo:b9.player.bo,bag:(b9.player.gunBag||[]).slice()}:null;b9.player=aV();if(prevGun){b9.player.weapon=prevGun.weapon||0;b9.player.bo=prevGun.ammo||0;b9.player.gunBag=prevGun.bag||[];}
 b9.ab=100;const tips={docks:"DOCK CRANES · RIDE THE MOVERS",tunnel:"LASER GATES · TIME YOUR RUN",spire:"CLIMB THE SPIRE · WATCH CRUSHERS",slums:"SPIKE ALLEYS · CRUMBLE LEDGES",skyrail:"FIND STORM KEY · OPEN THE SPIRE",voidmarket:"FIND EMBER KEY · OPEN THE VAULT",sewers:"ACID POOLS · CLEAR THE ARENA",secret:"EMBER VAULT · CLAIM THE RELIC",storm:"STORM SPIRE · RIDE THE THUNDER"};if(sDef){tips[sDef.level.theme]=sDef.tip;if(sDef.hostTheme)tips[sDef.hostTheme]=sDef.hostTip;}

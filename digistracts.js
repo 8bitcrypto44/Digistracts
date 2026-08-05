@@ -1492,6 +1492,88 @@
     return table[i % table.length];
   }
 
+  const PLAT_GAP_X = 48;
+  const PLAT_GAP_Y = 34;
+  const SPIKE_HOLE_PAD = 100;
+
+  function holeClearance(x, w, pad) {
+    pad = pad == null ? SPIKE_HOLE_PAD : pad;
+    for (let i = 0; i < state.holes.length; i++) {
+      const h = state.holes[i];
+      if (x + w + pad > h.x && x - pad < h.x + h.w) return false;
+    }
+    return true;
+  }
+
+  function platformsTooClose(a, b, gapX, gapY) {
+    gapX = gapX == null ? PLAT_GAP_X : gapX;
+    gapY = gapY == null ? PLAT_GAP_Y : gapY;
+    return !(a.x + a.w + gapX <= b.x || b.x + b.w + gapX <= a.x
+      || a.y + a.h + gapY <= b.y || b.y + b.h + gapY <= a.y);
+  }
+
+  function findClearPlatSpot(x, y, w, others, gapX, gapY) {
+    gapX = gapX == null ? PLAT_GAP_X : gapX;
+    gapY = gapY == null ? PLAT_GAP_Y : gapY;
+    let nx = x, ny = y;
+    for (let t = 0; t < 16; t++) {
+      const cand = { x: nx, y: ny, w: w, h: 14 };
+      let ok = true;
+      for (let i = 0; i < others.length; i++) {
+        if (platformsTooClose(cand, others[i], gapX, gapY)) { ok = false; break; }
+      }
+      if (ok) return { x: nx, y: ny };
+      const dir = (t % 2 === 0) ? 1 : -1;
+      nx = x + dir * (56 + t * 32);
+      if (t % 3 === 2) ny = Math.max(70, Math.min(GROUND - 48, y - 36 - t * 6));
+    }
+    return null;
+  }
+
+  function addSpikeSafe(h) {
+    let x = h.x;
+    const w = h.w || 64;
+    if (!holeClearance(x, w, SPIKE_HOLE_PAD)) {
+      let placed = null;
+      for (let d = 60; d <= 520; d += 40) {
+        if (holeClearance(x + d, w, SPIKE_HOLE_PAD)) { placed = x + d; break; }
+        if (holeClearance(x - d, w, SPIKE_HOLE_PAD)) { placed = x - d; break; }
+      }
+      if (placed == null) return null;
+      h.x = placed;
+    }
+    return addHazard(h);
+  }
+
+  function sanitizeLayout() {
+    // Drop any spikes that still sit on / beside pits
+    const kept = [];
+    for (let i = 0; i < state.hazards.length; i++) {
+      const h = state.hazards[i];
+      if (h.kind === "spike" && !holeClearance(h.x, h.w || 64, SPIKE_HOLE_PAD)) continue;
+      kept.push(h);
+    }
+    state.hazards = kept;
+    // Push overlapping elevated platforms apart
+    for (let i = 0; i < state.platforms.length; i++) {
+      const a = state.platforms[i];
+      if (!a || a.gone || a.y >= GROUND - 8) continue;
+      for (let j = 0; j < i; j++) {
+        const b = state.platforms[j];
+        if (!b || b.gone || b.y >= GROUND - 8) continue;
+        let guard = 0;
+        while (platformsTooClose(a, b) && guard++ < 10) {
+          a.x += (a.x + a.w / 2 >= b.x + b.w / 2 ? 1 : -1) * 36;
+          if (a.mover) { a.ox = a.x; a.prevX = a.x; }
+        }
+        if (platformsTooClose(a, b)) {
+          a.y = Math.max(64, a.y - 40);
+          if (a.mover) { a.oy = a.y; a.prevY = a.y; }
+        }
+      }
+    }
+  }
+
   function addPlatform(x, y, w, extra) {
     const plat = { x: x, y: y, w: w, h: 14, dx: 0 };
     if (extra) {
@@ -1649,9 +1731,9 @@
     // Gate walls (visual blockers that activate when arena starts)
     addHazard({ kind: "gate", x: atX - 30, y: GROUND - 160, w: 18, h: 160, open: true, arena: true });
     addHazard({ kind: "gate", x: atX + 500, y: GROUND - 160, w: 18, h: 160, open: true, arena: true });
-    addPlatform(atX + 60, GROUND - 110, 160, { skin: 0 });
-    addPlatform(atX + 260, GROUND - 150, 90, { skin: 1 });
-    addPlatform(atX + 140, GROUND - 200, 200, { skin: 0 });
+    addPlatform(atX + 40, GROUND - 110, 140, { skin: 0 });
+    addPlatform(atX + 320, GROUND - 160, 100, { skin: 1 });
+    addPlatform(atX + 140, GROUND - 230, 160, { skin: 0 });
   }
 
   function buildSectorLayout(idx, L) {
@@ -1659,8 +1741,12 @@
     const theme = L.theme || "docks";
     const len = L.len;
 
-    function plat(x, y, w, extra) {
-      const p = addPlatform(x, y, w, extra);
+    function plat(x, y, w, extra, gaps) {
+      const gx = gaps && gaps.gapX != null ? gaps.gapX : PLAT_GAP_X;
+      const gy = gaps && gaps.gapY != null ? gaps.gapY : PLAT_GAP_Y;
+      const spot = findClearPlatSpot(x, y, w, elevated, gx, gy);
+      if (!spot) return null;
+      const p = addPlatform(spot.x, spot.y, w, extra);
       elevated.push(p);
       return p;
     }
@@ -1670,7 +1756,7 @@
       for (let i = 0; i < 9; i++) addHole(900 + i * 1450, 120 + (i % 2) * 40);
       for (let i = 0; i < L.platforms; i++) {
         const x = 240 + i * ((len - 500) / L.platforms);
-        const y = GROUND - (60 + (i % 3) * 28);
+        const y = GROUND - (70 + (i % 3) * 52);
         const w = platLen(i, 88);
         if (i % 5 === 2) {
           plat(x, y, w, { mover: true, ampX: 70, ampY: 0, spd: 0.03, phase: i });
@@ -1683,7 +1769,7 @@
         }
       }
       for (let i = 0; i < 10; i++) {
-        addHazard({
+        addSpikeSafe({
           kind: "spike", x: 1100 + i * 1200, y: GROUND - 16, w: 64, h: 16,
           on: 70, off: 50, t: i * 11, hurt: true
         });
@@ -1695,7 +1781,7 @@
       for (let i = 0; i < L.platforms; i++) {
         const x = 200 + i * ((len - 400) / L.platforms);
         const row = i % 3;
-        const y = GROUND - (55 + row * 48);
+        const y = GROUND - (60 + row * 56);
         plat(x, y, platLen(i, 64));
       }
       for (let i = 0; i < 16; i++) {
@@ -1719,7 +1805,13 @@
       for (let tower = 0; tower < 12; tower++) {
         const base = 280 + tower * ((len - 800) / 12);
         for (let step = 0; step < 5; step++) {
-          plat(base + (step % 2) * 50, GROUND - (70 + step * 42), platLen(tower * 5 + step, 70));
+          plat(
+            base + (step % 2) * 100,
+            GROUND - (70 + step * 50),
+            Math.min(96, platLen(tower * 5 + step, 64)),
+            null,
+            { gapX: 24, gapY: 22 }
+          );
         }
         addHazard({
           kind: "crusher",
@@ -1730,7 +1822,7 @@
       }
       while (elevated.length < L.platforms) {
         const i = elevated.length;
-        plat(300 + i * ((len - 600) / Math.max(8, L.platforms)), GROUND - (80 + (i % 5) * 24), platLen(i, 78));
+        plat(300 + i * ((len - 600) / Math.max(8, L.platforms)), GROUND - (80 + (i % 5) * 44), platLen(i, 78));
       }
       buildArena(Math.floor(len * 0.55));
     } else if (theme === "slums") {
@@ -1738,7 +1830,7 @@
       for (let i = 0; i < 16; i++) addHole(650 + i * 950, 85 + (i % 2) * 25);
       for (let i = 0; i < L.platforms; i++) {
         const x = 210 + i * ((len - 450) / L.platforms);
-        const y = GROUND - (50 + (i % 5) * 32);
+        const y = GROUND - (60 + (i % 5) * 48);
         const crumbling = i % 7 === 3;
         const bounce = i % 7 === 5;
         const brk = i % 9 === 1;
@@ -1749,7 +1841,7 @@
           : null);
       }
       for (let i = 0; i < 18; i++) {
-        addHazard({
+        addSpikeSafe({
           kind: "spike", x: 780 + i * 850, y: GROUND - 14, w: 90, h: 14,
           on: 1, off: 0, t: 0, hurt: true, always: true
         });
@@ -1779,7 +1871,7 @@
       for (let i = 0; i < L.platforms; i++) {
         const x = 200 + i * ((len - 500) / L.platforms);
         const high = i % 3 !== 2;
-        const y = GROUND - (high ? 130 + (i % 4) * 28 : 70);
+        const y = GROUND - (high ? 140 + (i % 4) * 48 : 70);
         if (i % 4 === 0) {
           plat(x, y, platLen(i, 100), { mover: true, ampX: 90, ampY: 12, spd: 0.028, phase: i, fy: 1.1 });
         } else {
@@ -1817,7 +1909,7 @@
       for (let i = 0; i < 14; i++) addHole(700 + i * 1100, 100 + (i % 3) * 20);
       for (let i = 0; i < L.platforms; i++) {
         const x = 220 + i * ((len - 450) / L.platforms);
-        const y = GROUND - (60 + (i % 5) * 30);
+        const y = GROUND - (70 + (i % 5) * 48);
         const fake = i % 6 === 2;
         const bounce = i % 6 === 4;
         plat(x, y, platLen(i, 66), fake
@@ -1831,7 +1923,7 @@
         });
       }
       for (let i = 0; i < 8; i++) {
-        addHazard({
+        addSpikeSafe({
           kind: "spike", x: 1200 + i * 1900, y: GROUND - 14, w: 70, h: 14,
           on: 50, off: 40, t: i * 7, hurt: true
         });
@@ -1856,7 +1948,7 @@
       for (let i = 0; i < L.platforms; i++) {
         const x = 160 + i * ((len - 360) / L.platforms);
         const row = i % 5;
-        const y = GROUND - (55 + row * 38);
+        const y = GROUND - (60 + row * 48);
         const bounce = i % 7 === 2;
         const crumble = i % 7 === 5;
         plat(x, y, platLen(i, 56), bounce
@@ -1870,7 +1962,7 @@
         });
       }
       for (let i = 0; i < 10; i++) {
-        addHazard({
+        addSpikeSafe({
           kind: "spike", x: 700 + i * 900, y: GROUND - 14, w: 56, h: 14,
           on: 40, off: 35, t: i * 13, hurt: true
         });
@@ -1889,7 +1981,7 @@
       for (let i = 0; i < L.platforms; i++) {
         const x = 140 + i * ((len - 320) / L.platforms);
         const row = i % 6;
-        const y = GROUND - (50 + row * 36);
+        const y = GROUND - (55 + row * 48);
         const mover = i % 5 === 0;
         const bounce = i % 5 === 2;
         plat(x, y, platLen(i, 54), mover
@@ -1922,7 +2014,7 @@
       for (let i = 0; i < L.platforms; i++) {
         const x = 130 + i * ((len - 280) / L.platforms);
         const row = i % 5;
-        const y = GROUND - (48 + row * 38);
+        const y = GROUND - (55 + row * 48);
         const bounce = i % 4 === 1;
         const brk = i % 5 === 3;
         plat(x, y, platLen(i, 52), bounce
@@ -1937,7 +2029,7 @@
         });
       }
       for (let i = 0; i < 10; i++) {
-        addHazard({
+        addSpikeSafe({
           kind: "spike", x: 600 + i * 780, y: GROUND - 14, w: 70, h: 14,
           on: 50, off: 40, t: i * 12, hurt: true
         });
@@ -1955,7 +2047,7 @@
       }
       for (let i = 0; i < L.platforms; i++) {
         const x = 230 + i * ((len - 500) / L.platforms);
-        const y = GROUND - (75 + (i % 4) * 34);
+        const y = GROUND - (80 + (i % 4) * 48);
         if (i % 4 === 1) {
           plat(x, y, platLen(i, 96), { mover: true, ampX: 55, ampY: 18, spd: 0.035, phase: i * 0.7, fy: 1.3 });
         } else {
@@ -1980,11 +2072,12 @@
       // Fallback generic
       for (let i = 0; i < 10; i++) addHole(800 + i * 1400, 110);
       for (let i = 0; i < L.platforms; i++) {
-        plat(220 + i * ((len - 400) / L.platforms), GROUND - (70 + (i % 4) * 30), platLen(i, 76));
+        plat(220 + i * ((len - 400) / L.platforms), GROUND - (70 + (i % 4) * 48), platLen(i, 76));
       }
       buildArena(Math.floor(len * 0.5));
     }
 
+    sanitizeLayout();
     placeProps(theme, len);
     placePickups(elevated, L);
     return elevated;
