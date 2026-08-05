@@ -436,7 +436,6 @@
   };
   const DIFF_ORDER = ["easy", "normal", "hard"];
   const MID_BOSS_LEVEL = 2; // after MEGA SPIRE
-  const SECRET_FROM_LEVEL = 5; // VOID MARKET
 
   const LEVELS = [
     { name: "NEON DOCKS", theme: "docks", ground: 425, len: 14500, enemyRate: 0.48, enemySpeed: 1.65, qrCount: 14, platforms: 40 },
@@ -447,10 +446,73 @@
     { name: "VOID MARKET", theme: "voidmarket", ground: 410, len: 17200, enemyRate: 0.15, enemySpeed: 3.7, qrCount: 22, platforms: 54 },
     { name: "CORE SEWERS", theme: "sewers", ground: 438, len: 17600, enemyRate: 0.12, enemySpeed: 4.0, qrCount: 24, platforms: 52 }
   ];
-  const SECRET_LEVEL = {
-    name: "EMBER VAULT", theme: "secret", ground: 405, len: 9800,
-    enemyRate: 0.14, enemySpeed: 4.2, qrCount: 18, platforms: 48, secret: true
+  const SECRETS = {
+    ember: {
+      id: "ember",
+      hostLevel: 5,
+      hostTheme: "voidmarket",
+      keyPower: "ember",
+      lsKey: "dg-secret",
+      level: {
+        name: "EMBER VAULT", theme: "secret", ground: 405, len: 9800,
+        enemyRate: 0.14, enemySpeed: 4.2, qrCount: 18, platforms: 48, secret: true
+      },
+      tale: [
+        { who: "YOU", line: "The Ember Vault opens…" },
+        { who: "YOU", line: "Old code. Older faith. Survive it." }
+      ],
+      tip: "EMBER VAULT · CLAIM THE RELIC",
+      hostTip: "FIND EMBER KEY · OPEN THE VAULT",
+      keyBanner: "EMBER KEY! FIND THE VAULT GATE",
+      enterBanner: "EMBER VAULT UNLOCKED!",
+      clearTitle: "VAULT CLEARED",
+      clearBody: "EMBER RELIC SECURED!",
+      exitLabel: "ENTER SEWERS",
+      exitHint: "MAXI armed · warp to CORE SEWERS",
+      exitTo: 6,
+      rewardWeapon: "MAXI",
+      rewardAmmo: 1.4,
+      rewardGold: 240,
+      gateLabel: "VAULT",
+      relicLabel: "RELIC",
+      color: "#fb7185",
+      color2: "#fbbf24",
+      palIndex: 7
+    },
+    storm: {
+      id: "storm",
+      hostLevel: 4,
+      hostTheme: "skyrail",
+      keyPower: "storm",
+      lsKey: "dg-secret-storm",
+      level: {
+        name: "STORM SPIRE", theme: "storm", ground: 400, len: 9200,
+        enemyRate: 0.13, enemySpeed: 4.35, qrCount: 16, platforms: 46, secret: true
+      },
+      tale: [
+        { who: "YOU", line: "Storm Spire answers the rail…" },
+        { who: "YOU", line: "Ride the thunder. Don't look down." }
+      ],
+      tip: "STORM SPIRE · RIDE THE THUNDER",
+      hostTip: "FIND STORM KEY · OPEN THE SPIRE",
+      keyBanner: "STORM KEY! FIND THE SPIRE GATE",
+      enterBanner: "STORM SPIRE UNLOCKED!",
+      clearTitle: "SPIRE CLEARED",
+      clearBody: "STORM CORE CLAIMED!",
+      exitLabel: "ENTER MARKET",
+      exitHint: "HOMING armed · warp to VOID MARKET",
+      exitTo: 5,
+      rewardWeapon: "HOMING",
+      rewardAmmo: 1.55,
+      rewardGold: 200,
+      gateLabel: "SPIRE",
+      relicLabel: "CORE",
+      color: "#67e8f9",
+      color2: "#a78bfa",
+      palIndex: 8
+    }
   };
+  const SECRET_FROM_LEVEL = SECRETS.ember.hostLevel;
   const TALES = [
     [{ who: "YOU", line: "New Eden rains neon lies." }, { who: "YOU", line: "Ride the dock cranes. Keep Ember lit." }],
     [{ who: "YOU", line: "Tunnels hide quiet arrests." }, { who: "YOU", line: "Time the laser gates. Trust the map." }],
@@ -459,10 +521,6 @@
     [{ who: "YOU", line: "Rails over black sky." }, { who: "YOU", line: "Wind will throw you. Hold the line." }],
     [{ who: "YOU", line: "Void Market sells lies." }, { who: "YOU", line: "Fake floors. Real bullets." }],
     [{ who: "YOU", line: "Faith and code—walk both." }, { who: "YOU", line: "Acid rises. Clear the Core." }]
-  ];
-  const SECRET_TALE = [
-    { who: "YOU", line: "The Ember Vault opens…" },
-    { who: "YOU", line: "Old code. Older faith. Survive it." }
   ];
   const BOSS_GROUND = 424;
 
@@ -491,11 +549,35 @@
     ["#06101c", "#7dd3fc", "#c084fc"],
     ["#12061a", "#e879f9", "#22d3ee"],
     ["#0c0610", "#fbbf24", "#22d3ee"],
-    ["#1a0614", "#fb7185", "#fbbf24"] // Ember Vault
+    ["#1a0614", "#fb7185", "#fbbf24"], // Ember Vault
+    ["#06141f", "#67e8f9", "#a78bfa"]  // Storm Spire
   ];
 
+  function secretDef(id) {
+    return (id && SECRETS[id]) || null;
+  }
+
+  function activeSecretDef() {
+    return secretDef(state.activeSecret) || secretDef(state.secretKind);
+  }
+
+  function secretForHostTheme(theme) {
+    for (const id in SECRETS) {
+      if (SECRETS[id].hostTheme === theme) return SECRETS[id];
+    }
+    return null;
+  }
+
+  function isSecretDone(id) {
+    return !!(state.secretsDone && state.secretsDone[id]);
+  }
+
   function currentLevel() {
-    return state.inSecret ? SECRET_LEVEL : LEVELS[state.level];
+    if (state.inSecret) {
+      const d = activeSecretDef();
+      if (d) return d.level;
+    }
+    return LEVELS[state.level];
   }
 
   let state = {
@@ -553,7 +635,10 @@
     diff: "normal",
     inSecret: false,
     secretKey: false,
+    secretKind: null,
     secretCleared: false,
+    secretsDone: { ember: false, storm: false },
+    activeSecret: null,
     secretPortal: null,
     returnLevel: 0,
     godMode: GOD_QS,
@@ -917,6 +1002,19 @@
         });
       }
       buildArena(Math.floor(len * 0.52));
+      // Storm Key (high rail) + dormant spire gate
+      if (!isSecretDone("storm") && elevated.length > 8) {
+        const keyPlat = elevated[Math.min(elevated.length - 1, Math.floor(elevated.length * 0.4))];
+        state.qrs.push({
+          x: keyPlat.x + keyPlat.w / 2 - 12, y: keyPlat.y - 42,
+          w: 24, h: 24, bob: 6.2, taken: false, power: "storm"
+        });
+      }
+      if (!isSecretDone("storm")) {
+        state.secretPortal = {
+          x: Math.floor(len * 0.58), y: GROUND - 96, w: 48, h: 96, open: false, secretId: "storm"
+        };
+      }
     } else if (theme === "voidmarket") {
       // Fake floors, bounce pads, dark lasers
       for (let i = 0; i < 14; i++) addHole(700 + i * 1100, 100 + (i % 3) * 20);
@@ -943,16 +1041,18 @@
       }
       buildArena(Math.floor(len * 0.54));
       // Ember Key (high hard-to-reach) + dormant portal mid-market
-      if (elevated.length > 8) {
+      if (!isSecretDone("ember") && elevated.length > 8) {
         const keyPlat = elevated[Math.min(elevated.length - 1, Math.floor(elevated.length * 0.35))];
         state.qrs.push({
           x: keyPlat.x + keyPlat.w / 2 - 12, y: keyPlat.y - 42,
           w: 24, h: 24, bob: 6.6, taken: false, power: "ember"
         });
       }
-      state.secretPortal = {
-        x: Math.floor(len * 0.42), y: GROUND - 96, w: 48, h: 96, open: false
-      };
+      if (!isSecretDone("ember")) {
+        state.secretPortal = {
+          x: Math.floor(len * 0.42), y: GROUND - 96, w: 48, h: 96, open: false, secretId: "ember"
+        };
+      }
     } else if (theme === "secret") {
       // Ember Vault: dense climb, purple lasers, bounce + crumble, tight arena
       for (let i = 0; i < 16; i++) addHole(500 + i * 580, 70 + (i % 3) * 25);
@@ -986,6 +1086,39 @@
         });
       }
       buildArena(Math.floor(len * 0.55));
+    } else if (theme === "storm") {
+      // Storm Spire: wind tunnels, movers, vertical lasers, thin rails
+      for (let i = 0; i < 14; i++) addHole(480 + i * 620, 80 + (i % 3) * 30);
+      for (let i = 0; i < L.platforms; i++) {
+        const x = 140 + i * ((len - 320) / L.platforms);
+        const row = i % 6;
+        const y = GROUND - (50 + row * 36);
+        const mover = i % 5 === 0;
+        const bounce = i % 5 === 2;
+        plat(x, y, 58 + (i % 2) * 16, mover
+          ? { mover: true, ampX: 70, ampY: 28, spd: 0.034, phase: i * 0.7, fy: 1.2 }
+          : bounce ? { bounce: true } : null);
+      }
+      for (let i = 0; i < 16; i++) {
+        addHazard({
+          kind: "wind", x: 360 + i * 540, y: GROUND - 220, w: 120, h: 220,
+          push: (i % 2 === 0 ? 1 : -1) * 0.72, t: i * 11, on: 70, off: 40
+        });
+      }
+      for (let i = 0; i < 14; i++) {
+        addHazard({
+          kind: "laser", x: 500 + i * 580, y: 12, w: 8, h: GROUND - 100,
+          on: 22, off: 48, t: i * 10, axis: "v"
+        });
+      }
+      for (let i = 0; i < 8; i++) {
+        addHazard({
+          kind: "crusher",
+          x: 900 + i * 1000, yTop: 6, yBot: GROUND - 90, w: 64, h: 26,
+          t: i * 15, down: 24, hold: 12, up: 36, phase: "up"
+        });
+      }
+      buildArena(Math.floor(len * 0.56));
     } else if (theme === "sewers") {
       // Sewers: acid pools + drip hazards + movers over acid
       for (let i = 0; i < 12; i++) {
@@ -1033,14 +1166,21 @@
   }
 
   function buildLevel(idx, skipTalk, keepGun) {
-    const goingSecret = idx === "secret";
-    const L = goingSecret ? SECRET_LEVEL : LEVELS[idx];
+    let secretId = null;
+    if (idx === "secret") secretId = state.activeSecret || state.secretKind || "ember";
+    else if (typeof idx === "string" && idx.indexOf("secret:") === 0) secretId = idx.slice(7);
+    const goingSecret = !!secretId;
+    const sDef = goingSecret ? secretDef(secretId) : null;
+    const L = goingSecret ? sDef.level : LEVELS[idx];
     if (!goingSecret) {
       state.level = idx;
       state.inSecret = false;
-      if (L.theme !== "voidmarket") state.secretPortal = null;
+      state.activeSecret = null;
+      const hostSecret = secretForHostTheme(L.theme);
+      if (!hostSecret) state.secretPortal = null;
     } else {
       state.inSecret = true;
+      state.activeSecret = secretId;
     }
     GROUND = L.ground;
     state.endX = L.len;
@@ -1074,11 +1214,16 @@
       tunnel: "LASER GATES · TIME YOUR RUN",
       spire: "CLIMB THE SPIRE · WATCH CRUSHERS",
       slums: "SPIKE ALLEYS · CRUMBLE LEDGES",
-      skyrail: "HIGH RAILS · WIND GUSTS",
+      skyrail: "FIND STORM KEY · OPEN THE SPIRE",
       voidmarket: "FIND EMBER KEY · OPEN THE VAULT",
       sewers: "ACID POOLS · CLEAR THE ARENA",
-      secret: "EMBER VAULT · CLAIM THE RELIC"
+      secret: "EMBER VAULT · CLAIM THE RELIC",
+      storm: "STORM SPIRE · RIDE THE THUNDER"
     };
+    if (sDef) {
+      tips[sDef.level.theme] = sDef.tip;
+      if (sDef.hostTheme) tips[sDef.hostTheme] = sDef.hostTip;
+    }
     state.banner = L.name + " · " + (tips[L.theme] || "GO!");
     state.tipQ = [];
     state.antiCampCD = 0;
@@ -1092,8 +1237,8 @@
     state.comboTimer = 0;
     if (skipTalk) {
       state.talkQ = null;
-    } else if (goingSecret) {
-      state.talkQ = SECRET_TALE;
+    } else if (goingSecret && sDef) {
+      state.talkQ = sDef.tale;
       state.talkI = 0;
       state.talkT = 0;
     } else {
@@ -1111,20 +1256,25 @@
   }
 
   function enterSecretStage() {
-    if (state.inSecret || state.secretCleared || !state.secretKey) return;
+    const id = (state.secretPortal && state.secretPortal.secretId) || state.secretKind || "ember";
+    const def = secretDef(id);
+    if (!def || state.inSecret || isSecretDone(id) || !state.secretKey) return;
     state.returnLevel = state.level;
+    state.activeSecret = id;
+    state.secretKind = id;
     state.secretPortal = null;
     hideOverlay();
     state.mode = "play";
-    buildLevel("secret", false, true);
+    buildLevel("secret:" + id, false, true);
     sfxArenaClear();
-    state.banner = "EMBER VAULT UNLOCKED!";
+    state.banner = def.enterBanner;
     state.messageTimer = 100;
     state.flash = 14;
     updateHUD();
   }
 
   function onSecretComplete() {
+    const def = activeSecretDef() || SECRETS.ember;
     const leftover = state.qrs.filter(function (q) { return !q.taken; }).length;
     const clearPts = 2000 + Math.max(0, 800 - leftover * 30);
     const timePts = Math.ceil(state.levelTime / 1000) * 20;
@@ -1132,20 +1282,22 @@
     const bonus = clearPts + timePts + noHitPts;
     addScore(bonus);
     state.bonusScore += bonus;
+    state.secretsDone[def.id] = true;
     state.secretCleared = true;
     state.inSecret = false;
-    grantWeapon("MAXI", 1.4);
-    if (state.player) state.player.goldT = Math.max(state.player.goldT, 240);
+    state.secretKey = false;
+    grantWeapon(def.rewardWeapon, def.rewardAmmo);
+    if (state.player) state.player.goldT = Math.max(state.player.goldT, def.rewardGold);
     saveHiScore(state.score);
-    try { localStorage.setItem("dg-secret", "1"); } catch (e) {}
+    try { localStorage.setItem(def.lsKey, "1"); } catch (e) {}
     state.mode = "clear";
     showOverlay(
-      "VAULT CLEARED",
-      "EMBER RELIC SECURED!\nBonus +" + bonus +
-        (noHitPts ? "\nNO-HIT VAULT +2500" : "") +
-        "\nMAXI armed · warp to CORE SEWERS" +
+      def.clearTitle,
+      def.clearBody + "\nBonus +" + bonus +
+        (noHitPts ? "\nNO-HIT SECRET +2500" : "") +
+        "\n" + def.exitHint +
         "\nScore " + String(state.score).padStart(6, "0"),
-      "ENTER SEWERS"
+      def.exitLabel
     );
   }
 
@@ -1651,17 +1803,20 @@
     const sc = state.score;
     const nextLife = state.nextLifeAt;
     const ck = state.checkpointX || 80;
-    const resumeSecret = state.inSecret && !state.secretCleared;
+    const resumeSecret = !!state.inSecret;
     const hadKey = state.secretKey;
+    const sid = state.activeSecret || state.secretKind || "ember";
     hideOverlay();
     state.mode = "play";
     state.lives = currentDiff().lives;
     state.score = sc;
     state.nextLifeAt = nextLife;
     state.failAt = 0;
-    buildLevel(resumeSecret ? "secret" : lvl, true, true);
+    buildLevel(resumeSecret ? ("secret:" + sid) : lvl, true, true);
     if (resumeSecret) {
       state.secretKey = hadKey;
+      state.secretKind = sid;
+      state.activeSecret = sid;
       state.inSecret = true;
     }
     if (state.player) {
@@ -1672,7 +1827,8 @@
       state.checkpointX = state.player.x;
     }
     startTechno();
-    state.banner = resumeSecret ? "CONTINUE — EMBER VAULT" : ("CONTINUE — SECTOR " + (lvl + 1));
+    const sName = resumeSecret && secretDef(sid) ? secretDef(sid).level.name : null;
+    state.banner = resumeSecret ? ("CONTINUE — " + sName) : ("CONTINUE — SECTOR " + (lvl + 1));
     state.messageTimer = 90;
     updateHUD();
     postParent({ type: "dg-chrome", inGame: true });
@@ -1690,18 +1846,21 @@
     const sc = state.score;
     const lives = Math.max(1, state.lives);
     const nextLife = state.nextLifeAt;
-    const wasSecret = state.inSecret;
+    const wasSecret = !!state.inSecret;
     const hadKey = state.secretKey;
-    buildLevel(wasSecret ? "secret" : state.level, true, true);
+    const sid = state.activeSecret || state.secretKind || "ember";
+    buildLevel(wasSecret ? ("secret:" + sid) : state.level, true, true);
     if (wasSecret) {
       state.secretKey = hadKey;
+      state.secretKind = sid;
+      state.activeSecret = sid;
       state.inSecret = true;
     }
     state.score = sc;
     state.lives = lives;
     state.nextLifeAt = nextLife;
     startTechno();
-    state.banner = wasSecret ? "VAULT RETRY" : "SECTOR RETRY";
+    state.banner = wasSecret ? "SECRET RETRY" : "SECTOR RETRY";
     state.messageTimer = 70;
     updateHUD();
     postParent({ type: "dg-chrome", inGame: true });
@@ -1756,11 +1915,14 @@
     const ck = state.checkpointX || 80;
     const sc = state.score;
     const nextLife = state.nextLifeAt;
-    const resumeSecret = state.inSecret && !state.secretCleared;
+    const resumeSecret = !!state.inSecret;
     const hadKey = state.secretKey;
-    buildLevel(resumeSecret ? "secret" : state.level, true, true);
+    const sid = state.activeSecret || state.secretKind || "ember";
+    buildLevel(resumeSecret ? ("secret:" + sid) : state.level, true, true);
     if (resumeSecret) {
       state.secretKey = hadKey;
+      state.secretKind = sid;
+      state.activeSecret = sid;
       state.inSecret = true;
     }
     state.score = sc;
@@ -1878,7 +2040,10 @@
     state.checkpointX = 80;
     state.inSecret = false;
     state.secretKey = !!opts.secretKey;
+    state.secretKind = opts.secret === true ? "ember" : (opts.secret || null);
     state.secretCleared = false;
+    state.secretsDone = { ember: false, storm: false };
+    state.activeSecret = null;
     state.secretPortal = null;
     resetRunStats();
     hideOverlay();
@@ -1892,9 +2057,13 @@
       buildLevel(LEVELS.length - 1, true, false);
       startBossFight("final");
     } else if (opts.secret) {
-      state.level = SECRET_FROM_LEVEL;
+      const sid = opts.secret === true ? "ember" : opts.secret;
+      const def = secretDef(sid) || SECRETS.ember;
+      state.level = def.hostLevel;
       state.secretKey = true;
-      buildLevel("secret", false, false);
+      state.secretKind = def.id;
+      state.activeSecret = def.id;
+      buildLevel("secret:" + def.id, false, false);
     } else {
       state.level = opts.level | 0;
       buildLevel(state.level, !!opts.skipTalk, false);
@@ -1932,9 +2101,19 @@
     vault.title = "Ember Vault secret stage";
     vault.addEventListener("click", function () {
       sfxUi();
-      beginTestRun({ secret: true });
+      beginTestRun({ secret: "ember" });
     });
     hud.levels.appendChild(vault);
+    const spire = document.createElement("button");
+    spire.type = "button";
+    spire.className = "dg-lv-secret";
+    spire.textContent = "SPIRE";
+    spire.title = "Storm Spire secret stage";
+    spire.addEventListener("click", function () {
+      sfxUi();
+      beginTestRun({ secret: "storm" });
+    });
+    hud.levels.appendChild(spire);
     const mid = document.createElement("button");
     mid.type = "button";
     mid.className = "dg-lv-boss";
@@ -1969,7 +2148,10 @@
     state.checkpointX = 80;
     state.inSecret = false;
     state.secretKey = false;
+    state.secretKind = null;
     state.secretCleared = false;
+    state.secretsDone = { ember: false, storm: false };
+    state.activeSecret = null;
     state.secretPortal = null;
     resetRunStats();
     hideOverlay();
@@ -1988,12 +2170,16 @@
   }
 
   function advanceFromClear() {
-    if (state.mode === "clear" && state.secretCleared && state.level === SECRET_FROM_LEVEL) {
-      // Came from vault clear overlay — jump to Core Sewers
+    if (state.mode === "clear" && state.secretCleared) {
+      const def = activeSecretDef() || SECRETS.ember;
+      const dest = typeof def.exitTo === "number" ? def.exitTo : LEVELS.length - 1;
       hideOverlay();
       state.mode = "play";
       state.inSecret = false;
-      buildLevel(LEVELS.length - 1, false, true);
+      state.secretCleared = false;
+      state.activeSecret = null;
+      state.secretKind = null;
+      buildLevel(dest, false, true);
       if (!musicOn) startTechno();
       updateHUD();
       return;
@@ -3152,13 +3338,16 @@
           state.banner = "1-UP QR! ♥×" + state.lives;
           state.messageTimer = 80;
           sfxOneUp();
-        } else if (q.power === "ember") {
+        } else if (q.power === "ember" || q.power === "storm") {
+          const sid = q.power === "storm" ? "storm" : "ember";
+          const def = secretDef(sid);
           state.secretKey = true;
+          state.secretKind = sid;
           addScore(1000);
-          state.banner = "EMBER KEY! FIND THE VAULT GATE";
+          state.banner = def ? def.keyBanner : "SECRET KEY!";
           state.messageTimer = 110;
           sfxOneUp();
-          if (state.secretPortal) state.secretPortal.open = true;
+          if (state.secretPortal && state.secretPortal.secretId === sid) state.secretPortal.open = true;
           state.flash = 10;
         } else {
           addScore(q.power === "gold" ? 500 : q.power === "speed" ? 400 : 250);
@@ -3176,7 +3365,7 @@
             sfxPickup();
           }
         }
-        explode(q.x + 8, q.y + 8, q.power === "life" ? "#ff2bd6" : q.power === "ember" ? "#fb7185" : q.power === "gold" ? "#ffd400" : q.power === "speed" ? "#3b82f6" : "#39ff14", 12);
+        explode(q.x + 8, q.y + 8, q.power === "life" ? "#ff2bd6" : q.power === "ember" ? "#fb7185" : q.power === "storm" ? "#67e8f9" : q.power === "gold" ? "#ffd400" : q.power === "speed" ? "#3b82f6" : "#39ff14", 12);
       }
     }
     for (let i = 0; i < state.staffs.length; i++) {
@@ -3201,14 +3390,17 @@
 
     if (!state.bossMode || state.hazards.length) updateHazards(calm);
 
-    // Secret vault portal (Void Market)
-    if (state.secretPortal && state.secretKey && !state.inSecret && !state.secretCleared) {
+    // Secret vault / spire portal
+    if (state.secretPortal && state.secretKey && !state.inSecret) {
       const gate = state.secretPortal;
-      gate.open = true;
-      if (rectsOverlap(p, gate) && (inputUp() || inputJump())) {
-        enterSecretStage();
-        updateHUD();
-        return;
+      const sid = gate.secretId || state.secretKind;
+      if (!isSecretDone(sid)) {
+        gate.open = true;
+        if (rectsOverlap(p, gate) && (inputUp() || inputJump())) {
+          enterSecretStage();
+          updateHUD();
+          return;
+        }
       }
     }
 
@@ -3227,7 +3419,8 @@
   }
 
   function drawCity() {
-    const pal = PAL[state.inSecret ? PAL.length - 1 : Math.min(state.level, PAL.length - 1)];
+    const sDef = state.inSecret ? activeSecretDef() : null;
+    const pal = PAL[sDef ? sDef.palIndex : Math.min(state.level, PAL.length - 1)];
     const bi = state.bossMode
       ? Math.min(5, imgs.backgrounds.length - 1)
       : state.inSecret
@@ -3658,7 +3851,7 @@
   }
 
   function drawPickupQR(qx, qy, power) {
-    const accent = power === "life" ? "#ff2bd6" : power === "gold" ? "#ffd400" : power === "speed" ? "#3b82f6" : power === "ember" ? "#fb7185" : "#39ff14";
+    const accent = power === "life" ? "#ff2bd6" : power === "gold" ? "#ffd400" : power === "speed" ? "#3b82f6" : power === "ember" ? "#fb7185" : power === "storm" ? "#67e8f9" : "#39ff14";
     ctx.globalAlpha = 0.22 + Math.sin(performance.now() / 180 + qx) * 0.1;
     ctx.fillStyle = accent; ctx.fillRect(qx - 3, qy - 3, 32, 32); ctx.globalAlpha = 1;
     ctx.fillStyle = "#f8fafc"; ctx.fillRect(qx, qy, 26, 26);
@@ -3677,8 +3870,8 @@
     for (let r = 0; r < 7; r++) for (let c = 0; c < 7; c++) if ((bits[r] >> c) & 1) ctx.fillRect(qx + 9 + c * 2, qy + 9 + r * 2, 2, 2);
     ctx.fillStyle = accent; ctx.fillRect(qx + 19, qy + 19, 5, 5);
     ctx.fillStyle = "#020617"; ctx.fillRect(qx + 20, qy + 20, 3, 3);
-    if (power === "ember") {
-      ctx.fillStyle = "#fb7185";
+    if (power === "ember" || power === "storm") {
+      ctx.fillStyle = power === "storm" ? "#67e8f9" : "#fb7185";
       ctx.font = "bold 7px monospace";
       ctx.fillText("KEY", qx + 4, qy - 2);
     }
@@ -3753,7 +3946,8 @@
 
     const gx = state.endX - 70 - state.camX;
     if (!state.bossMode && gx > -55 && gx < W) {
-      ctx.fillStyle = state.inSecret ? "#fb7185" : "#00e5ff";
+      const sDef = state.inSecret ? activeSecretDef() : null;
+      ctx.fillStyle = sDef ? sDef.color : "#00e5ff";
       ctx.fillRect(gx - 5, GROUND - 84, 52, 84);
       ctx.fillStyle = "#101828";
       ctx.fillRect(gx, GROUND - 78, 42, 78);
@@ -3763,28 +3957,29 @@
       ctx.fillRect(gx + 30, GROUND - 38, 4, 4);
       ctx.fillStyle = "#ffffff";
       ctx.font = "bold 9px monospace";
-      ctx.fillText(state.inSecret ? "RELIC" : "EXIT", gx + 8, GROUND - 88);
+      ctx.fillText(sDef ? sDef.relicLabel : "EXIT", gx + 8, GROUND - 88);
     }
 
     if (state.secretPortal && !state.inSecret) {
       const gate = state.secretPortal;
       const px = gate.x - state.camX;
       if (px > -60 && px < W + 60) {
-        const open = !!(state.secretKey || gate.open);
+        const gDef = secretDef(gate.secretId) || SECRETS.ember;
+        const open = !!(state.secretKey && state.secretKind === gate.secretId) || gate.open;
         const blink = Math.floor(performance.now() / 120) % 2;
         ctx.globalAlpha = open ? 0.85 : 0.35;
-        ctx.fillStyle = open ? (blink ? "#fb7185" : "#fbbf24") : "#64748b";
+        ctx.fillStyle = open ? (blink ? gDef.color : gDef.color2) : "#64748b";
         ctx.fillRect(px, gate.y, gate.w, gate.h);
         ctx.fillStyle = "#0f172a";
         ctx.fillRect(px + 6, gate.y + 8, gate.w - 12, gate.h - 16);
         if (open) {
-          ctx.fillStyle = "#fda4af";
+          ctx.fillStyle = gDef.color;
           ctx.globalAlpha = 0.35 + Math.sin(performance.now() / 180) * 0.2;
           ctx.fillRect(px + 10, gate.y + 16, gate.w - 20, gate.h - 32);
           ctx.globalAlpha = 1;
           ctx.fillStyle = "#ffd400";
           ctx.font = "bold 10px monospace";
-          ctx.fillText("VAULT", px + 6, gate.y - 6);
+          ctx.fillText(gDef.gateLabel, px + 6, gate.y - 6);
           ctx.fillText("↑ ENTER", px + 2, gate.y + gate.h + 12);
         } else {
           ctx.globalAlpha = 1;
@@ -4440,7 +4635,10 @@
   fit();
 
   let bootHint = "";
-  try { if (localStorage.getItem("dg-secret") === "1") bootHint = "\n★ Ember Vault discovered"; } catch (e) {}
+  try {
+    if (localStorage.getItem("dg-secret") === "1") bootHint += "\n★ Ember Vault discovered";
+    if (localStorage.getItem("dg-secret-storm") === "1") bootHint += "\n★ Storm Spire discovered";
+  } catch (e) {}
   let bootSub;
   if (GOD_QS) {
     if (state.godMode) bootHint += "\nGOD MODE ready · press G anytime";
