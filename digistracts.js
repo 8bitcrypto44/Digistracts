@@ -46,6 +46,9 @@
     mute: ROOT.querySelector("#dg-mute"),
     pauseBtn: ROOT.querySelector("#dg-pause"),
     diffBtn: ROOT.querySelector("#dg-diff"),
+    dailyBtn: ROOT.querySelector("#dg-daily"),
+    shareBtn: ROOT.querySelector("#dg-share"),
+    medalsEl: ROOT.querySelector("#dg-medals"),
     godBtn: ROOT.querySelector("#dg-god"),
     levels: ROOT.querySelector("#dg-levels"),
     fs: ROOT.querySelector("#dg-fs")
@@ -384,10 +387,22 @@
       if (opts.x != null) {
         pushScorePop(opts.x, (opts.y || 0) - 16, "×" + state.combo + " +" + bonus, "#ff2bd6");
       }
-      if (state.combo === 3 || state.combo % 5 === 0) {
-        state.banner = "COMBO ×" + state.combo + "!";
-        state.messageTimer = 45;
-      }
+    }
+    if (state.combo === 5) {
+      state.banner = "GOOD! ×5";
+      state.messageTimer = 40;
+      addJuice({ shake: 2, flash: 3 });
+    } else if (state.combo === 10) {
+      state.banner = "GREAT! ×10";
+      state.messageTimer = 50;
+      addJuice({ shake: 4, flash: 5, flashColor: "rgba(255,43,214,0.25)" });
+    } else if (state.combo === 15 || (state.combo > 15 && state.combo % 5 === 0)) {
+      state.banner = "DIGI! ×" + state.combo;
+      state.messageTimer = 55;
+      addJuice({ shake: 6, hitStop: 2, flash: 8, flashColor: "rgba(0,229,255,0.3)" });
+    } else if (state.combo === 3 || state.combo % 5 === 0) {
+      state.banner = "COMBO ×" + state.combo + "!";
+      state.messageTimer = 45;
     }
   }
 
@@ -401,12 +416,21 @@
     state.lastClear = null;
     state.tipQ = [];
     state.onboardDone = false;
+    state.runMedals = [];
+    state.lastMedals = [];
+    state.grazeCount = 0;
+    state.grazeScore = 0;
+    state.deathCause = null;
+    state.overclockUsed = false;
   }
 
   function formatRunSummary() {
+    const secrets = state.secretsDone || {};
+    const secN = (secrets.ember ? 1 : 0) + (secrets.storm ? 1 : 0) + (secrets.signal ? 1 : 0);
     return "Kills " + state.kills + " · Max Combo ×" + state.maxCombo +
       "\nNo-Hit Clears " + state.noHitClears + " · Bonus " + state.bonusScore +
-      "\nDIFF " + currentDiff().label;
+      "\nSecrets " + secN + "/3 · Graze " + (state.grazeCount || 0) +
+      "\nDIFF " + currentDiff().label + (state.daily ? (" · DAILY " + (state.dailyKey || "")) : "");
   }
 
   function formatClearBreakdown(detail) {
@@ -417,7 +441,250 @@
     if (detail.noHit) lines.push("NO-HIT +" + detail.noHit);
     if (detail.combo) lines.push("COMBO +" + detail.combo);
     if (detail.arena) lines.push("ARENA +" + detail.arena);
+    if (detail.graze) lines.push("GRAZE +" + detail.graze);
     return lines.join(" · ");
+  }
+
+  // --- Fun systems: share / medals / daily seed / death tips ---
+  const PAGES_SHARE = "https://8bitcrypto44.github.io/Digistracts/";
+  const MEDAL_DEFS = [
+    { id: "nohit", label: "NO-HIT", hot: true },
+    { id: "speed", label: "SPEED" },
+    { id: "combo", label: "COMBO" },
+    { id: "secret", label: "SECRET", hot: true },
+    { id: "graze", label: "GRAZER" },
+    { id: "daily", label: "DAILY" },
+    { id: "clear", label: "CLEAR" },
+    { id: "boss", label: "BOSS" }
+  ];
+  const DEATH_TIPS = {
+    bullet: "Enemy shots — jump or weave the gaps",
+    enemy: "Don't body-check hunters — shoot first",
+    spike: "Spikes blink — wait for the safe window",
+    acid: "Acid rises — climb and keep moving",
+    laser: "Lasers pulse — cross on the off-beat",
+    crusher: "Crushers telegraph — wait for UP",
+    fall: "Pits kill — Super Jump is jump×2 in air",
+    boss: "Bosses flash WEAK after big attacks",
+    time: "Clock ran out — grab QR and push the exit",
+    gate: "Arena gates lock — clear every hunter",
+    default: "Checkpoint keeps progress — press CONTINUE"
+  };
+  let _seedRng = null;
+
+  function blankSecretsDone() {
+    return { ember: false, storm: false, signal: false };
+  }
+
+  function hashSeed(str) {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+
+  function dailyId() {
+    const d = new Date();
+    return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") + "-" + String(d.getUTCDate()).padStart(2, "0");
+  }
+
+  function setRunSeed(seed) {
+    let a = (seed >>> 0) || 1;
+    _seedRng = function () {
+      a |= 0;
+      a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function clearRunSeed() {
+    _seedRng = null;
+  }
+
+  function rnd() {
+    return _seedRng ? _seedRng() : Math.random();
+  }
+
+  function loadMedalBook() {
+    try {
+      return JSON.parse(localStorage.getItem("dg-medals") || "{}") || {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function saveMedalBook(book) {
+    try { localStorage.setItem("dg-medals", JSON.stringify(book || {})); } catch (e) {}
+  }
+
+  function awardMedal(id) {
+    if (!id) return false;
+    if (!state.runMedals) state.runMedals = [];
+    if (state.runMedals.indexOf(id) < 0) state.runMedals.push(id);
+    const book = loadMedalBook();
+    if (!book[id]) {
+      book[id] = 1;
+      saveMedalBook(book);
+      return true;
+    }
+    book[id] = (book[id] | 0) + 1;
+    saveMedalBook(book);
+    return false;
+  }
+
+  function formatMedalsLine(list) {
+    const ids = list && list.length ? list : (state.runMedals || []);
+    if (!ids.length) return "Medals —";
+    return "Medals " + ids.map(function (id) {
+      const d = MEDAL_DEFS.filter(function (m) { return m.id === id; })[0];
+      return d ? d.label : id.toUpperCase();
+    }).join(" · ");
+  }
+
+  function renderMedalsUI(show, highlight) {
+    if (!hud.medalsEl) return;
+    if (!show) {
+      hud.medalsEl.classList.remove("is-on");
+      hud.medalsEl.innerHTML = "";
+      return;
+    }
+    const got = {};
+    (highlight || state.runMedals || []).forEach(function (id) { got[id] = true; });
+    hud.medalsEl.innerHTML = "";
+    MEDAL_DEFS.forEach(function (m) {
+      const s = document.createElement("span");
+      s.textContent = m.label;
+      if (got[m.id]) {
+        s.classList.add("is-on");
+        if (m.hot) s.classList.add("is-hot");
+      }
+      hud.medalsEl.appendChild(s);
+    });
+    hud.medalsEl.classList.add("is-on");
+  }
+
+  function evaluateSectorMedals(opts) {
+    opts = opts || {};
+    const earned = [];
+    awardMedal("clear");
+    earned.push("clear");
+    if (!state.hitThisLevel) {
+      awardMedal("nohit");
+      earned.push("nohit");
+    }
+    const budget = sectorTimeBudget();
+    if (state.levelTime > budget * 0.45) {
+      awardMedal("speed");
+      earned.push("speed");
+    }
+    if (state.combo >= 8 || state.maxCombo >= 10) {
+      awardMedal("combo");
+      earned.push("combo");
+    }
+    if (opts.secret) {
+      awardMedal("secret");
+      earned.push("secret");
+    }
+    if ((state.grazeCount || 0) >= 8) {
+      awardMedal("graze");
+      earned.push("graze");
+    }
+    if (state.daily) {
+      awardMedal("daily");
+      earned.push("daily");
+    }
+    if (opts.boss) {
+      awardMedal("boss");
+      earned.push("boss");
+    }
+    state.lastMedals = earned;
+    return earned;
+  }
+
+  function deathTipText(cause) {
+    return DEATH_TIPS[cause] || DEATH_TIPS.default;
+  }
+
+  function buildShareText(kind) {
+    const lines = [
+      "DIGISTRACTS by 8bitcrypto_44",
+      (kind === "fail" ? "FAILED" : kind === "clear" ? "SECTOR CLEAR" : "MISSION COMPLETE") +
+        " · Score " + state.score + " · HI " + state.hiScore,
+      formatRunSummary(),
+      formatMedalsLine(state.runMedals),
+      (state.daily ? ("Daily " + (state.dailyKey || dailyId()) + " · ") : "") +
+        "DIFF " + currentDiff().label,
+      PAGES_SHARE + "?v=29"
+    ];
+    return lines.join("\n");
+  }
+
+  function setShareVisible(on) {
+    if (!hud.shareBtn) return;
+    hud.shareBtn.style.display = on ? "" : "none";
+    hud.shareBtn.classList.remove("is-copied");
+    hud.shareBtn.textContent = "COPY SCORE";
+  }
+
+  function copyShareCard() {
+    const kind = state.mode === "failed" ? "fail" : (state.mode === "clear" ? "clear" : "win");
+    const text = buildShareText(kind);
+    function ok() {
+      if (hud.shareBtn) {
+        hud.shareBtn.textContent = "COPIED!";
+        hud.shareBtn.classList.add("is-copied");
+        setTimeout(function () {
+          if (hud.shareBtn) {
+            hud.shareBtn.textContent = "COPY SCORE";
+            hud.shareBtn.classList.remove("is-copied");
+          }
+        }, 1400);
+      }
+      state.banner = "SCORE COPIED!";
+      state.messageTimer = 50;
+      sfxUi();
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(ok).catch(function () {
+        fallbackCopy(text); ok();
+      });
+    } else {
+      fallbackCopy(text);
+      ok();
+    }
+  }
+
+  function fallbackCopy(text) {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    } catch (e) {}
+  }
+
+  function activateOverclock(secs) {
+    const p = state.player;
+    if (!p) return;
+    const t = Math.floor((secs || 8) * 60);
+    p.overclockT = Math.max(p.overclockT || 0, t);
+    p.goldT = Math.max(p.goldT || 0, Math.floor(t * 0.35));
+    p.speedT = Math.max(p.speedT || 0, Math.floor(t * 0.5));
+    if (p.weapon) p.beamFuel = Math.max(p.beamFuel, 80);
+    else grantWeapon("MAXI", 0.55);
+    addJuice({ shake: 6, flash: 10, flashColor: "rgba(255,212,0,0.35)" });
+    state.banner = "⚡ OVERCLOCK " + (secs || 8) + "s!";
+    state.messageTimer = 90;
+    sfxOneUp();
   }
 
   const DIFFS = {
@@ -510,6 +777,38 @@
       color: "#67e8f9",
       color2: "#a78bfa",
       palIndex: 8
+    },
+    signal: {
+      id: "signal",
+      hostLevel: 3,
+      hostTheme: "slums",
+      keyPower: "signal",
+      lsKey: "dg-secret-signal",
+      level: {
+        name: "SIGNAL CRYPT", theme: "signal", ground: 400, len: 9000,
+        enemyRate: 0.135, enemySpeed: 4.15, qrCount: 16, platforms: 44, secret: true
+      },
+      tale: [
+        { who: "YOU", line: "A pirate signal under the slums…" },
+        { who: "YOU", line: "Decode the crypt. Don't get tagged." }
+      ],
+      tip: "SIGNAL CRYPT · DECODE THE RELAY",
+      hostTip: "FIND SIGNAL KEY · OPEN THE CRYPT",
+      keyBanner: "SIGNAL KEY! FIND THE CRYPT GATE",
+      enterBanner: "SIGNAL CRYPT UNLOCKED!",
+      clearTitle: "CRYPT CLEARED",
+      clearBody: "PIRATE RELAY CLAIMED!",
+      exitLabel: "ENTER RAIL",
+      exitHint: "RICO armed · warp to SKY RAIL",
+      exitTo: 4,
+      rewardWeapon: "RICOCHET",
+      rewardAmmo: 1.6,
+      rewardGold: 220,
+      gateLabel: "CRYPT",
+      relicLabel: "RELAY",
+      color: "#34d399",
+      color2: "#fbbf24",
+      palIndex: 9
     }
   };
   const SECRET_FROM_LEVEL = SECRETS.ember.hostLevel;
@@ -550,7 +849,8 @@
     ["#12061a", "#e879f9", "#22d3ee"],
     ["#0c0610", "#fbbf24", "#22d3ee"],
     ["#1a0614", "#fb7185", "#fbbf24"], // Ember Vault
-    ["#06141f", "#67e8f9", "#a78bfa"]  // Storm Spire
+    ["#06141f", "#67e8f9", "#a78bfa"], // Storm Spire
+    ["#061a12", "#34d399", "#fbbf24"]  // Signal Crypt
   ];
 
   function secretDef(id) {
@@ -640,13 +940,22 @@
     secretKey: false,
     secretKind: null,
     secretCleared: false,
-    secretsDone: { ember: false, storm: false },
+    secretsDone: blankSecretsDone(),
     activeSecret: null,
     secretPortal: null,
     returnLevel: 0,
     godMode: GOD_QS,
     tipQ: [],
-    onboardDone: false
+    onboardDone: false,
+    daily: false,
+    dailyKey: null,
+    runMedals: [],
+    lastMedals: [],
+    grazeCount: 0,
+    grazeScore: 0,
+    deathCause: null,
+    overclockUsed: false,
+    shareKind: null
   };
 
   const CREDIT_LINES = ["DIGISTRACTS","by 8bitcrypto_44","","THANKS WEB3 COMMUNITY","OpenSea · Amazon","Technocade / Soundimage.org","","THANK YOU FOR PLAYING"];
@@ -665,7 +974,7 @@
       vx: 0, vy: 0, facing: 1, onGround: false,
       shootCD: 0, run: 0, crouch: false, platformCamp: 0,
       airSupers: 0, weapon: 0, beamFuel: 0, beamTick: 0, beaming: false, beamAim: 0, fireHeld: false,
-      safeX: 80, speedT: 0, goldT: 0, charge: 0,
+      safeX: 80, speedT: 0, goldT: 0, charge: 0, overclockT: 0,
       coyote: 0, jumpWasDown: false
     };
   }
@@ -851,6 +1160,13 @@
         w: 24, h: 24, bob: 4.2, taken: false, power: "life"
       });
     }
+    if (qrPlats.length && !state.inSecret) {
+      const clockPlat = qrPlats[Math.min(qrPlats.length - 1, Math.floor(qrPlats.length * 0.32))];
+      state.qrs.push({
+        x: clockPlat.x + clockPlat.w / 2 - 12, y: clockPlat.y - 40,
+        w: 24, h: 24, bob: 5.1, taken: false, power: "overclock"
+      });
+    }
     ["RIFLE", "SPREAD", "MAXI", "HOMING", "RICOCHET"].forEach(function (type, i) {
       if (!staffPlats.length) return;
       const plat = staffPlats[i % staffPlats.length];
@@ -894,7 +1210,7 @@
     }
 
     if (theme === "docks") {
-      // Wide cargo docks: movers + sparse pits + spike strips
+      // Wide cargo docks: movers + bounce + breakable neon + sparse pits
       for (let i = 0; i < 9; i++) addHole(900 + i * 1450, 120 + (i % 2) * 40);
       for (let i = 0; i < L.platforms; i++) {
         const x = 240 + i * ((len - 500) / L.platforms);
@@ -902,6 +1218,10 @@
         const w = 90 + (i % 2) * 40;
         if (i % 5 === 2) {
           plat(x, y, w, { mover: true, ampX: 70, ampY: 0, spd: 0.03, phase: i });
+        } else if (i % 8 === 4) {
+          plat(x, y, w, { bounce: true });
+        } else if (i % 8 === 6) {
+          plat(x, y, Math.min(72, w), { breakable: true, hp: 2 });
         } else {
           plat(x, y, w);
         }
@@ -958,13 +1278,19 @@
       }
       buildArena(Math.floor(len * 0.55));
     } else if (theme === "slums") {
-      // Spike alleys + crumbling ledges (timed platforms)
+      // Spike alleys + crumbling ledges + bounce toys + Signal Crypt key
       for (let i = 0; i < 16; i++) addHole(650 + i * 950, 85 + (i % 2) * 25);
       for (let i = 0; i < L.platforms; i++) {
         const x = 210 + i * ((len - 450) / L.platforms);
         const y = GROUND - (50 + (i % 5) * 32);
         const crumbling = i % 7 === 3;
-        plat(x, y, 65 + (i % 3) * 18, crumbling ? { crumble: true, life: 45, maxLife: 45, gone: false } : null);
+        const bounce = i % 7 === 5;
+        const brk = i % 9 === 1;
+        plat(x, y, 65 + (i % 3) * 18, crumbling
+          ? { crumble: true, life: 45, maxLife: 45, gone: false }
+          : bounce ? { bounce: true }
+          : brk ? { breakable: true, hp: 2 }
+          : null);
       }
       for (let i = 0; i < 18; i++) {
         addHazard({
@@ -979,6 +1305,18 @@
         });
       }
       buildArena(Math.floor(len * 0.5));
+      if (!isSecretDone("signal") && elevated.length > 8) {
+        const keyPlat = elevated[Math.min(elevated.length - 1, Math.floor(elevated.length * 0.38))];
+        state.qrs.push({
+          x: keyPlat.x + keyPlat.w / 2 - 12, y: keyPlat.y - 42,
+          w: 24, h: 24, bob: 6.4, taken: false, power: "signal"
+        });
+      }
+      if (!isSecretDone("signal")) {
+        state.secretPortal = {
+          x: Math.floor(len * 0.62), y: GROUND - 96, w: 48, h: 96, open: false, secretId: "signal"
+        };
+      }
     } else if (theme === "skyrail") {
       // High rails + wind gusts + long movers
       for (let i = 0; i < 8; i++) addHole(1000 + i * 1900, 160 + (i % 2) * 30);
@@ -1122,6 +1460,33 @@
         });
       }
       buildArena(Math.floor(len * 0.56));
+    } else if (theme === "signal") {
+      // Signal Crypt: neon bounce rails, blink lasers, breakable relays
+      for (let i = 0; i < 12; i++) addHole(420 + i * 680, 70 + (i % 3) * 28);
+      for (let i = 0; i < L.platforms; i++) {
+        const x = 130 + i * ((len - 280) / L.platforms);
+        const row = i % 5;
+        const y = GROUND - (48 + row * 38);
+        const bounce = i % 4 === 1;
+        const brk = i % 5 === 3;
+        plat(x, y, 56 + (i % 2) * 18, bounce
+          ? { bounce: true }
+          : brk ? { breakable: true, hp: 3 }
+          : (i % 6 === 0 ? { mover: true, ampX: 50, ampY: 16, spd: 0.036, phase: i * 0.8, fy: 1.25 } : null));
+      }
+      for (let i = 0; i < 14; i++) {
+        addHazard({
+          kind: "laser", x: 380 + i * 560, y: 16, w: 8, h: GROUND - 90,
+          on: 20, off: 44, t: i * 9, axis: "v"
+        });
+      }
+      for (let i = 0; i < 10; i++) {
+        addHazard({
+          kind: "spike", x: 600 + i * 780, y: GROUND - 14, w: 70, h: 14,
+          on: 50, off: 40, t: i * 12, hurt: true
+        });
+      }
+      buildArena(Math.floor(len * 0.54));
     } else if (theme === "sewers") {
       // Sewers: acid pools + drip hazards + movers over acid
       for (let i = 0; i < 12; i++) {
@@ -1237,6 +1602,8 @@
     state.flashColor = null;
     state.shake = 0;
     state.hitStop = 0;
+    state.grazeCount = 0;
+    state.overclockUsed = false;
     state.checkpointX = 80;
     state.hitThisLevel = false;
     state.combo = 0;
@@ -1294,6 +1661,7 @@
     state.secretKey = false;
     grantWeapon(def.rewardWeapon, def.rewardAmmo);
     if (state.player) state.player.goldT = Math.max(state.player.goldT, def.rewardGold);
+    const medals = evaluateSectorMedals({ secret: true });
     saveHiScore(state.score);
     try { localStorage.setItem(def.lsKey, "1"); } catch (e) {}
     state.mode = "clear";
@@ -1302,8 +1670,10 @@
       def.clearBody + "\nBonus +" + bonus +
         (noHitPts ? "\nNO-HIT SECRET +2500" : "") +
         "\n" + def.exitHint +
-        "\nScore " + String(state.score).padStart(6, "0"),
-      def.exitLabel
+        "\nScore " + String(state.score).padStart(6, "0") +
+        "\n" + formatMedalsLine(medals),
+      def.exitLabel,
+      { share: true, medals: medals }
     );
   }
 
@@ -1351,7 +1721,7 @@
     if (forceFlying) return "flyer";
     const wi = state.inSecret ? ROLE_WEIGHTS.length - 1 : Math.min(state.level, ROLE_WEIGHTS.length - 1);
     const w = ROLE_WEIGHTS[wi];
-    let roll = Math.random() * (w.walker + w.gunner + w.tank + w.dasher + w.flyer);
+    let roll = rnd() * (w.walker + w.gunner + w.tank + w.dasher + w.flyer);
     if ((roll -= w.walker) < 0) return "walker";
     if ((roll -= w.gunner) < 0) return "gunner";
     if ((roll -= w.tank) < 0) return "tank";
@@ -1467,13 +1837,15 @@
     if (!p || p.shootCD > 0) return false;
     const tip = gunPose(p, aim);
     const def = weaponDef(p.weapon);
+    const clock = p.overclockT > 0;
 
     // Beam weapons (RIFLE / SPREAD / MAXI)
     if (def && def.kind === "beam") {
       if (p.beamFuel <= 0) return false;
       const rows = def.rows;
-      p.shootCD = def.cd;
-      p.beamFuel--;
+      p.shootCD = Math.max(3, Math.floor(def.cd * (clock ? 0.55 : 1)));
+      p.beamFuel -= clock ? 0 : 1;
+      if (clock && p.beamFuel < 12) p.beamFuel = 12;
       const vertical = aim !== 0;
       const ox = tip.x, oy = tip.y;
       const targets = state.bossMode && state.boss ? state.enemies.concat([state.boss]) : state.enemies;
@@ -1629,6 +2001,7 @@
         if (mid) {
           state.banner = "PULSE WARDEN DOWN!";
           state.messageTimer = 90;
+          state._bossClear = true;
           onLevelComplete();
         } else {
           startCredits();
@@ -1723,9 +2096,12 @@
       ];
     state.talkI = 0;
     state.talkT = 0;
-    state.banner = mid ? "PULSE WARDEN" : "WAREHOUSE CORE";
-    state.messageTimer = 100;
+    state.banner = mid
+      ? "PULSE WARDEN — \"HEARTBEAT LOCKED\""
+      : "BLUE SENTINEL — \"WAREHOUSE OWNS YOU\"";
+    state.messageTimer = 110;
     state.invuln = 9999;
+    addJuice({ shake: 5, flash: 8, flashColor: mid ? "rgba(232,121,249,0.3)" : "rgba(0,229,255,0.28)" });
   }
 
   function startBoss() {
@@ -1761,7 +2137,7 @@
     sfxUi();
   }
 
-  function hurtPlayer(respawnX) {
+  function hurtPlayer(respawnX, cause) {
     if (state.godMode) return;
     if (state.invuln > 0 || state.mode !== "play") return;
     if (state.player && state.player.goldT > 0) return;
@@ -1769,9 +2145,11 @@
     state.hitThisLevel = true;
     state.combo = 0;
     state.comboTimer = 0;
+    state.deathCause = cause || state.deathCause || "default";
     p.weapon = 0;
     p.beamFuel = 0;
     p.charge = 0;
+    p.overclockT = 0;
     if (state.bossMode && state.playerHP > 1) {
       state.playerHP--;
       state.invuln = hitInvuln();
@@ -1809,8 +2187,8 @@
     state.camX = Math.max(0, Math.min(p.x - 180, state.endX - W));
     if (state.bossMode) state.playerHP = state.boss && state.boss.midBoss ? 2 : 3;
     state.invuln = hitInvuln();
-    state.banner = "DOWN! CHECKPOINT — ♥×" + state.lives;
-    state.messageTimer = 80;
+    state.banner = "DOWN! " + deathTipText(state.deathCause);
+    state.messageTimer = 95;
     updateHUD();
   }
 
@@ -1819,13 +2197,16 @@
     state.failAt = performance.now() + 4200;
     addJuice({ shake: 16, flash: 24, flashColor: "rgba(255,40,40,0.5)" });
     const record = saveHiScore(state.score);
+    const tip = deathTipText(state.failRespawnX === "time" ? "time" : (state.deathCause || "default"));
     showOverlay(
       "YOUR TEAM HAS FAILED",
       "Score: " + state.score + (record ? " ★ NEW HI!" : "") +
         "\nHI: " + state.hiScore +
         "\n" + formatRunSummary() +
+        "\nTip: " + tip +
         "\nSector " + (state.level + 1) + " · Continue keeps score",
-      "CONTINUE"
+      "CONTINUE",
+      { share: true, medals: state.runMedals }
     );
     hud.startBtn.style.display = "none";
     stopMusic();
@@ -1941,6 +2322,7 @@
     state.lives = Math.max(0, state.lives - 1);
     state.hitThisLevel = true;
     state.combo = 0;
+    state.deathCause = "time";
     deathBeep();
     if (state.lives <= 0) {
       state.failRespawnX = "time";
@@ -1985,13 +2367,17 @@
 
   function missionDoneOverlay() {
     const record = saveHiScore(state.score);
+    evaluateSectorMedals({ boss: true });
+    const medals = formatMedalsLine(state.runMedals);
     showOverlay(
       "MISSION COMPLETE",
       "Warehouse core secure!\nFinal Score: " + state.score +
         (record ? "\n★ NEW HIGH SCORE!" : "\nHI: " + state.hiScore) +
         "\n" + formatRunSummary() +
+        "\n" + medals +
         "\nby 8bitcrypto_44",
-      "PLAY AGAIN"
+      "PLAY AGAIN",
+      { share: true, medals: state.runMedals }
     );
   }
 
@@ -2023,12 +2409,17 @@
   }
 
   function showOverlay(title, sub, btn, opts) {
+    opts = opts || {};
     hud.overlay.style.display = "flex";
     hud.title.textContent = title;
     hud.sub.textContent = sub;
     hud.startBtn.textContent = btn || "START";
     hud.startBtn.style.display = "";
     const onTitle = state.mode === "title" || title === "DIGISTRACTS";
+    const shareable = !!(opts.share || state.mode === "clear" || state.mode === "failed" || title === "MISSION COMPLETE");
+    setShareVisible(shareable && !onTitle);
+    renderMedalsUI(shareable && !onTitle, opts.medals || state.lastMedals || state.runMedals);
+    if (hud.dailyBtn) hud.dailyBtn.style.display = onTitle ? "" : "none";
     if (hud.diffBtn) {
       hud.diffBtn.style.display = onTitle ? "" : "none";
       if (onTitle) syncDiffBtn();
@@ -2048,7 +2439,7 @@
       hud.levels.style.display = showLevels ? "" : "none";
     }
     ROOT.classList.add("dg-menu");
-    if (!opts || !opts.keepPlaying) {
+    if (!opts.keepPlaying) {
       postParent({ type: "dg-chrome", inGame: false });
     }
   }
@@ -2059,6 +2450,8 @@
       hud.levels.classList.remove("is-on");
       hud.levels.style.display = "none";
     }
+    setShareVisible(false);
+    renderMedalsUI(false);
     ROOT.classList.remove("dg-menu");
     fit();
   }
@@ -2077,7 +2470,7 @@
     state.secretKey = !!opts.secretKey;
     state.secretKind = opts.secret === true ? "ember" : (opts.secret || null);
     state.secretCleared = false;
-    state.secretsDone = { ember: false, storm: false };
+    state.secretsDone = blankSecretsDone();
     state.activeSecret = null;
     state.secretPortal = null;
     resetRunStats();
@@ -2149,6 +2542,16 @@
       beginTestRun({ secret: "storm" });
     });
     hud.levels.appendChild(spire);
+    const crypt = document.createElement("button");
+    crypt.type = "button";
+    crypt.className = "dg-lv-secret";
+    crypt.textContent = "CRYPT";
+    crypt.title = "Signal Crypt secret stage";
+    crypt.addEventListener("click", function () {
+      sfxUi();
+      beginTestRun({ secret: "signal" });
+    });
+    hud.levels.appendChild(crypt);
     const mid = document.createElement("button");
     mid.type = "button";
     mid.className = "dg-lv-boss";
@@ -2171,9 +2574,15 @@
     hud.levels.appendChild(fin);
   }
 
-  function startGame() {
+  function startGame(opts) {
+    opts = opts || {};
     ensureAudio();
     if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+    if (!opts.keepDaily) {
+      state.daily = false;
+      state.dailyKey = null;
+      clearRunSeed();
+    }
     state.score = 0;
     state.lives = currentDiff().lives;
     state.level = 0;
@@ -2185,10 +2594,11 @@
     state.secretKey = false;
     state.secretKind = null;
     state.secretCleared = false;
-    state.secretsDone = { ember: false, storm: false };
+    state.secretsDone = blankSecretsDone();
     state.activeSecret = null;
     state.secretPortal = null;
     resetRunStats();
+    if (state.daily) awardMedal("daily");
     hideOverlay();
     state.mode = "play";
     buildLevel(state.level);
@@ -2202,6 +2612,16 @@
       setTimeout(fit, 100);
       setTimeout(fit, 300);
     }
+  }
+
+  function startDailyRun() {
+    state.daily = true;
+    state.dailyKey = dailyId();
+    setRunSeed(hashSeed(state.dailyKey + "|" + (state.diff || "normal")));
+    sfxUi();
+    startGame({ keepDaily: true });
+    state.banner = "DAILY " + state.dailyKey;
+    state.messageTimer = 90;
   }
 
   function advanceFromClear() {
@@ -2237,14 +2657,17 @@
     const timePts = Math.ceil(state.levelTime / 1000) * 10;
     const noHitPts = !state.hitThisLevel ? 1000 : 0;
     const comboPts = state.combo >= 5 ? state.combo * 40 : 0;
-    const clearBonus = clearPts + timePts + noHitPts + comboPts;
+    const grazePts = Math.min(800, (state.grazeCount || 0) * 25);
+    const clearBonus = clearPts + timePts + noHitPts + comboPts + grazePts;
     addScore(clearBonus);
     state.bonusScore += clearBonus;
     state.sectorsCleared++;
     if (noHitPts) state.noHitClears++;
     state.lastClear = {
-      clear: clearPts, time: timePts, noHit: noHitPts, combo: comboPts
+      clear: clearPts, time: timePts, noHit: noHitPts, combo: comboPts, graze: grazePts
     };
+    const medals = evaluateSectorMedals({ boss: !!state._bossClear });
+    state._bossClear = false;
     saveHiScore(state.score);
     const breakdown = formatClearBreakdown(state.lastClear);
     if (state.level >= LEVELS.length - 1) {
@@ -2257,8 +2680,10 @@
           (breakdown ? "\n" + breakdown : "") +
           "\nScore " + String(state.score).padStart(6, "0") +
           " · HI " + String(state.hiScore).padStart(6, "0") +
-          "\nMax Combo ×" + state.maxCombo + " · Kills " + state.kills,
-        "NEXT LEVEL"
+          "\nMax Combo ×" + state.maxCombo + " · Kills " + state.kills +
+          "\n" + formatMedalsLine(medals),
+        "NEXT LEVEL",
+        { share: true, medals: medals }
       );
     }
   }
@@ -2308,7 +2733,7 @@
 
   function pickBossAttack(b, p) {
     b.vulnerable = false;
-    const roll = Math.random();
+    const roll = rnd();
     const hot = b.phase === 2;
     if (b.midBoss) {
       // Pulse Warden: burst / pulse rings / dash / short laser
@@ -2317,20 +2742,20 @@
         b.timer = hot ? 22 : 34;
         b.pulseR = 0;
         slideBeep(360, 720, 0.22, "sawtooth", 0.06);
-        state.banner = "PULSE CHARGE";
+        state.banner = "PULSE CHARGE — \"SYNC OR DIE\"";
         state.messageTimer = 40;
       } else if (roll < 0.52) {
         b.mode = "dashCharge";
         b.timer = hot ? 18 : 28;
         b.dashDir = p.x + p.w / 2 < b.x + b.w / 2 ? -1 : 1;
         beep(240, 0.14, "square", 0.07);
-        state.banner = "DASH STRIKE";
+        state.banner = "DASH STRIKE — \"MOVE!\"";
         state.messageTimer = 40;
       } else if (roll < 0.74) {
         b.mode = "eyeCharge";
         b.timer = hot ? 16 : 26;
         beep(700, 0.16, "square", 0.06);
-        state.banner = "BURST VOLLEY";
+        state.banner = "BURST VOLLEY — \"OPEN FIRE\"";
         state.messageTimer = 40;
       } else {
         b.mode = "laserCharge";
@@ -2338,7 +2763,7 @@
         b.laserAimY = p.y + p.h / 2;
         b.timer = hot ? 20 : 30;
         slideBeep(420, 280, 0.25, "sawtooth", 0.05);
-        state.banner = "PULSE BEAM";
+        state.banner = "PULSE BEAM — \"LOCK\"";
         state.messageTimer = 40;
       }
       return;
@@ -2350,7 +2775,7 @@
       b.vx = 0;
       b.vy = -8.5;
       beep(180, 0.14, "square", 0.07);
-      state.banner = "ORBITAL SLAM";
+      state.banner = "ORBITAL SLAM — \"FALL\"";
       state.messageTimer = 45;
     } else if (roll < 0.52) {
       b.mode = "pillarCharge";
@@ -2363,7 +2788,7 @@
       if (!hot) b.pillars = b.pillars.slice(0, 2);
       b.timer = hot ? 28 : 40;
       slideBeep(200, 480, 0.28, "sawtooth", 0.06);
-      state.banner = "PILLAR STRIKE";
+      state.banner = "PILLAR STRIKE — \"CAGE\"";
       state.messageTimer = 45;
     } else if (roll < 0.74) {
       b.mode = "laserCharge";
@@ -2371,18 +2796,18 @@
       b.laserAimY = p.y + p.h / 2;
       b.timer = hot ? 24 : 38;
       slideBeep(420, 280, 0.3, "sawtooth", 0.05);
-      state.banner = "CORE LASER";
+      state.banner = "CORE LASER — \"BURN\"";
       state.messageTimer = 40;
     } else if (roll < 0.88) {
       b.mode = "jumpCharge";
       b.timer = hot ? 16 : 26;
-      state.banner = "SHOCK JUMP";
+      state.banner = "SHOCK JUMP — \"RISE\"";
       state.messageTimer = 35;
     } else {
       b.mode = "eyeCharge";
       b.timer = hot ? 18 : 28;
       beep(700, 0.16, "square", 0.06);
-      state.banner = "EYE BARRAGE";
+      state.banner = "EYE BARRAGE — \"SEE ME\"";
       state.messageTimer = 40;
     }
   }
@@ -2458,7 +2883,7 @@
       const cx = p.x + p.w / 2, cy = p.y + p.h / 2;
       const t = Math.max(0, Math.min(1, ((cx - h.x) * dx + (cy - h.y) * dy) / (dx * dx + dy * dy)));
       const thick = b.midBoss ? 20 : 26;
-      if (Math.hypot(cx - h.x - t * dx, cy - h.y - t * dy) < thick) hurtPlayer();
+      if (Math.hypot(cx - h.x - t * dx, cy - h.y - t * dy) < thick) hurtPlayer(null, "boss");
       if (b.timer <= 0) {
         b.mode = "recover"; b.timer = b.phase === 2 ? 26 : 42; b.vulnerable = true;
       }
@@ -2501,7 +2926,7 @@
       b.pulseR += b.phase === 2 ? 9.5 : 7.2;
       const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
       const d = Math.hypot(p.x + p.w / 2 - cx, p.y + p.h / 2 - cy);
-      if (Math.abs(d - b.pulseR) < 22) hurtPlayer();
+      if (Math.abs(d - b.pulseR) < 22) hurtPlayer(null, "boss");
       if (b.phase === 2 && b.timer % 16 === 0) {
         bossFireEye(b);
       }
@@ -2517,7 +2942,7 @@
       explode(b.x + b.w / 2, b.y + b.h / 2, "#ff2bd6", 12);
     } else if (b.mode === "dash") {
       b.x += b.vx;
-      if (rectsOverlap({ x: p.x + 4, y: p.y + 8, w: p.w - 8, h: p.h - 10 }, b)) hurtPlayer();
+      if (rectsOverlap({ x: p.x + 4, y: p.y + 8, w: p.w - 8, h: p.h - 10 }, b)) hurtPlayer(null, "boss");
       if (b.x < 20 || b.x > W - b.w - 20 || b.timer <= 0) {
         b.x = Math.max(36, Math.min(W - b.w - 16, b.x));
         b.vx = 0;
@@ -2534,7 +2959,7 @@
     } else if (b.mode === "pillar") {
       for (let i = 0; i < b.pillars.length; i++) {
         const px = b.pillars[i];
-        if (Math.abs(p.x + p.w / 2 - px) < 28 && p.y + p.h > 60) hurtPlayer();
+        if (Math.abs(p.x + p.w / 2 - px) < 28 && p.y + p.h > 60) hurtPlayer(null, "boss");
       }
       if (b.timer <= 0) {
         b.mode = "recover"; b.timer = b.phase === 2 ? 28 : 42; b.vulnerable = true;
@@ -2568,7 +2993,7 @@
         b.x = b.slamX;
         b.vx = 0;
         b.vy = 0;
-        if (Math.abs(p.x + p.w / 2 - (b.x + b.w / 2)) < 62) hurtPlayer();
+        if (Math.abs(p.x + p.w / 2 - (b.x + b.w / 2)) < 62) hurtPlayer(null, "boss");
         explode(b.x + b.w / 2, GROUND - 4, "#ff7a12", 26);
         addJuice({ shake: 10, hitStop: 3, flash: 12, flashColor: "rgba(255,122,18,0.35)" });
         // phase-2 shockwave ring
@@ -2604,7 +3029,7 @@
       b.timer = b.phase === 2 ? (b.midBoss ? 18 : 22) : (b.midBoss ? 28 : 38);
       b.vulnerable = true;
     }
-    if (rectsOverlap({ x: p.x + 5, y: p.y + 5, w: p.w - 10, h: p.h - 5 }, b) && !state.talkQ) hurtPlayer();
+    if (rectsOverlap({ x: p.x + 5, y: p.y + 5, w: p.w - 10, h: p.h - 5 }, b) && !state.talkQ) hurtPlayer(null, "boss");
   }
 
   function updateHUD() {
@@ -2626,7 +3051,8 @@
     hud.superJumps.textContent = state.player ? Math.max(0, 2 - state.player.airSupers) : 2;
     let gun = "PISTOL";
     if (state.player) {
-      if (state.player.goldT > 0) gun = "GOLD " + Math.ceil(state.player.goldT / 60) + "s";
+      if (state.player.overclockT > 0) gun = "OVR " + Math.ceil(state.player.overclockT / 60) + "s";
+      else if (state.player.goldT > 0) gun = "GOLD " + Math.ceil(state.player.goldT / 60) + "s";
       else if (state.player.speedT > 0) gun = "SPD " + Math.ceil(state.player.speedT / 60) + "s";
       else if (state.player.weapon) {
         const d = weaponDef(state.player.weapon);
@@ -2838,7 +3264,13 @@
           else p.x = h.x + h.w + 2;
           p.vx = 0;
         } else {
-          hurtPlayer(h.kind === "acid" || h.kind === "spike" ? p.safeX : null);
+          const cause = h.kind === "acid" ? "acid"
+            : h.kind === "spike" ? "spike"
+            : h.kind === "laser" ? "laser"
+            : h.kind === "crusher" ? "crusher"
+            : h.kind === "drip" ? "acid"
+            : "default";
+          hurtPlayer(h.kind === "acid" || h.kind === "spike" ? p.safeX : null, cause);
           return;
         }
       }
@@ -3015,6 +3447,13 @@
     p.vx = ix * (p.speedT > 0 ? 6.6 : 3.2);
     if (p.speedT > 0) p.speedT--;
     if (p.goldT > 0) p.goldT--;
+    if (p.overclockT > 0) {
+      p.overclockT--;
+      if (p.overclockT === 0) {
+        state.banner = "OVERCLOCK ENDED";
+        state.messageTimer = 45;
+      }
+    }
     p.aimUp = inputUp();
     p.crouch = inputDown();
     if (ix) p.facing = ix > 0 ? 1 : -1;
@@ -3104,7 +3543,7 @@
       }
     }
 
-    if (p.y > H + 80) hurtPlayer(p.safeX);
+    if (p.y > H + 80) hurtPlayer(p.safeX, "fall");
 
     const firing = inputShoot();
     const firePressed = firing && !p.fireHeld;
@@ -3327,7 +3766,7 @@
         }
       }
       const pad = currentDiff().hitPad || 6;
-      if (rectsOverlap({ x: p.x + pad, y: p.y + pad + 2, w: Math.max(8, p.w - pad * 2), h: Math.max(12, p.h - pad * 2 - 2) }, e) && state.invuln <= 0) hurtPlayer();
+      if (rectsOverlap({ x: p.x + pad, y: p.y + pad + 2, w: Math.max(8, p.w - pad * 2), h: Math.max(12, p.h - pad * 2 - 2) }, e) && state.invuln <= 0) hurtPlayer(null, "enemy");
     }
 
     for (let i = 0; i < state.bullets.length; i++) {
@@ -3350,6 +3789,31 @@
             }
           }
         }
+        for (let pi = 0; pi < state.platforms.length; pi++) {
+          const plat = state.platforms[pi];
+          if (!plat.breakable || plat.gone) continue;
+          if (!rectsOverlap({ x: b.x - 2, y: b.y - 2, w: b.w + 4, h: b.h + 4 }, plat)) continue;
+          plat.hp = (plat.hp || 2) - (b.charged ? 2 : 1);
+          explode(b.x + b.w / 2, b.y + b.h / 2, "#fbbf24", 8);
+          b.life = 0;
+          addJuice({ shake: 3 });
+          if (plat.hp <= 0) {
+            plat.gone = true;
+            addScore(150);
+            state.bonusScore += 150;
+            pushScorePop(plat.x + plat.w / 2, plat.y, "+150", "#fbbf24");
+            if (rnd() < 0.45) {
+              state.qrs.push({
+                x: plat.x + plat.w / 2 - 12, y: plat.y - 28,
+                w: 24, h: 24, bob: rnd() * 4, taken: false,
+                power: rnd() < 0.25 ? "speed" : 0
+              });
+            }
+            state.banner = "NEON SHATTER!";
+            state.messageTimer = 35;
+          }
+          break;
+        }
         if (state.bossMode && state.boss && state.boss.alive && rectsOverlap({ x: b.x - 4, y: b.y - 4, w: b.w + 8, h: b.h + 8 }, state.boss)) {
           damageEnemy(state.boss, b.dmg || 1, Math.sign(b.vx) || state.player.facing);
           explode(b.x + b.w / 2, b.y + b.h / 2, b.color || "#39ff14", 6);
@@ -3359,9 +3823,26 @@
             b.life = 0;
           }
         }
-      } else if (b.from === "enemy" && rectsOverlap(b, p)) {
-        b.life = 0;
-        hurtPlayer();
+      } else if (b.from === "enemy") {
+        const pcx = p.x + p.w / 2, pcy = p.y + p.h / 2;
+        const bcx = b.x + b.w / 2, bcy = b.y + b.h / 2;
+        const dist = Math.hypot(pcx - bcx, pcy - bcy);
+        if (rectsOverlap(b, p)) {
+          b.life = 0;
+          hurtPlayer(null, "bullet");
+        } else if (!b.grazed && state.invuln <= 0 && !(p.goldT > 0) && dist < 28 && dist > 10) {
+          b.grazed = true;
+          state.grazeCount = (state.grazeCount || 0) + 1;
+          const gPts = 40 + Math.min(40, state.grazeCount);
+          addScore(gPts);
+          state.grazeScore = (state.grazeScore || 0) + gPts;
+          state.bonusScore += gPts;
+          pushScorePop(pcx, p.y, "GRAZE +" + gPts, "#67e8f9");
+          if (state.grazeCount === 1 || state.grazeCount % 5 === 0) {
+            state.banner = "GRAZE ×" + state.grazeCount;
+            state.messageTimer = 35;
+          }
+        }
       }
     }
     state.enemies = state.enemies.filter(function (e) { return e.alive && e.x > state.camX - 100; });
@@ -3379,8 +3860,8 @@
           state.banner = "1-UP QR! ♥×" + state.lives;
           state.messageTimer = 80;
           sfxOneUp();
-        } else if (q.power === "ember" || q.power === "storm") {
-          const sid = q.power === "storm" ? "storm" : "ember";
+        } else if (q.power === "ember" || q.power === "storm" || q.power === "signal") {
+          const sid = q.power === "storm" ? "storm" : (q.power === "signal" ? "signal" : "ember");
           const def = secretDef(sid);
           state.secretKey = true;
           state.secretKind = sid;
@@ -3390,6 +3871,9 @@
           sfxOneUp();
           if (state.secretPortal && state.secretPortal.secretId === sid) state.secretPortal.open = true;
           state.flash = 10;
+        } else if (q.power === "overclock") {
+          addScore(600);
+          activateOverclock(8);
         } else {
           addScore(q.power === "gold" ? 500 : q.power === "speed" ? 400 : 250);
           if (q.power === "speed") {
@@ -3406,7 +3890,7 @@
             sfxPickup();
           }
         }
-        explode(q.x + 8, q.y + 8, q.power === "life" ? "#ff2bd6" : q.power === "ember" ? "#fb7185" : q.power === "storm" ? "#67e8f9" : q.power === "gold" ? "#ffd400" : q.power === "speed" ? "#3b82f6" : "#39ff14", 12);
+        explode(q.x + 8, q.y + 8, q.power === "life" ? "#ff2bd6" : q.power === "ember" ? "#fb7185" : q.power === "storm" ? "#67e8f9" : q.power === "signal" ? "#34d399" : q.power === "overclock" ? "#fbbf24" : q.power === "gold" ? "#ffd400" : q.power === "speed" ? "#3b82f6" : "#39ff14", 12);
       }
     }
     for (let i = 0; i < state.staffs.length; i++) {
@@ -3506,11 +3990,11 @@
       if (p.gone || p.y >= GROUND) continue;
       const x = p.x - state.camX;
       if (x + p.w < 0 || x > W) continue;
-      ctx.fillStyle = p.crumble ? "#57534e" : p.mover ? "#1e3a5f" : p.bounce ? "#4c1d95" : "#1f2937";
+      ctx.fillStyle = p.crumble ? "#57534e" : p.mover ? "#1e3a5f" : p.bounce ? "#4c1d95" : p.breakable ? "#7c2d12" : "#1f2937";
       ctx.fillRect(x, p.y, p.w, p.h);
-      ctx.fillStyle = p.crumble ? "#fb923c" : p.mover ? "#38bdf8" : p.bounce ? "#e879f9" : "#22d3ee";
+      ctx.fillStyle = p.crumble ? "#fb923c" : p.mover ? "#38bdf8" : p.bounce ? "#e879f9" : p.breakable ? "#fbbf24" : "#22d3ee";
       ctx.fillRect(x, p.y, p.w, 3);
-      ctx.fillStyle = p.mover ? "#a78bfa" : p.bounce ? "#f5d0fe" : "#f472b6";
+      ctx.fillStyle = p.mover ? "#a78bfa" : p.bounce ? "#f5d0fe" : p.breakable ? "#fdba74" : "#f472b6";
       ctx.fillRect(x, p.y + p.h - 2, p.w, 2);
       if (p.crumble && p.life != null && p.maxLife) {
         const pct = Math.max(0, p.life / p.maxLife);
@@ -3892,7 +4376,7 @@
   }
 
   function drawPickupQR(qx, qy, power) {
-    const accent = power === "life" ? "#ff2bd6" : power === "gold" ? "#ffd400" : power === "speed" ? "#3b82f6" : power === "ember" ? "#fb7185" : power === "storm" ? "#67e8f9" : "#39ff14";
+    const accent = power === "life" ? "#ff2bd6" : power === "gold" ? "#ffd400" : power === "speed" ? "#3b82f6" : power === "ember" ? "#fb7185" : power === "storm" ? "#67e8f9" : power === "signal" ? "#34d399" : power === "overclock" ? "#fbbf24" : "#39ff14";
     ctx.globalAlpha = 0.22 + Math.sin(performance.now() / 180 + qx) * 0.1;
     ctx.fillStyle = accent; ctx.fillRect(qx - 3, qy - 3, 32, 32); ctx.globalAlpha = 1;
     ctx.fillStyle = "#f8fafc"; ctx.fillRect(qx, qy, 26, 26);
@@ -3911,10 +4395,14 @@
     for (let r = 0; r < 7; r++) for (let c = 0; c < 7; c++) if ((bits[r] >> c) & 1) ctx.fillRect(qx + 9 + c * 2, qy + 9 + r * 2, 2, 2);
     ctx.fillStyle = accent; ctx.fillRect(qx + 19, qy + 19, 5, 5);
     ctx.fillStyle = "#020617"; ctx.fillRect(qx + 20, qy + 20, 3, 3);
-    if (power === "ember" || power === "storm") {
-      ctx.fillStyle = power === "storm" ? "#67e8f9" : "#fb7185";
+    if (power === "ember" || power === "storm" || power === "signal") {
+      ctx.fillStyle = accent;
       ctx.font = "bold 7px monospace";
       ctx.fillText("KEY", qx + 4, qy - 2);
+    } else if (power === "overclock") {
+      ctx.fillStyle = "#fbbf24";
+      ctx.font = "bold 7px monospace";
+      ctx.fillText("OVR", qx + 3, qy - 2);
     }
   }
 
@@ -4364,6 +4852,22 @@
       if (state.mode === "title" || state.mode === "credits") cycleDiff();
     });
   }
+  if (hud.dailyBtn) {
+    hud.dailyBtn.addEventListener("click", function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      ensureAudio();
+      if (state.mode === "title" || state.mode === "credits") startDailyRun();
+    });
+  }
+  if (hud.shareBtn) {
+    hud.shareBtn.addEventListener("click", function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      ensureAudio();
+      copyShareCard();
+    });
+  }
   if (hud.godBtn) {
     hud.godBtn.addEventListener("click", function (ev) {
       ev.preventDefault();
@@ -4696,6 +5200,7 @@
   try {
     if (localStorage.getItem("dg-secret") === "1") bootHint += "\n★ Ember Vault discovered";
     if (localStorage.getItem("dg-secret-storm") === "1") bootHint += "\n★ Storm Spire discovered";
+    if (localStorage.getItem("dg-secret-signal") === "1") bootHint += "\n★ Signal Crypt discovered";
   } catch (e) {}
   let bootSub;
   if (GOD_QS) {
@@ -4709,8 +5214,10 @@
     if (state.godMode) setGodMode(true);
   } else {
     bootSub = wantsTouchUI()
-      ? "by 8bitcrypto_44\nHI " + state.hiScore + bootHint + "\nstick + JUMP / FIRE"
-      : "by 8bitcrypto_44\nHI " + state.hiScore + bootHint;
+      ? "by 8bitcrypto_44\nHI " + state.hiScore + bootHint +
+        "\nDAILY challenge · stick + JUMP / FIRE"
+      : "by 8bitcrypto_44\nHI " + state.hiScore + bootHint +
+        "\nPRESS START or DAILY · COPY SCORE on clear";
     if (hud.godBtn) hud.godBtn.style.display = "none";
     if (hud.levels) {
       hud.levels.innerHTML = "";
