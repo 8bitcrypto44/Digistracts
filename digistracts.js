@@ -2142,21 +2142,31 @@
     const land = window.matchMedia("(orientation: landscape)").matches || vw > vh;
     const fs = isFullscreen();
     ROOT.classList.toggle("dg-phone", phone);
-    // Landscape on any phone height — overlay controls so playfield stays large
     const phoneLand = phone && land;
     ROOT.classList.toggle("dg-land", phoneLand);
     ROOT.classList.toggle("dg-fs", fs);
 
     const top = ROOT.querySelector(".dg-top");
     const help = ROOT.querySelector(".dg-help");
+    const stage = ROOT.querySelector(".dg-stage");
+
+    // Mobile in-game: canvas CSS fills the whole stage (see .dg-phone canvas).
+    // Still set explicit px so some WebViews honor the stretch.
+    if (phone && !ROOT.classList.contains("dg-menu") && stage) {
+      const sw = Math.max(1, stage.clientWidth || vw);
+      const sh = Math.max(1, stage.clientHeight || vh);
+      canvas.style.width = Math.floor(sw) + "px";
+      canvas.style.height = Math.floor(sh) + "px";
+      syncFsBtn();
+      return;
+    }
+
     const pad = phone ? 8 : 20;
     let chrome = (top && top.offsetParent !== null ? top.offsetHeight : 0) + pad;
-    // Touch controls overlay the stage — do not reserve vertical chrome for them
     if (!phone && help && help.offsetParent !== null && !ROOT.classList.contains("dg-menu")) {
       chrome += help.offsetHeight;
     }
 
-    // Always fit canvas into the visible viewport so the ground/player stay on-screen
     const needFit = EMBED || fs || phone || vh < 620;
     if (needFit) {
       const availH = Math.max(120, vh - chrome);
