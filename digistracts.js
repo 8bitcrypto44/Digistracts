@@ -1244,7 +1244,7 @@
   function dropWeaponPickup(type, ammo, x, y) {
     if (!type || !weaponDef(type)) return;
     state.staffs.push({
-      x: x, y: y, w: 18, h: 22, type: type, bob: Math.random() * 6,
+      x: x, y: y, w: 40, h: 34, type: type, bob: Math.random() * 6,
       taken: false, ammo: ammo | 0, dropped: true
     });
   }
@@ -1583,7 +1583,7 @@
       const p2 = staffPlats[slot] || plat;
       state.staffs.push({
         x: p2.x + p2.w / 2 - 9 + (spread % 2) * 16, y: p2.y - 32 - (i % 3) * 5,
-        w: 18, h: 22, type: type, bob: i, taken: false
+        w: 40, h: 34, type: type, bob: i, taken: false
       });
     });
   }
@@ -2224,9 +2224,9 @@
     const spdMul = currentDiff().bulletSpd || 1;
     const spd = (opts.heavy ? 2.6 + state.level * 0.2 : 3.6 + state.level * 0.35) * spdMul;
     state.bullets.push({
-      x: muzzle.x, y: muzzle.y, w: opts.heavy ? 14 : 9, h: opts.heavy ? 10 : 6,
+      x: muzzle.x, y: muzzle.y, w: opts.heavy ? 16 : 12, h: opts.heavy ? 12 : 8,
       vx: dir * spd, vy: aimY, life: opts.heavy ? 110 : 90, from: "enemy",
-      fire: !!opts.heavy, lime: opts.lime || 0
+      fire: !!opts.heavy, lime: opts.lime || 0, shot: opts.heavy ? "fire" : (opts.lime ? "lime" : "enemy")
     });
     e.flash = 8;
     e.facing = dir;
@@ -2327,16 +2327,17 @@
       p.shootCD = Math.max(4, Math.floor(def.cd * (clock ? 0.55 : 1)));
       spend();
       const n = def.pellets || 5;
-      const base = aim ? Math.atan2(aim, 0.01) : (p.facing > 0 ? 0 : Math.PI);
+      const base = tip.a != null ? tip.a : (aim ? (aim < 0 ? -Math.PI / 2 : Math.PI / 2) : (p.facing > 0 ? 0 : Math.PI));
+      const cone = def.spread || 0.42;
       for (let i = 0; i < n; i++) {
         const t = n === 1 ? 0 : (i / (n - 1) - 0.5);
-        const ang = base + t * (def.spread || 0.3);
-        const spd = 9.5 + Math.random() * 1.5;
+        const ang = base + t * cone + (Math.random() - 0.5) * 0.06;
+        const spd = 10.2 + Math.random() * 2.2;
         state.bullets.push({
-          x: tip.x - 3, y: tip.y - 3, w: 7, h: 7,
+          x: tip.x - 4, y: tip.y - 3, w: 10, h: 6,
           vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
-          life: 28 + (Math.random() * 8) | 0, from: "player",
-          slug: true, dmg: def.dmg, color: def.color, knock: def.knock
+          life: 26 + (Math.random() * 10) | 0, from: "player",
+          slug: true, shot: "spread", dmg: def.dmg, color: def.color, knock: def.knock
         });
       }
       muzzleSparks(tip, def.color);
@@ -2357,7 +2358,7 @@
       state.bullets.push({
         x: tip.x - 8, y: tip.y - 8, w: 12 + power * 4, h: 12 + power * 3,
         vx: aim ? 0 : p.facing * (11 + power), vy: aim ? aim * (10 + power) : 0,
-        life: 55, from: "player", charged: true, dmg: dmg, color: def.color,
+        life: 55, from: "player", charged: true, shot: "maxi", dmg: dmg, color: def.color,
         knock: def.knock, antiShield: 2
       });
       muzzleSparks(tip, def.color);
@@ -2379,7 +2380,7 @@
           x: tip.x - 4, y: tip.y - 4, w: 10, h: 10,
           vx: p.facing * spd, vy: aim ? aim * spd * 0.85 : 0,
           life: 120, from: "player",
-          homing: true, dmg: def.dmg, color: def.color, knock: def.knock
+          homing: true, shot: "homing", dmg: def.dmg, color: def.color, knock: def.knock
         });
         muzzleSparks(tip, def.color);
         slideBeep(900, 1400, 0.08, "square", 0.05);
@@ -2389,13 +2390,13 @@
           state.bullets.push({
             x: tip.x - 4, y: tip.y - 4, w: 8, h: 8,
             vx: p.facing * 3.4, vy: aim * 9.8, life: 150, from: "player",
-            rico: true, bounces: bounces, dmg: def.dmg, color: def.color, knock: def.knock
+            rico: true, shot: "rico", bounces: bounces, dmg: def.dmg, color: def.color, knock: def.knock
           });
         } else {
           state.bullets.push({
             x: tip.x - (p.facing < 0 ? 8 : 0), y: tip.y - 3, w: 10, h: 6,
             vx: p.facing * 11, vy: -2.4, life: 150, from: "player",
-            rico: true, bounces: bounces, dmg: def.dmg, color: def.color, knock: def.knock
+            rico: true, shot: "rico", bounces: bounces, dmg: def.dmg, color: def.color, knock: def.knock
           });
         }
         muzzleSparks(tip, def.color);
@@ -2427,14 +2428,14 @@
         }
       }
       state.particles.push({
-        x: tip.x, y: tip.y, vx: p.facing * 2, vy: 0, life: 14,
-        color: def.color, wave: true, facing: p.facing, range: range
+        x: tip.x, y: tip.y, vx: p.facing * 2, vy: 0, life: 18,
+        color: def.color, wave: true, facing: p.facing, range: range, noGrav: true
       });
-      for (let k = 0; k < 10; k++) {
+      for (let k = 0; k < 14; k++) {
         state.particles.push({
-          x: tip.x, y: tip.y + (Math.random() - 0.5) * 40,
-          vx: p.facing * (3 + Math.random() * 5), vy: (Math.random() - 0.5) * 3,
-          life: 12 + Math.random() * 10, color: def.color
+          x: tip.x, y: tip.y + (Math.random() - 0.5) * 50,
+          vx: p.facing * (4 + Math.random() * 6), vy: (Math.random() - 0.5) * 2.5,
+          life: 14 + Math.random() * 12, color: def.color, noGrav: true
         });
       }
       beep(300, 0.08, "sawtooth", 0.07);
@@ -2451,7 +2452,7 @@
       state.bullets.push({
         x: tip.x - 6, y: tip.y - 6, w: 14, h: 14,
         vx: p.facing * 6.2, vy: aim ? aim * 7 : -5.5,
-        life: 90, from: "player", pulse: true, dmg: def.dmg, color: def.color,
+        life: 90, from: "player", pulse: true, shot: "pulse", dmg: def.dmg, color: def.color,
         knock: def.knock, antiShield: def.antiShield || 3, grav: 0.28
       });
       muzzleSparks(tip, def.color);
@@ -2468,7 +2469,7 @@
       state.bullets.push({
         x: tip.x - 6, y: tip.y - 6, w: 14, h: 12,
         vx: (aim ? 0 : p.facing * 13), vy: aim ? aim * 12 : 0,
-        life: 70, from: "player", charged: true, dmg: power, color: N("gold"), knock: 14
+        life: 70, from: "player", charged: true, shot: "maxi", dmg: power, color: N("gold"), knock: 14
       });
       muzzleSparks(tip, N("gold"));
       explode(tip.x, tip.y, N("gold"), 10);
@@ -2491,9 +2492,17 @@
     }
     for (let i = -1; i <= 1; i++) {
       if (aim) {
-        state.bullets.push({ x: tip.x - 4 + i * 6, y: tip.y - 4, w: 6, h: 10, vx: i * 1.1, vy: aim * 11, life: 55, from: "player", slug: true, dmg: 1, knock: 6 });
+        state.bullets.push({
+          x: tip.x - 5 + i * 6, y: tip.y - 5, w: 8, h: 12,
+          vx: i * 1.1, vy: aim * 11, life: 55, from: "player",
+          slug: true, shot: "pistol", dmg: 1, knock: 6, color: N("gold")
+        });
       } else {
-        state.bullets.push({ x: tip.x - (p.facing < 0 ? 10 : 0), y: tip.y - 2 + i * 5, w: 10, h: 4, vx: p.facing * 11, vy: i * 0.9 + assistVy, life: 80, from: "player", slug: true, dmg: 1, knock: 6 });
+        state.bullets.push({
+          x: tip.x - (p.facing < 0 ? 12 : 0), y: tip.y - 3 + i * 5, w: 14, h: 6,
+          vx: p.facing * 11, vy: i * 0.9 + assistVy, life: 80, from: "player",
+          slug: true, shot: "pistol", dmg: 1, knock: 6, color: N("gold")
+        });
       }
     }
     muzzleSparks(tip, N("silver"));
@@ -4401,8 +4410,9 @@
         if (p.maxiCharge === 18 || p.maxiCharge === 36 || p.maxiCharge === 54) {
           beep(400 + p.maxiCharge * 8, 0.04, "square", 0.04);
         }
-      } else if (fireReleased && (p.maxiCharge || 0) >= 12) {
-        shootGun(p.beamAim, { power: Math.floor(p.maxiCharge / 18) });
+      } else if (fireReleased && (p.maxiCharge || 0) >= 4) {
+        const pow = Math.max(1, Math.min(3, Math.floor((p.maxiCharge || 0) / 18)));
+        shootGun(p.beamAim, { power: pow });
         if (p.beamFuel <= 0) {
           clearWeapon();
           state.banner = "SPECIAL GUN EMPTY!";
@@ -4784,6 +4794,7 @@
       if (rectsOverlap(p, hit)) {
         s.taken = true;
         grantWeapon(s.type);
+        if (s.ammo) state.player.beamFuel = s.ammo | 0;
         addScore(100);
         announceWeapon(s.type);
         sfxPickup("weapon");
@@ -4792,7 +4803,9 @@
 
     for (let i = 0; i < state.particles.length; i++) {
       const pt = state.particles[i];
-      pt.x += pt.vx; pt.y += pt.vy; pt.vy += 0.15; pt.life--;
+      pt.x += pt.vx; pt.y += pt.vy;
+      if (!pt.wave && !pt.noGrav) pt.vy += 0.15;
+      pt.life--;
     }
     state.particles = state.particles.filter(function (pt) { return pt.life > 0; });
 
@@ -5249,78 +5262,143 @@
   }
 
   function drawBullet(b, bx) {
-    if (b.homing) {
-      const ang = Math.atan2(b.vy, b.vx || 1);
+    const cx = bx + (b.w || 8) / 2;
+    const cy = b.y + (b.h || 6) / 2;
+    const ang = Math.atan2(b.vy || 0, b.vx || 1);
+    const col = b.color || N("gold");
+    const flick = Math.floor(performance.now() / 55) % 2;
+
+    if (b.homing || b.shot === "homing") {
       ctx.save();
-      ctx.translate(bx + b.w / 2, b.y + b.h / 2);
+      ctx.translate(cx, cy);
       ctx.rotate(ang);
-      ctx.fillStyle = b.color || "#a78bfa";
-      ctx.fillRect(-6, -3, 12, 6);
-      ctx.fillStyle = "#f5f3ff";
-      ctx.fillRect(2, -2, 6, 4);
-      ctx.fillStyle = "#c4b5fd";
-      ctx.fillRect(-8, -1, 4, 2);
+      pxFill(N("ink"), -11, -5, 20, 10);
+      pxFill(col, -9, -4, 18, 8);
+      pxFill(N("white"), 2, -2, 10, 4);
+      pxFill(N("purple2"), -12, -6, 5, 3);
+      pxFill(N("purple2"), -12, 3, 5, 3);
+      pxFill(flick ? N("orange") : N("gold"), -18, -3, 8, 6);
+      pxFill(N("pink"), -16, -1, 4, 2);
       ctx.restore();
       return;
     }
-    if (b.rico) {
-      const g = Math.floor(performance.now() / 60) % 2;
-      ctx.fillStyle = b.color || "#34d399";
-      ctx.fillRect(bx, b.y, b.w, b.h);
-      ctx.fillStyle = g ? "#ecfdf5" : "#6ee7b7";
-      ctx.fillRect(bx + 2, b.y + 1, b.w - 4, b.h - 2);
+    if (b.rico || b.shot === "rico") {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(ang + (flick ? 0.2 : -0.2));
+      ctx.fillStyle = N("ink");
+      ctx.beginPath();
+      ctx.moveTo(0, -8); ctx.lineTo(8, 0); ctx.lineTo(0, 8); ctx.lineTo(-8, 0); ctx.fill();
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.moveTo(0, -6); ctx.lineTo(6, 0); ctx.lineTo(0, 6); ctx.lineTo(-6, 0); ctx.fill();
+      pxFill(N("white"), -2, -2, 4, 4);
+      ctx.restore();
       return;
     }
-    if (b.pulse) {
-      const g = 0.55 + Math.sin(performance.now() / 80) * 0.25;
-      ctx.globalAlpha = g;
-      ctx.fillStyle = b.color || N("orange");
-      ctx.beginPath(); ctx.arc(bx + b.w / 2, b.y + b.h / 2, 10, 0, Math.PI * 2); ctx.fill();
+    if (b.pulse || b.shot === "pulse") {
+      const r = 9 + flick;
+      ctx.globalAlpha = 0.35;
+      pxFill(col, cx - r - 4, cy - r - 4, (r + 4) * 2, (r + 4) * 2);
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
       ctx.globalAlpha = 1;
       ctx.fillStyle = N("gold");
-      ctx.beginPath(); ctx.arc(bx + b.w / 2, b.y + b.h / 2, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
+      pxFill(N("white"), cx - 2, cy - 2, 3, 3);
+      ctx.strokeStyle = N("orange");
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(cx, cy, r + 3, 0, Math.PI * 2); ctx.stroke();
+      ctx.lineWidth = 1;
       return;
     }
-    if (b.slug) {
-      ctx.fillStyle = b.color || N("gold");
-      ctx.fillRect(bx, b.y, b.w, b.h);
-      ctx.fillStyle = N("white");
-      ctx.fillRect(bx + 1, b.y + 1, Math.max(1, b.w - 2), Math.max(1, b.h - 2));
+    if (b.charged || b.shot === "maxi") {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(ang);
+      ctx.globalAlpha = 0.4;
+      pxFill(col, -18, -8, 28, 16);
+      ctx.globalAlpha = 1;
+      pxFill(N("ink"), -10, -7, 22, 14);
+      pxFill(col, -8, -5, 20, 10);
+      pxFill(N("white"), 0, -3, 12, 6);
+      pxFill(N("gold"), 8, -2, 8, 4);
+      // spikes
+      pxFill(col, -4, -10, 4, 4);
+      pxFill(col, -4, 6, 4, 4);
+      pxFill(flick ? N("pink2") : N("pink"), -16, -3, 6, 6);
+      ctx.restore();
       return;
     }
-    if (b.charged) {
-      ctx.fillStyle = "#ffd400";
-      ctx.fillRect(bx - 2, b.y - 2, b.w + 4, b.h + 4);
-      ctx.fillStyle = "#fff27a";
-      ctx.fillRect(bx, b.y, b.w, b.h);
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(bx + 3, b.y + 2, 4, 4);
-      return;
-    }
-    const ang = Math.atan2(b.vy, b.vx || 1);
+    // slug / pistol / spread bolt
     ctx.save();
-    ctx.translate(bx + b.w / 2, b.y + b.h / 2);
+    ctx.translate(cx, cy);
     ctx.rotate(ang);
-    ctx.fillStyle = "#94a3b8";
-    ctx.fillRect(-8, -1, 8, 2);
-    ctx.fillStyle = "#ffd400";
-    ctx.fillRect(-2, -2, 10, 4);
-    ctx.fillStyle = "#fff8c8";
-    ctx.fillRect(5, -1, 4, 2);
+    const long = b.shot === "spread" ? 14 : 16;
+    ctx.globalAlpha = 0.4;
+    pxFill(col, -long - 4, -2, 12, 4);
+    ctx.globalAlpha = 1;
+    pxFill(N("ink"), -6, -4, long, 8);
+    pxFill(col, -5, -3, long - 1, 6);
+    pxFill(N("white"), long - 10, -2, 8, 4);
+    pxFill(N("gold"), long - 4, -1, 5, 2);
+    if (b.shot === "spread") {
+      pxFill(N("orange"), -8, -5, 3, 2);
+      pxFill(N("orange"), -8, 3, 3, 2);
+    }
     ctx.restore();
   }
 
   function drawFireball(b, bx) {
+    const cx = bx + b.w / 2, cy = b.y + b.h / 2;
     const ang = Math.atan2(b.vy, b.vx || (b.facing || 1));
+    const flick = Math.floor(performance.now() / 45) % 2;
     ctx.save();
-    ctx.translate(bx + b.w / 2, b.y + b.h / 2);
+    ctx.translate(cx, cy);
     ctx.rotate(ang);
-    ctx.fillStyle = "#ef2b12";
-    ctx.fillRect(-14, -3, 10, 6);
-    ctx.fillStyle = "#ff7a12";
-    ctx.fillRect(-5, -5, 13, 10);
-    ctx.fillStyle = "#fff27a";
-    ctx.fillRect(2, -3, 7, 6);
+    ctx.globalAlpha = 0.45;
+    pxFill("#ff2b2b", -18, -8, 16, 16);
+    ctx.globalAlpha = 1;
+    pxFill("#7f1d1d", -12, -6, 22, 12);
+    pxFill("#ef2b12", -10, -5, 18, 10);
+    pxFill("#ff7a12", -2, -4, 14, 8);
+    pxFill("#fff27a", 6, -3, 10, 6);
+    pxFill("#ffffff", 12, -1, 5, 2);
+    pxFill(flick ? "#fb7185" : "#ff2bd6", -16, -3, 6, 6);
+    ctx.restore();
+  }
+
+  function drawEnemyBullet(b, bx) {
+    if (b.fire) {
+      drawFireball(b, bx);
+      return;
+    }
+    const cx = bx + b.w / 2, cy = b.y + b.h / 2;
+    const ang = Math.atan2(b.vy || 0, b.vx || 1);
+    const flick = Math.floor(performance.now() / 60) % 2;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(ang);
+    if (b.lime) {
+      ctx.globalAlpha = 0.45;
+      pxFill("#39ff14", -16, -3, 14, 6);
+      ctx.globalAlpha = 1;
+      pxFill("#14532d", -8, -5, 20, 10);
+      pxFill("#39ff14", -6, -4, 18, 8);
+      pxFill("#b8ff4a", 4, -2, 12, 4);
+      pxFill("#ffffff", 12, -1, 6, 2);
+      pxFill(flick ? "#4ade80" : "#bbf7d0", -12, -2, 5, 4);
+    } else {
+      ctx.globalAlpha = 0.4;
+      pxFill("#ff2bd6", -15, -3, 12, 6);
+      ctx.globalAlpha = 1;
+      pxFill("#831843", -7, -5, 18, 10);
+      pxFill("#fb7185", -5, -4, 16, 8);
+      pxFill("#fecdd3", 4, -2, 10, 4);
+      pxFill("#ffffff", 10, -1, 6, 2);
+      pxFill(flick ? "#ff2bd6" : "#f472b6", -14, -2, 5, 4);
+    }
     ctx.restore();
   }
 
@@ -5370,6 +5448,36 @@
     for (let i = 0; i < GUN.length; i += 5) {
       ctx.fillStyle = GUN[i] === 10 ? glow : GUNP[GUN[i]];
       ctx.fillRect(GUN[i + 1], GUN[i + 2], GUN[i + 3], GUN[i + 4]);
+    }
+    // weapon-specific silhouette upgrades
+    if (p.weapon === "SPREAD") {
+      ctx.fillStyle = N("ink");
+      ctx.fillRect(24, -8, 12, 3); ctx.fillRect(24, -1, 12, 3); ctx.fillRect(24, 6, 12, 3);
+      ctx.fillStyle = glow;
+      ctx.fillRect(26, -7, 10, 1); ctx.fillRect(26, 0, 10, 1); ctx.fillRect(26, 7, 10, 1);
+    } else if (p.weapon === "MAXI") {
+      const mc = Math.min(1, (p.maxiCharge || 0) / 54);
+      ctx.fillStyle = N("ink"); ctx.fillRect(22, -8, 16, 14);
+      ctx.fillStyle = glow; ctx.fillRect(24, -6, 14, 10);
+      ctx.globalAlpha = 0.3 + mc * 0.6;
+      ctx.fillStyle = N("pink2"); ctx.fillRect(20, -10, 22, 18);
+      ctx.globalAlpha = 1;
+    } else if (p.weapon === "HOMING") {
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.moveTo(28, -6); ctx.lineTo(40, 0); ctx.lineTo(28, 6); ctx.fill();
+    } else if (p.weapon === "RICOCHET") {
+      ctx.fillStyle = glow; ctx.fillRect(28, -6, 5, 5); ctx.fillRect(34, 2, 5, 5);
+    } else if (p.weapon === "WAVE") {
+      ctx.strokeStyle = glow; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(30, 0, 8, -0.9, 0.9); ctx.stroke();
+      ctx.beginPath(); ctx.arc(30, 0, 12, -0.9, 0.9); ctx.stroke();
+      ctx.lineWidth = 1;
+    } else if (p.weapon === "PULSE") {
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(34, 0, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = N("gold"); ctx.beginPath(); ctx.arc(34, 0, 3, 0, Math.PI * 2); ctx.fill();
+    } else if (p.weapon === "RIFLE") {
+      ctx.fillStyle = N("ink"); ctx.fillRect(26, -2, 18, 4);
+      ctx.fillStyle = glow; ctx.fillRect(28, -1, 16, 2);
     }
     // charge glow on pistol
     if (charge > 0.2) {
@@ -5425,47 +5533,90 @@
 
   function drawPickupGun(sx, sy, type) {
     const color = weaponColor(type);
-    const tag = type === "RICOCHET" ? "RIC" : type.slice(0, 3);
-    ctx.globalAlpha = 0.28; ctx.fillStyle = color; ctx.fillRect(sx - 4, sy + 24, 30, 4); ctx.globalAlpha = 1;
-    ctx.fillStyle = "#334155"; ctx.fillRect(sx - 3, sy + 7, 6, 5); ctx.fillRect(sx - 4, sy + 10, 4, 5);
-    ctx.fillStyle = "#0f172a"; ctx.fillRect(sx + 2, sy + 6, 14, 8);
-    ctx.fillStyle = color; ctx.fillRect(sx + 4, sy + 8, 10, 2);
-    ctx.fillStyle = "#111827";
+    const d = weaponDef(type);
+    const tag = (d && d.tag) || (type === "RICOCHET" ? "RIC" : String(type).slice(0, 3));
+    const bob = Math.sin(performance.now() / 220 + sx) * 2.5;
+    const y = sy + bob;
+    // pedestal + glow
+    ctx.globalAlpha = 0.22 + Math.sin(performance.now() / 160 + sx) * 0.08;
+    pxFill(color, sx - 6, y - 4, 52, 40);
+    ctx.globalAlpha = 1;
+    pxBevel(sx - 2, sy + 30, 48, 10, N("cyan"), N("pink"), N("metal2"));
+    pxFill(N("ink"), sx + 6, sy + 32, 28, 3);
+    // common stock / grip
+    pxFill(N("wood"), sx + 4, y + 14, 8, 12);
+    pxFill(N("wood2"), sx + 5, y + 15, 5, 10);
+    pxFill(N("metal"), sx + 10, y + 12, 6, 8);
+    pxFill(N("ink"), sx + 12, y + 6, 18, 12);
+    pxFill(N("metal2"), sx + 13, y + 7, 16, 10);
+    pxFill(color, sx + 14, y + 9, 14, 3);
+
     if (type === "SPREAD") {
-      ctx.fillRect(sx + 15, sy + 5, 12, 3); ctx.fillRect(sx + 15, sy + 11, 12, 3);
-      ctx.fillStyle = color; ctx.fillRect(sx + 26, sy + 5, 3, 9);
+      pxFill(N("ink"), sx + 28, y + 4, 14, 4);
+      pxFill(N("ink"), sx + 28, y + 10, 14, 4);
+      pxFill(N("ink"), sx + 28, y + 16, 14, 4);
+      pxFill(color, sx + 30, y + 5, 12, 2);
+      pxFill(color, sx + 30, y + 11, 12, 2);
+      pxFill(color, sx + 30, y + 17, 12, 2);
+      pxFill(N("gold"), sx + 40, y + 4, 4, 16);
     } else if (type === "MAXI") {
-      ctx.fillRect(sx + 14, sy + 4, 14, 9); ctx.fillStyle = color; ctx.fillRect(sx + 26, sy + 5, 4, 7);
+      pxFill(N("ink"), sx + 26, y + 3, 18, 16);
+      pxFill(color, sx + 28, y + 5, 14, 12);
+      pxFill(N("pink2"), sx + 40, y + 7, 6, 8);
+      pxFill(N("white"), sx + 30, y + 8, 8, 4);
+      pxFill(N("gold"), sx + 16, y + 2, 6, 4);
     } else if (type === "HOMING") {
-      ctx.fillRect(sx + 14, sy + 6, 12, 5);
-      ctx.fillStyle = color; ctx.beginPath();
-      ctx.moveTo(sx + 26, sy + 4); ctx.lineTo(sx + 34, sy + 8); ctx.lineTo(sx + 26, sy + 13); ctx.fill();
-    } else if (type === "RICOCHET") {
-      ctx.fillRect(sx + 14, sy + 5, 10, 7);
-      ctx.fillStyle = color; ctx.fillRect(sx + 24, sy + 3, 4, 4); ctx.fillRect(sx + 28, sy + 10, 4, 4);
-    } else if (type === "WAVE") {
-      ctx.fillRect(sx + 12, sy + 6, 8, 6);
+      pxFill(N("ink"), sx + 26, y + 6, 12, 8);
+      pxFill(color, sx + 28, y + 7, 10, 6);
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.moveTo(sx + 20, sy + 4); ctx.lineTo(sx + 34, sy + 9); ctx.lineTo(sx + 20, sy + 14); ctx.fill();
-      ctx.globalAlpha = 0.45; ctx.fillRect(sx + 22, sy + 5, 14, 8); ctx.globalAlpha = 1;
+      ctx.moveTo(sx + 38, y + 4); ctx.lineTo(sx + 50, y + 10); ctx.lineTo(sx + 38, y + 16); ctx.fill();
+      pxFill(N("purple2"), sx + 24, y + 4, 4, 3);
+      pxFill(N("purple2"), sx + 24, y + 13, 4, 3);
+    } else if (type === "RICOCHET") {
+      pxFill(N("ink"), sx + 26, y + 5, 12, 10);
+      pxFill(color, sx + 28, y + 6, 10, 8);
+      pxFill(N("green"), sx + 38, y + 2, 6, 6);
+      pxFill(N("green2"), sx + 42, y + 12, 6, 6);
+      pxFill(N("white"), sx + 30, y + 8, 4, 4);
+    } else if (type === "WAVE") {
+      pxFill(N("ink"), sx + 24, y + 5, 10, 10);
+      pxFill(color, sx + 26, y + 6, 8, 8);
+      ctx.globalAlpha = 0.55;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      for (let a = 0; a < 3; a++) {
+        ctx.beginPath();
+        ctx.arc(sx + 34, y + 10, 6 + a * 5, -0.9, 0.9);
+        ctx.stroke();
+      }
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 1;
     } else if (type === "PULSE") {
-      ctx.fillRect(sx + 12, sy + 5, 10, 8);
-      ctx.fillStyle = color; ctx.beginPath();
-      ctx.arc(sx + 28, sy + 9, 7, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "#fff7ed"; ctx.beginPath();
-      ctx.arc(sx + 28, sy + 9, 3, 0, Math.PI * 2); ctx.fill();
+      pxFill(N("ink"), sx + 24, y + 5, 10, 10);
+      pxFill(N("orange"), sx + 26, y + 6, 8, 8);
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(sx + 42, y + 10, 9, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = N("gold");
+      ctx.beginPath(); ctx.arc(sx + 42, y + 10, 4, 0, Math.PI * 2); ctx.fill();
+      pxFill(N("white"), sx + 40, y + 8, 3, 3);
+    } else if (type === "RIFLE") {
+      pxFill(N("ink"), sx + 26, y + 8, 22, 5);
+      pxFill(color, sx + 28, y + 9, 20, 3);
+      pxFill(N("cyan2"), sx + 46, y + 7, 4, 7);
+      pxFill(N("steel"), sx + 16, y + 3, 8, 4);
+      pxFill(color, sx + 18, y + 4, 4, 2);
     } else {
-      ctx.fillRect(sx + 15, sy + 7, 13, 4);
-      ctx.fillStyle = "#475569"; ctx.fillRect(sx + 6, sy + 3, 7, 3);
-      ctx.fillStyle = color; ctx.fillRect(sx + 8, sy + 3, 3, 3); ctx.fillRect(sx + 27, sy + 7, 3, 4);
+      pxFill(N("ink"), sx + 26, y + 8, 16, 5);
+      pxFill(color, sx + 28, y + 9, 14, 3);
+      pxFill(N("silver"), sx + 40, y + 7, 4, 6);
     }
-    ctx.fillStyle = "#7c4a21"; ctx.fillRect(sx + 5, sy + 14, 5, 10);
-    ctx.fillStyle = "#1f2937"; ctx.fillRect(sx + 6, sy + 15, 3, 8);
-    ctx.fillStyle = "#334155"; ctx.fillRect(sx + 11, sy + 13, 4, 8);
-    ctx.fillStyle = "#020617"; ctx.fillRect(sx, sy - 9, 20, 9);
-    ctx.strokeStyle = color; ctx.strokeRect(sx, sy - 9, 20, 9);
-    ctx.fillStyle = color; ctx.font = "bold 7px monospace"; ctx.fillText(tag, sx + 2, sy - 2);
+    // name plate
+    pxFill(N("black"), sx + 2, y - 12, 28, 10);
+    pxOutline(color, sx + 2, y - 12, 28, 10);
+    ctx.fillStyle = color;
+    ctx.font = "bold 8px monospace";
+    ctx.fillText(tag, sx + 5, y - 4);
   }
 
   function drawBossHealth(x, y) {
@@ -5633,20 +5784,29 @@
 
     const p = state.player;
     if (p && p.beaming && p.weapon && weaponDef(p.weapon) && weaponDef(p.weapon).kind === "beam") {
-      const rows = weaponDef(p.weapon).rows;
+      const rows = weaponDef(p.weapon).rows || 1;
       const tip = gunPose(p, p.beamAim), muzzle = tip.x - state.camX, muzzleY = tip.y;
       const col = weaponColor(p.weapon);
+      const pulse = 0.5 + Math.sin(performance.now() / 50) * 0.2;
       for (let i = 0; i < rows; i++) {
         const angle = (i - (rows - 1) / 2) * 0.085;
         ctx.save();
         ctx.translate(muzzle, muzzleY);
         ctx.rotate(p.beamAim < 0 ? -Math.PI / 2 + angle : p.beamAim > 0 ? Math.PI / 2 - angle : p.facing > 0 ? angle : Math.PI - angle);
-        ctx.globalAlpha = 0.35;
+        ctx.globalAlpha = 0.22 * pulse;
         ctx.fillStyle = col;
-        ctx.fillRect(0, -4, W + 160, 8);
+        ctx.fillRect(0, -10, W + 160, 20);
+        ctx.globalAlpha = 0.55;
+        ctx.fillRect(0, -5, W + 160, 10);
         ctx.globalAlpha = 1;
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, -1, W + 160, 2);
+        ctx.fillStyle = N("white");
+        ctx.fillRect(0, -2, W + 160, 4);
+        ctx.fillStyle = col;
+        for (let seg = 20; seg < W + 120; seg += 28) {
+          ctx.globalAlpha = 0.7;
+          ctx.fillRect(seg, -7, 6, 14);
+        }
+        ctx.globalAlpha = 1;
         ctx.restore();
       }
     }
@@ -5725,27 +5885,31 @@
       const b = state.bullets[i];
       const bx = b.x - state.camX;
       if (b.from === "player") drawBullet(b, bx);
-      else if (b.fire) drawFireball(b, bx);
-      else if (b.lime) {
-        const g = Math.floor(performance.now() / 70) % 2;
-        ctx.fillStyle = g ? "#39ff14" : "#b8ff4a";
-        for (let s = 0; s < 4; s++) {
-          if ((s + g) % 2) {
-            if (Math.abs(b.vx) >= Math.abs(b.vy)) ctx.fillRect(bx + s * 4, b.y + (s % 2), 3, 4);
-            else ctx.fillRect(bx + (s % 2), b.y + s * 4, 4, 3);
-          }
-        }
-      } else {
-        ctx.fillStyle = "#fb7185";
-        ctx.fillRect(bx, b.y, b.w, b.h);
-      }
+      else drawEnemyBullet(b, bx);
     }
 
     for (let i = 0; i < state.particles.length; i++) {
       const pt = state.particles[i];
+      const px = pt.x - state.camX;
+      if (pt.wave) {
+        const face = pt.facing || 1;
+        const age = 1 - Math.max(0, pt.life / 14);
+        const reach = (pt.range || 140) * (0.35 + age * 0.65);
+        ctx.globalAlpha = Math.max(0.15, pt.life / 18);
+        ctx.strokeStyle = pt.color || N("cyan2");
+        ctx.lineWidth = 3;
+        for (let r = 0; r < 3; r++) {
+          ctx.beginPath();
+          ctx.arc(px, pt.y, reach * (0.45 + r * 0.2), face > 0 ? -0.85 : Math.PI - 0.85, face > 0 ? 0.85 : Math.PI + 0.85);
+          ctx.stroke();
+        }
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = 1;
+        continue;
+      }
       ctx.globalAlpha = Math.max(0, pt.life / 30);
       ctx.fillStyle = pt.color;
-      ctx.fillRect(pt.x - state.camX, pt.y, 3, 3);
+      ctx.fillRect(px, pt.y, 3, 3);
     }
     ctx.globalAlpha = 1;
     ctx.restore();
