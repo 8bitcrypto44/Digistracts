@@ -2041,6 +2041,8 @@
   bindTouch("#dg-jump", "jump");
   bindTouch("#dg-shoot", "shoot");
 
+  let parentFs = false;
+
   function wantsTouchUI() {
     // PC with mouse: keep desktop chrome even if a touchscreen / narrow iframe exists
     try {
@@ -2062,17 +2064,8 @@
     return !!(document.fullscreenElement || document.webkitFullscreenElement);
   }
 
-  function likelyParentFullscreen() {
-    if (!EMBED) return false;
-    try {
-      if (window.matchMedia && window.matchMedia("(display-mode: fullscreen)").matches) return true;
-    } catch (e) {}
-    const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
-    const target = Math.min(
-      (window.screen && (window.screen.availHeight || window.screen.height)) || vh,
-      vh + 80
-    );
-    return vh >= target * 0.86;
+  function isFullscreen() {
+    return parentFs || isNativeFullscreen();
   }
 
   function askParentFullscreen(exit) {
@@ -2080,17 +2073,31 @@
   }
 
   function enterFullscreen() {
-    askParentFullscreen(false);
-    const req = ROOT.requestFullscreen || ROOT.webkitRequestFullscreen;
+    if (EMBED) {
+      parentFs = true;
+      askParentFullscreen(false);
+      syncFsBtn();
+      fit();
+      return;
+    }
+    const req = ROOT.requestFullscreen || ROOT.webkitRequestFullscreen ||
+      document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
     if (!req) return;
     try {
-      const p = req.call(ROOT);
+      const el = ROOT.requestFullscreen || ROOT.webkitRequestFullscreen ? ROOT : document.documentElement;
+      const p = (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
       if (p && p.catch) p.catch(function () {});
     } catch (e) {}
   }
 
   function exitFullscreen() {
-    askParentFullscreen(true);
+    if (EMBED) {
+      parentFs = false;
+      askParentFullscreen(true);
+      syncFsBtn();
+      fit();
+      return;
+    }
     const exit = document.exitFullscreen || document.webkitExitFullscreen;
     if (exit && isNativeFullscreen()) {
       try {
@@ -2102,23 +2109,38 @@
 
   function syncFsBtn() {
     if (!hud.fs) return;
-    const fs = isNativeFullscreen() || likelyParentFullscreen();
+    const fs = isFullscreen();
     hud.fs.setAttribute("aria-pressed", fs ? "true" : "false");
     hud.fs.textContent = fs ? "EXIT" : "FULL";
+    ROOT.classList.toggle("dg-fs", fs);
+    document.documentElement.classList.toggle("dg-fs", fs);
   }
 
   function fit() {
     const phone = wantsTouchUI();
     const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
-    const land = window.matchMedia("(orientation: landscape)").matches || window.innerWidth > window.innerHeight;
+    const vw = (window.visualViewport && window.visualViewport.width) || window.innerWidth;
+    const land = window.matchMedia("(orientation: landscape)").matches || vw > vh;
+    const fs = isFullscreen();
     ROOT.classList.toggle("dg-phone", phone);
     const phoneLand = phone && land && vh <= 520;
     ROOT.classList.toggle("dg-land", phoneLand);
-    if (phoneLand) {
-      const top = ROOT.querySelector(".dg-top");
-      const ctrl = ROOT.querySelector(".dg-controls");
-      const availH = Math.max(120, vh - (top ? top.offsetHeight : 22) - (ctrl ? ctrl.offsetHeight : 70) - 10);
-      const availW = Math.max(160, window.innerWidth - 12);
+    ROOT.classList.toggle("dg-fs", fs);
+
+    const top = ROOT.querySelector(".dg-top");
+    const help = ROOT.querySelector(".dg-help");
+    const ctrl = ROOT.querySelector(".dg-controls");
+    const pad = phone ? 12 : 20;
+    let chrome = (top ? top.offsetHeight : 0) + pad;
+    if (phone && ctrl && ctrl.offsetParent !== null) chrome += ctrl.offsetHeight;
+    else if (!phone && help && help.offsetParent !== null && !ROOT.classList.contains("dg-menu")) chrome += help.offsetHeight;
+
+    // Always fit canvas into the visible viewport so the ground/player stay on-screen
+    // (fullscreen / embed used to overflow and clip the character below the fold).
+    const needFit = EMBED || fs || phone || vh < 620;
+    if (needFit) {
+      const availH = Math.max(120, vh - chrome);
+      const availW = Math.max(160, (ROOT.clientWidth || vw) - (phone ? 8 : 16));
       let cw = availW, ch = cw * H / W;
       if (ch > availH) { ch = availH; cw = ch * W / H; }
       canvas.style.width = Math.floor(cw) + "px";
@@ -2129,22 +2151,31 @@
     }
     syncFsBtn();
   }
+
+  window.addEventListener("message", function (e) {
+    if (!e.data || e.data.type !== "dg-fs-state") return;
+    parentFs = !!e.data.active;
+    syncFsBtn();
+    fit();
+  });
   window.addEventListener("resize", fit);
   window.addEventListener("orientationchange", function () { setTimeout(fit, 150); });
   if (window.visualViewport) window.visualViewport.addEventListener("resize", fit);
-  document.addEventListener("fullscreenchange", syncFsBtn);
-  document.addEventListener("webkitfullscreenchange", syncFsBtn);
+  document.addEventListener("fullscreenchange", function () { syncFsBtn(); fit(); });
+  document.addEventListener("webkitfullscreenchange", function () { syncFsBtn(); fit(); });
   if (hud.fs) {
-    hud.fs.addEventListener("click", function () {
+    hud.fs.addEventListener("click", function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
       ensureAudio();
-      if (isNativeFullscreen() || likelyParentFullscreen()) exitFullscreen();
+      if (isFullscreen()) exitFullscreen();
       else enterFullscreen();
-      setTimeout(syncFsBtn, 200);
+      setTimeout(function () { syncFsBtn(); fit(); }, 120);
     });
   }
   ROOT.addEventListener("touchstart", function () {
     if (!ROOT.classList.contains("dg-land")) return;
-    if (isNativeFullscreen()) return;
+    if (isFullscreen()) return;
     enterFullscreen();
   }, { passive: true });
   fit();

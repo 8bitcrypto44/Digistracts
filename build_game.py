@@ -130,7 +130,7 @@ markup = (
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "2"
+ASSET_V = "3"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]
@@ -141,10 +141,10 @@ preview = (
     "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no\">\n"
     "<title>Digistracts by 8bitcrypto_44</title>\n"
     "<style>"
-    "html,body{margin:0;background:#020617}"
+    "html,body{margin:0;background:#020617;height:100%}"
     "body{padding:16px}"
     "html.dg-embed,body.dg-embed{padding:0!important;height:100%;overflow:hidden}"
-    "body.dg-embed #digistracts-root{max-width:none;height:100vh;height:100dvh;border-radius:0;border-left:0;border-right:0}"
+    "body.dg-embed #digistracts-root{max-width:none;width:100%;height:100%;min-height:100vh;min-height:100dvh;margin:0;border-radius:0;border-left:0;border-right:0;display:flex;flex-direction:column;overflow:hidden}"
     "@media(max-width:700px){body{padding:0!important}}"
     "</style>\n"
     "</head>\n<body>\n"
@@ -288,23 +288,30 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
     root.classList.toggle("is-land", root.classList.contains("is-open") && playing && phone() && land());
     syncFsClass();
   }}
+  function notifyFrame(){{
+    try{{
+      if(frame.contentWindow)frame.contentWindow.postMessage({{type:"dg-fs-state",active:isFs()}},"*");
+    }}catch(e){{}}
+  }}
   function enterFs(){{
-    if(isFs())return;
+    if(isFs()){{notifyFrame();return;}}
     var req=root.requestFullscreen||root.webkitRequestFullscreen;
-    if(!req)return;
+    if(!req){{notifyFrame();return;}}
     try{{
       var p=req.call(root);
-      if(p&&p.catch)p.catch(function(){{}});
-    }}catch(e){{}}
+      if(p&&p.then)p.then(notifyFrame).catch(function(){{notifyFrame();}});
+      else setTimeout(notifyFrame,80);
+    }}catch(e){{notifyFrame();}}
   }}
   function exitFs(){{
     var exit=document.exitFullscreen||document.webkitExitFullscreen;
     if(exit&&isFs()){{
       try{{
         var p=exit.call(document);
-        if(p&&p.catch)p.catch(function(){{}});
-      }}catch(e){{}}
-    }}
+        if(p&&p.then)p.then(notifyFrame).catch(function(){{notifyFrame();}});
+        else setTimeout(notifyFrame,80);
+      }}catch(e){{notifyFrame();}}
+    }}else notifyFrame();
   }}
   root.classList.add("is-trailer");
   var heroImgs=root.querySelectorAll("#dg-gd-hero img");
@@ -348,7 +355,7 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
     if(e.data.type==="dg-fs")enterFs();
     if(e.data.type==="dg-fs-exit")exitFs();
   }});
-  function onFsChange(){{syncFsClass();syncLand();}}
+  function onFsChange(){{syncFsClass();syncLand();notifyFrame();}}
   document.addEventListener("fullscreenchange",onFsChange);
   document.addEventListener("webkitfullscreenchange",onFsChange);
   window.addEventListener("resize",syncLand);

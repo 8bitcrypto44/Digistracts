@@ -95,7 +95,7 @@
           title="Digistracts"
           width="100%"
           height="450"
-          data-src="https://8bitcrypto44.github.io/Digistracts/?embed=1&amp;v=2"
+          data-src="https://8bitcrypto44.github.io/Digistracts/?embed=1&amp;v=3"
           allow="autoplay; fullscreen; gamepad"
           allowfullscreen
           scrolling="no"
@@ -112,7 +112,7 @@
   var frame=document.getElementById("dg-gd-frame");
   if(!root||!btn||!frame)return;
   var playing=false;
-  var baseSrc="https://8bitcrypto44.github.io/Digistracts/?embed=1&amp;v=2".replace(/&amp;/g,"&");
+  var baseSrc="https://8bitcrypto44.github.io/Digistracts/?embed=1&amp;v=3".replace(/&amp;/g,"&");
   function phone(){
     try{
       if(window.matchMedia("(pointer: fine)").matches && !window.matchMedia("(pointer: coarse)").matches)return false;
@@ -133,23 +133,30 @@
     root.classList.toggle("is-land", root.classList.contains("is-open") && playing && phone() && land());
     syncFsClass();
   }
+  function notifyFrame(){
+    try{
+      if(frame.contentWindow)frame.contentWindow.postMessage({type:"dg-fs-state",active:isFs()},"*");
+    }catch(e){}
+  }
   function enterFs(){
-    if(isFs())return;
+    if(isFs()){notifyFrame();return;}
     var req=root.requestFullscreen||root.webkitRequestFullscreen;
-    if(!req)return;
+    if(!req){notifyFrame();return;}
     try{
       var p=req.call(root);
-      if(p&&p.catch)p.catch(function(){});
-    }catch(e){}
+      if(p&&p.then)p.then(notifyFrame).catch(function(){notifyFrame();});
+      else setTimeout(notifyFrame,80);
+    }catch(e){notifyFrame();}
   }
   function exitFs(){
     var exit=document.exitFullscreen||document.webkitExitFullscreen;
     if(exit&&isFs()){
       try{
         var p=exit.call(document);
-        if(p&&p.catch)p.catch(function(){});
-      }catch(e){}
-    }
+        if(p&&p.then)p.then(notifyFrame).catch(function(){notifyFrame();});
+        else setTimeout(notifyFrame,80);
+      }catch(e){notifyFrame();}
+    }else notifyFrame();
   }
   root.classList.add("is-trailer");
   var heroImgs=root.querySelectorAll("#dg-gd-hero img");
@@ -193,7 +200,7 @@
     if(e.data.type==="dg-fs")enterFs();
     if(e.data.type==="dg-fs-exit")exitFs();
   });
-  function onFsChange(){syncFsClass();syncLand();}
+  function onFsChange(){syncFsClass();syncLand();notifyFrame();}
   document.addEventListener("fullscreenchange",onFsChange);
   document.addEventListener("webkitfullscreenchange",onFsChange);
   window.addEventListener("resize",syncLand);
