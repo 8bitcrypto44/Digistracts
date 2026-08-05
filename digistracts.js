@@ -598,6 +598,9 @@
     endX: 3000,
     invuln: 0,
     flash: 0,
+    flashColor: null,
+    shake: 0,
+    hitStop: 0,
     messageTimer: 0,
     banner: "",
     antiCampCD: 0,
@@ -1231,6 +1234,9 @@
     state.levelTick = performance.now();
     state.droneTimer = goingSecret ? 120 : 280 + Math.random() * 80;
     state.flash = 0;
+    state.flashColor = null;
+    state.shake = 0;
+    state.hitStop = 0;
     state.checkpointX = 80;
     state.hitThisLevel = false;
     state.combo = 0;
@@ -1578,6 +1584,22 @@
     }
   }
 
+  function addJuice(opts) {
+    opts = opts || {};
+    if (opts.shake) state.shake = Math.min(24, Math.max(state.shake || 0, opts.shake));
+    if (opts.hitStop) state.hitStop = Math.max(state.hitStop || 0, opts.hitStop | 0);
+    if (opts.flash) state.flash = Math.max(state.flash || 0, opts.flash);
+    if (opts.flashColor) state.flashColor = opts.flashColor;
+  }
+
+  function tickJuice() {
+    if (state.shake > 0) state.shake = Math.max(0, state.shake - 0.9);
+    if (state.flash > 0) {
+      state.flash--;
+      if (state.flash <= 0) state.flashColor = null;
+    }
+  }
+
   function damageEnemy(e, damage, dir) {
     if (e.boss) {
       if (!e.vulnerable || e.hitCD > 0) return;
@@ -1586,6 +1608,7 @@
       addScore(25);
       explode(e.x + e.w / 2, e.y + 35, "#39ff14", 5);
       sfxBossHit();
+      addJuice({ shake: 2.5, hitStop: 1 });
       if (e.hp <= 0) {
         e.alive = false;
         const mid = !!e.midBoss;
@@ -1597,6 +1620,7 @@
           color: mid ? "#e879f9" : "#00e5ff"
         });
         explode(e.x + e.w / 2, e.y + e.h / 2, mid ? "#e879f9" : "#00e5ff", 50);
+        addJuice({ shake: 18, hitStop: 12, flash: 22, flashColor: mid ? "rgba(232,121,249,0.45)" : "rgba(0,229,255,0.4)" });
         saveHiScore(state.score);
         state.bossMode = false;
         state.boss = null;
@@ -1617,6 +1641,7 @@
     e.flash = 6;
     explode(e.x + e.w / 2, e.y + e.h / 2, e.heavy ? "#67e8f9" : "#00e5ff", e.heavy ? 8 : 6);
     sfxHit();
+    addJuice({ shake: e.heavy ? 2 : 1.2, hitStop: e.heavy ? 1 : 0 });
     if (e.hp <= 0) {
       e.alive = false;
       const pts = e.scoreValue || (100 + e.kind * 50);
@@ -1624,6 +1649,11 @@
       noteKill({ points: pts, x: e.x + e.w / 2, y: e.y + e.h / 2 });
       explode(e.x + e.w / 2, e.y + e.h / 2, "#ff2bd6", e.heavy ? 22 : 14);
       sfxKill();
+      addJuice({
+        shake: e.heavy ? 7 : (e.drone ? 4 : 3.5),
+        hitStop: e.heavy ? 3 : 2,
+        flash: e.heavy ? 6 : 0
+      });
     }
   }
 
@@ -1749,6 +1779,9 @@
       p.vx = -p.facing * 4;
       sfxHurt();
       explode(p.x + 14, p.y + 28, "#ffd400", 10);
+      addJuice({ shake: 8, hitStop: 4, flash: 14, flashColor: "rgba(255,43,214,0.35)" });
+      state.banner = "SHIELD HIT — " + state.playerHP + " LEFT";
+      state.messageTimer = 45;
       return;
     }
     const deathX = p.x;
@@ -1756,6 +1789,7 @@
     state.flash = 18;
     deathBeep();
     explode(p.x + 14, p.y + 28, "#ffd400", 10);
+    addJuice({ shake: 14, hitStop: 8, flash: 20, flashColor: "rgba(255,60,60,0.4)" });
     if (state.lives <= 0) {
       state.failRespawnX = respawnX != null ? respawnX : deathX;
       failTeam();
@@ -1775,14 +1809,15 @@
     state.camX = Math.max(0, Math.min(p.x - 180, state.endX - W));
     if (state.bossMode) state.playerHP = state.boss && state.boss.midBoss ? 2 : 3;
     state.invuln = hitInvuln();
-    state.banner = "CHECKPOINT — " + state.lives + " LEFT";
-    state.messageTimer = 70;
+    state.banner = "DOWN! CHECKPOINT — ♥×" + state.lives;
+    state.messageTimer = 80;
     updateHUD();
   }
 
   function failTeam() {
     state.mode = "failed";
-    state.failAt = performance.now() + 4000;
+    state.failAt = performance.now() + 4200;
+    addJuice({ shake: 16, flash: 24, flashColor: "rgba(255,40,40,0.5)" });
     const record = saveHiScore(state.score);
     showOverlay(
       "YOUR TEAM HAS FAILED",
@@ -2241,15 +2276,20 @@
     if (b.warnedPhase2) return;
     b.warnedPhase2 = true;
     b.phase = 2;
-    b.phaseFlash = 50;
+    b.phaseFlash = 70;
     b.vulnerable = false;
     b.mode = "recover";
     b.timer = 55;
-    state.banner = b.midBoss ? "PULSE OVERLOAD!" : "CORE PROTOCOL 2!";
-    state.messageTimer = 100;
-    state.flash = 18;
+    state.banner = b.midBoss ? "⚠ PULSE OVERLOAD — PHASE 2!" : "⚠ CORE PROTOCOL 2 — ENRAGED!";
+    state.messageTimer = 110;
     sfxArenaLock();
-    explode(b.x + b.w / 2, b.y + b.h / 2, b.accentHot || "#39ff14", 36);
+    explode(b.x + b.w / 2, b.y + b.h / 2, b.accentHot || "#39ff14", 48);
+    addJuice({
+      shake: 16,
+      hitStop: 10,
+      flash: 22,
+      flashColor: b.midBoss ? "rgba(232,121,249,0.5)" : "rgba(57,255,20,0.45)"
+    });
     if (b.midBoss) {
       addHazard({
         kind: "laser", x: 220, y: 30, w: 10, h: GROUND - 140,
@@ -2484,13 +2524,13 @@
         b.mode = "recover";
         b.timer = b.phase === 2 ? 22 : 34;
         b.vulnerable = true;
-        state.flash = 6;
+        addJuice({ shake: 5, flash: 6 });
       }
     } else if (b.mode === "pillarCharge" && b.timer <= 0) {
       b.mode = "pillar";
       b.timer = b.phase === 2 ? 36 : 28;
       sfxBossLaser();
-      state.flash = 8;
+      addJuice({ shake: 4, flash: 8, flashColor: "rgba(0,229,255,0.25)" });
     } else if (b.mode === "pillar") {
       for (let i = 0; i < b.pillars.length; i++) {
         const px = b.pillars[i];
@@ -2529,8 +2569,8 @@
         b.vx = 0;
         b.vy = 0;
         if (Math.abs(p.x + p.w / 2 - (b.x + b.w / 2)) < 62) hurtPlayer();
-        state.flash = 12;
         explode(b.x + b.w / 2, GROUND - 4, "#ff7a12", 26);
+        addJuice({ shake: 10, hitStop: 3, flash: 12, flashColor: "rgba(255,122,18,0.35)" });
         // phase-2 shockwave ring
         if (b.phase === 2) {
           b.mode = "pulseWave";
@@ -2556,7 +2596,7 @@
       if (b.y + b.h >= GROUND) {
         b.y = GROUND - b.h; b.vx = 0; b.vy = 0;
         b.mode = "recover"; b.timer = b.phase === 2 ? 26 : 42; b.vulnerable = true;
-        state.flash = 6;
+        addJuice({ shake: 5, flash: 6 });
         beep(80, 0.18, "square", 0.09);
       }
     } else if (b.mode === "recover" && b.timer <= 0) {
@@ -2654,6 +2694,7 @@
     state.invuln = Math.max(state.invuln, 20);
     explode(state.player.x + state.player.w / 2, state.player.y + state.player.h, "#00e5ff", 18);
     sfxSuperJump();
+    addJuice({ shake: 4, flash: 5, flashColor: "rgba(0,229,255,0.22)" });
     state.banner = "SUPER JUMP!";
     state.messageTimer = 35;
   }
@@ -3119,7 +3160,6 @@
     } else if (state.invuln > 0) {
       state.invuln--;
     }
-    if (state.flash > 0) state.flash--;
     if (state.messageTimer > 0) state.messageTimer--;
     else tickTips();
 
@@ -3299,6 +3339,7 @@
           if (rectsOverlap({ x: b.x - 4, y: b.y - 4, w: b.w + 8, h: b.h + 8 }, e)) {
             damageEnemy(e, b.dmg || 1, Math.sign(b.vx) || state.player.facing);
             explode(b.x + b.w / 2, b.y + b.h / 2, b.color || "#ffd400", b.charged ? 12 : 5);
+            if (b.charged) addJuice({ shake: 5, hitStop: 2, flash: 4 });
             if (b.rico && b.bounces > 0) {
               b.vx *= -1;
               b.vy = -Math.abs(b.vy) - 1;
@@ -3940,6 +3981,12 @@
   }
 
   function drawPlay() {
+    const shakeAmt = state.shake || 0;
+    const sox = shakeAmt ? (Math.random() - 0.5) * shakeAmt : 0;
+    const soy = shakeAmt ? (Math.random() - 0.5) * shakeAmt * 0.72 : 0;
+    ctx.save();
+    ctx.translate(sox, soy);
+
     drawCity();
     drawPlatforms();
     if (!state.bossMode || state.hazards.length) drawHazards();
@@ -4132,10 +4179,17 @@
       ctx.fillRect(pt.x - state.camX, pt.y, 3, 3);
     }
     ctx.globalAlpha = 1;
+    ctx.restore();
 
     if (state.flash > 0) {
-      ctx.fillStyle = "rgba(255,255,255," + (state.flash / 30) + ")";
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = state.flashColor || ("rgba(255,255,255," + (state.flash / 30) + ")");
+      if (state.flashColor) {
+        ctx.globalAlpha = Math.min(0.55, state.flash / 28);
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.fillRect(0, 0, W, H);
+      }
     }
 
     ctx.fillStyle = "rgba(0,0,0,0.12)";
@@ -4205,7 +4259,11 @@
   }
 
   function loop() {
-    if (state.mode === "play") updatePlay();
+    tickJuice();
+    if (state.mode === "play") {
+      if (state.hitStop > 0) state.hitStop--;
+      else updatePlay();
+    }
     if (state.mode === "credits") updateCredits();
     if (state.mode === "failed" && state.failAt && performance.now() >= state.failAt) {
       state.failAt = 0;
