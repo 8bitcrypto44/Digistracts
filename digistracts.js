@@ -2099,6 +2099,8 @@
       askParentFullscreen(true);
       syncFsBtn();
       fit();
+      setTimeout(fit, 80);
+      setTimeout(fit, 250);
       return;
     }
     const exit = document.exitFullscreen || document.webkitExitFullscreen;

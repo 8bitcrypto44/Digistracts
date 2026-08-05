@@ -130,7 +130,7 @@ markup = (
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "8"
+ASSET_V = "9"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]
@@ -293,11 +293,32 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
       if(frame.contentWindow)frame.contentWindow.postMessage({{type:"dg-fs-state",active:isFs()}},"*");
     }}catch(e){{}}
   }}
+  function restoreLayout(){{
+    // Browsers leave oversized inline styles on an iframe after native fullscreen exits.
+    root.classList.remove("is-fs-mode","is-fs");
+    root.style.cssText="";
+    var card=root.querySelector(".dg-gd-card");
+    var stage=root.querySelector(".dg-gd-stage");
+    var top=root.querySelector(".dg-gd-top");
+    if(card)card.style.cssText="";
+    if(stage)stage.style.cssText="";
+    if(top)top.style.cssText="";
+    frame.removeAttribute("style");
+    frame.style.position="absolute";
+    frame.style.inset="0";
+    frame.style.width="100%";
+    frame.style.height="100%";
+    frame.style.border="0";
+    frame.style.display="block";
+    frame.style.background="#020617";
+    try{{document.documentElement.style.overflow="";document.body.style.overflow="";}}catch(e){{}}
+  }}
   function mountFs(){{
     if(root.dataset.dgMounted==="1")return;
+    var rect=root.getBoundingClientRect();
     var slot=document.createElement("div");
     slot.setAttribute("data-dg-slot","1");
-    slot.style.cssText="display:block;width:100%;max-width:920px;margin:0 auto;aspect-ratio:16/9";
+    slot.style.cssText="display:block;width:100%;max-width:920px;margin:0 auto;height:"+Math.max(1,Math.round(rect.height))+"px";
     if(root.parentNode)root.parentNode.insertBefore(slot, root);
     document.body.appendChild(root);
     root.dataset.dgMounted="1";
@@ -310,6 +331,15 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
       slot.parentNode.removeChild(slot);
     }}
     delete root.dataset.dgMounted;
+  }}
+  function finishExit(){{
+    unmountFs();
+    restoreLayout();
+    syncLand();
+    syncFsClass();
+    notifyFrame();
+    setTimeout(function(){{restoreLayout();syncLand();notifyFrame();}},50);
+    setTimeout(function(){{restoreLayout();notifyFrame();}},200);
   }}
   function enterFs(){{
     mountFs();
@@ -337,13 +367,11 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
     if(exit&&(document.fullscreenElement||document.webkitFullscreenElement)){{
       try{{
         var p=exit.call(document);
-        if(p&&p.then)p.then(function(){{unmountFs();syncFsClass();notifyFrame();}}).catch(function(){{unmountFs();syncFsClass();notifyFrame();}});
-        else {{unmountFs();syncFsClass();notifyFrame();}}
-      }}catch(e){{unmountFs();syncFsClass();notifyFrame();}}
+        if(p&&p.then)p.then(finishExit).catch(finishExit);
+        else finishExit();
+      }}catch(e){{finishExit();}}
     }}else{{
-      unmountFs();
-      syncFsClass();
-      notifyFrame();
+      finishExit();
     }}
   }}
   root.classList.add("is-trailer");
@@ -388,7 +416,18 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
     if(e.data.type==="dg-fs")enterFs();
     if(e.data.type==="dg-fs-exit")exitFs();
   }});
-  function onFsChange(){{syncFsClass();syncLand();notifyFrame();}}
+  function onFsChange(){{
+    var native=!!(document.fullscreenElement||document.webkitFullscreenElement);
+    // Esc / browser UI exit — still need to collapse the CSS fullscreen shell
+    if(!native&&(root.classList.contains("is-fs-mode")||root.dataset.dgMounted==="1")){{
+      root.classList.remove("is-fs-mode");
+      finishExit();
+      return;
+    }}
+    syncFsClass();
+    syncLand();
+    notifyFrame();
+  }}
   document.addEventListener("fullscreenchange",onFsChange);
   document.addEventListener("webkitfullscreenchange",onFsChange);
   window.addEventListener("resize",syncLand);
