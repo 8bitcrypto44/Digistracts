@@ -1194,7 +1194,7 @@
       vx: 0, vy: 0, facing: 1, onGround: false,
       shootCD: 0, run: 0, crouch: false, platformCamp: 0,
       airSupers: 0, weapon: 0, beamFuel: 0, beamTick: 0, beaming: false, beamAim: 0, fireHeld: false,
-      gunBag: [], maxiCharge: 0,
+      gunBag: [], maxiCharge: 0, maxiPending: 0,
       safeX: 80, speedT: 0, goldT: 0, charge: 0, overclockT: 0,
       coyote: 0, jumpWasDown: false
     };
@@ -1315,6 +1315,8 @@
     p.beamFuel = 0;
     p.beaming = false;
     p.charge = 0;
+    p.maxiCharge = 0;
+    p.maxiPending = 0;
     if (p.gunBag && p.gunBag.length) {
       const next = p.gunBag.shift();
       p.weapon = next.type;
@@ -1342,6 +1344,8 @@
     p.beamFuel = next.ammo | 0;
     p.beaming = false;
     p.charge = 0;
+    p.maxiCharge = 0;
+    p.maxiPending = 0;
     p.beamTick = 0;
     const d = weaponDef(next.type);
     state.banner = "SWAP → " + (d ? d.label : next.type) + " ×" + p.beamFuel;
@@ -1363,7 +1367,7 @@
       const d = weaponDef(g.type);
       slots.push({ type: g.type, label: (d && d.tag) || String(g.type).slice(0, 3), ammo: g.ammo | 0, bagIndex: i });
     });
-    return slots.slice(0, 3);
+    return slots.slice(0, GUN_BAG_MAX + 2);
   }
 
   function selectWeaponSlot(slot) {
@@ -1588,7 +1592,32 @@
     });
   }
 
+  function removeHolesInRange(x0, x1) {
+    if (!state.holes || !state.holes.length) return;
+    const next = [];
+    for (let i = 0; i < state.holes.length; i++) {
+      const h = state.holes[i];
+      const hx0 = h.x, hx1 = h.x + h.w;
+      if (hx1 <= x0 || hx0 >= x1) {
+        next.push(h);
+        continue;
+      }
+      // Keep leftover pit segments outside the sealed range
+      if (hx0 < x0) next.push({ x: hx0, w: x0 - hx0 });
+      if (hx1 > x1) next.push({ x: x1, w: hx1 - x1 });
+    }
+    state.holes = next;
+  }
+
+  function solidifyPortalX(x, w) {
+    w = w || 48;
+    removeHolesInRange(x - 24, x + w + 24);
+    return x;
+  }
+
   function buildArena(atX) {
+    // Seal pits under the arena so waves can't fall / auto-clear
+    removeHolesInRange(atX - 60, atX + 560);
     state.arena = {
       x: atX,
       w: 520,
@@ -1724,7 +1753,7 @@
       }
       if (!isSecretDone("signal")) {
         state.secretPortal = {
-          x: Math.floor(len * 0.62), y: GROUND - 96, w: 48, h: 96, open: false, secretId: "signal"
+          x: solidifyPortalX(Math.floor(len * 0.62)), y: GROUND - 96, w: 48, h: 96, open: false, secretId: "signal"
         };
       }
     } else if (theme === "skyrail") {
@@ -1763,7 +1792,7 @@
       }
       if (!isSecretDone("storm")) {
         state.secretPortal = {
-          x: Math.floor(len * 0.58), y: GROUND - 96, w: 48, h: 96, open: false, secretId: "storm"
+          x: solidifyPortalX(Math.floor(len * 0.58)), y: GROUND - 96, w: 48, h: 96, open: false, secretId: "storm"
         };
       }
     } else if (theme === "voidmarket") {
@@ -1801,7 +1830,7 @@
       }
       if (!isSecretDone("ember")) {
         state.secretPortal = {
-          x: Math.floor(len * 0.42), y: GROUND - 96, w: 48, h: 96, open: false, secretId: "ember"
+          x: solidifyPortalX(Math.floor(len * 0.42)), y: GROUND - 96, w: 48, h: 96, open: false, secretId: "ember"
         };
       }
     } else if (theme === "secret") {
@@ -2052,6 +2081,7 @@
     const id = (state.secretPortal && state.secretPortal.secretId) || state.secretKind || "ember";
     const def = secretDef(id);
     if (!def || state.inSecret || isSecretDone(id) || !state.secretKey) return;
+    if (state.secretKind && state.secretKind !== id) return;
     state.returnLevel = state.level;
     state.activeSecret = id;
     state.secretKind = id;
@@ -2533,7 +2563,7 @@
       if (e.alive === false) continue;
       const d = Math.hypot(e.x + e.w / 2 - cx, e.y + e.h / 2 - cy);
       if (d < 78) {
-        damageEnemy(e, b.dmg || 4, Math.sign(cx - (e.x + e.w / 2)) || 1, {
+        damageEnemy(e, b.dmg || 4, Math.sign((e.x + e.w / 2) - cx) || 1, {
           knock: 18, antiShield: b.antiShield || 3
         });
       }
@@ -2598,7 +2628,8 @@
     }
     // Elite frontal shield
     if (e.elite && e.shieldUp) {
-      const fromFront = (dir || 0) === 0 ? true : ((e.facing || -1) * (dir || 1) < 0);
+      const hitDir = (dir || 0) !== 0 ? dir : ((state.player && state.player.facing) || 1);
+      const fromFront = (e.facing || -1) * hitDir < 0;
       const crack = (opts && opts.antiShield) || 0;
       if (fromFront && crack < 2) {
         e.shieldHits = (e.shieldHits || 0) + 1 + crack;
@@ -2749,8 +2780,13 @@
     if (state.godMode && state.player) {
       state.invuln = 9999;
       state.player.goldT = Math.max(state.player.goldT || 0, 9999);
-      if (!state.player.weapon) grantWeapon("MAXI", 2);
-      else state.player.beamFuel = Math.max(state.player.beamFuel, 999);
+      if (state.player.weapon) state.player.beamFuel = Math.max(state.player.beamFuel, 999);
+      else grantWeapon("MAXI", 2);
+    } else {
+      state.invuln = 0;
+      if (state.player) {
+        state.player.goldT = 0;
+      }
     }
     if (hud.godBtn) {
       hud.godBtn.textContent = state.godMode ? "GOD: ON" : "GOD: OFF";
@@ -2760,6 +2796,9 @@
     if (state.godMode) {
       state.banner = "GOD MODE ON";
       state.messageTimer = 60;
+    } else {
+      state.banner = "GOD MODE OFF";
+      state.messageTimer = 45;
     }
     updateHUD();
   }
@@ -2778,9 +2817,19 @@
     state.combo = 0;
     state.comboTimer = 0;
     state.deathCause = cause || state.deathCause || "default";
+    if (p.weapon && p.beamFuel > 0) {
+      if (!p.gunBag) p.gunBag = [];
+      p.gunBag.unshift({ type: p.weapon, ammo: p.beamFuel });
+      while (p.gunBag.length > GUN_BAG_MAX) {
+        const overflow = p.gunBag.pop();
+        if (overflow) dropWeaponPickup(overflow.type, overflow.ammo, p.x + 16, p.y - 8);
+      }
+    }
     p.weapon = 0;
     p.beamFuel = 0;
     p.charge = 0;
+    p.maxiCharge = 0;
+    p.maxiPending = 0;
     p.overclockT = 0;
     if (state.bossMode && state.playerHP > 1) {
       state.playerHP--;
@@ -3306,7 +3355,7 @@
     const spire = document.createElement("button");
     spire.type = "button";
     spire.className = "dg-lv-secret";
-    spire.textContent = "SPIRE";
+    spire.textContent = "STORM";
     spire.title = "Storm Spire secret stage";
     spire.addEventListener("click", function () {
       sfxUi();
@@ -4135,10 +4184,15 @@
     if (a.spawnLeft > 0 && a.timer % 38 === 0) {
       const side = a.timer % 76 === 0 ? a.lockL + 30 : a.lockR - 80;
       spawnEnemy(side, a.spawnLeft % 3 === 0);
+      const spawned = state.enemies[state.enemies.length - 1];
+      if (spawned) {
+        spawned.arenaBound = true;
+        spawned.falling = false;
+      }
       a.spawnLeft--;
     }
     const foes = state.enemies.filter(function (e) {
-      return e.alive && e.x > a.lockL - 40 && e.x < a.lockR + 40;
+      return e.alive && (e.arenaBound || (e.x > a.lockL - 40 && e.x < a.lockR + 40));
     }).length;
     if (a.spawnLeft <= 0 && foes <= 0) {
       a.active = false;
@@ -4386,10 +4440,12 @@
 
     if (p.y > H + 80) hurtPlayer(p.safeX, "fall");
 
-    const firing = inputShoot();
-    const firePressed = firing && !p.fireHeld;
-    const fireReleased = !firing && p.fireHeld;
-    p.fireHeld = firing;
+    const rawFire = inputShoot();
+    const firePressed = rawFire && !p.fireHeld;
+    const fireReleased = !rawFire && p.fireHeld && !state.talkQ;
+    p.fireHeld = rawFire;
+    const firing = rawFire && !state.talkQ;
+    if (state.talkQ) p.beaming = false;
     p.beamAim = p.aimUp ? -1 : p.crouch ? 1 : 0;
     const def = weaponDef(p.weapon);
 
@@ -4406,19 +4462,25 @@
     } else if (!state.talkQ && def && def.kind === "charge") {
       p.beaming = false;
       if (firing && p.beamFuel > 0) {
+        p.maxiPending = 0;
         p.maxiCharge = Math.min(54, (p.maxiCharge || 0) + 1);
         if (p.maxiCharge === 18 || p.maxiCharge === 36 || p.maxiCharge === 54) {
           beep(400 + p.maxiCharge * 8, 0.04, "square", 0.04);
         }
       } else if (fireReleased && (p.maxiCharge || 0) >= 4) {
-        const pow = Math.max(1, Math.min(3, Math.floor((p.maxiCharge || 0) / 18)));
+        p.maxiPending = Math.max(1, Math.min(3, Math.floor((p.maxiCharge || 0) / 18)));
+      }
+      if (p.maxiPending && !state.talkQ && p.shootCD <= 0 && p.beamFuel > 0) {
+        const pow = p.maxiPending;
+        p.maxiPending = 0;
         shootGun(p.beamAim, { power: pow });
+        p.maxiCharge = 0;
         if (p.beamFuel <= 0) {
           clearWeapon();
           state.banner = "SPECIAL GUN EMPTY!";
           state.messageTimer = 55;
         }
-      } else if (!firing) {
+      } else if (!firing && !p.maxiPending) {
         p.maxiCharge = 0;
       }
     } else if (!state.talkQ && def && (def.kind === "proj" || def.kind === "pellets" || def.kind === "wave" || def.kind === "pulse")) {
@@ -4457,7 +4519,7 @@
       state.invuln = 9999;
       p.goldT = Math.max(p.goldT, 60);
       if (p.weapon) p.beamFuel = Math.max(p.beamFuel, 50);
-      else grantWeapon("MAXI", 1);
+      // Keep pistol if player chose slot 1 — do not force MAXI every frame
     } else if (state.invuln > 0) {
       state.invuln--;
     }
@@ -4600,7 +4662,13 @@
           e.y += Math.max(-1.8, Math.min(1.8, (chaseY * 0.35 + target * 0.65 - e.y) * 0.05));
         }
       } else {
-        if (e.falling || isHoleAt(e.x + e.w / 2)) {
+        if (e.arenaBound && state.arena && state.arena.active) {
+          if (e.x < state.arena.lockL + 8) { e.x = state.arena.lockL + 8; e.vx = Math.abs(e.vx || e.baseSpd || 1); }
+          if (e.x > state.arena.lockR - e.w - 8) { e.x = state.arena.lockR - e.w - 8; e.vx = -Math.abs(e.vx || e.baseSpd || 1); }
+          e.falling = false;
+          e.y = GROUND - e.h;
+          e.vy = 0;
+        } else if (e.falling || isHoleAt(e.x + e.w / 2)) {
           e.falling = true;
           e.vy += 0.4;
           e.y += e.vy;
@@ -4738,7 +4806,11 @@
         }
       }
     }
-    state.enemies = state.enemies.filter(function (e) { return e.alive && e.x > state.camX - 100; });
+    state.enemies = state.enemies.filter(function (e) {
+      if (!e.alive) return false;
+      if (e.arenaBound && state.arena && state.arena.active && !state.arena.cleared) return true;
+      return e.x > state.camX - 100;
+    });
 
     for (let i = 0; i < state.qrs.length; i++) {
       const q = state.qrs[i];
@@ -4814,14 +4886,17 @@
     // Secret vault / spire portal
     if (state.secretPortal && state.secretKey && !state.inSecret) {
       const gate = state.secretPortal;
-      const sid = gate.secretId || state.secretKind;
-      if (!isSecretDone(sid)) {
+      const sid = gate.secretId;
+      const keyOk = !!sid && state.secretKind === sid;
+      if (keyOk && !isSecretDone(sid)) {
         gate.open = true;
         if (rectsOverlap(p, gate) && (inputUp() || inputJump())) {
           enterSecretStage();
           updateHUD();
           return;
         }
+      } else {
+        gate.open = false;
       }
     }
 
@@ -5653,7 +5728,7 @@
     if (state.mode !== "play" || !state.player || state.demo) return;
     const p = state.player;
     const slots = hotbarSlots(p);
-    const baseX = 14, baseY = H - 52;
+    const baseX = 14, baseY = H - 48;
     for (let i = 0; i < slots.length; i++) {
       const s = slots[i];
       const x = baseX + i * 78;
@@ -5985,7 +6060,7 @@
     // Always-on combo meter (bottom-left)
     const c = state.combo;
     const t = Math.max(0, Math.min(1, state.comboTimer / 145));
-    const mx = 14, my = H - 28, mw = 140, mh = 8;
+    const mx = 14, my = H - 92, mw = 140, mh = 8;
     ctx.fillStyle = "rgba(2,6,23,0.72)";
     ctx.fillRect(mx - 6, my - 16, mw + 12, 30);
     ctx.fillStyle = c >= 10 ? "#ff2bd6" : c >= 5 ? "#ffd400" : c >= 3 ? "#00e5ff" : "#64748b";
@@ -6115,7 +6190,7 @@
       swapWeapon();
       return;
     }
-    if (!e.repeat && state.mode === "play" && (key === "1" || key === "2" || key === "3")) {
+    if (!e.repeat && state.mode === "play" && (key === "1" || key === "2" || key === "3" || key === "4")) {
       e.preventDefault();
       selectWeaponSlot(Number(key) - 1);
       return;
