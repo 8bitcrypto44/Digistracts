@@ -283,6 +283,11 @@
     beep(1175, 0.08, "square", 0.07, 0.14);
     beep(1568, 0.16, "triangle", 0.08, 0.22);
   }
+  function sfxComboBreak() {
+    noiseBurst(0.08, 0.07, 0, 500);
+    slideBeep(420, 90, 0.18, "sawtooth", 0.08);
+    beep(110, 0.14, "square", 0.06, 0.08);
+  }
   function sfxCheckpoint() {
     beep(660, 0.04, "square", 0.035);
     beep(990, 0.05, "triangle", 0.03, 0.04);
@@ -381,6 +386,7 @@
 
   const HS_KEY = "dg-hiscore";
   const DAILY_BEST_KEY = "dg-daily-best";
+  const SECTOR_PB_KEY = "dg-sector-pb";
   const LIFE_EVERY = 5000;
   const MAX_LIVES = 9;
 
@@ -425,6 +431,33 @@
     const today = dailyId();
     if (cur.date === today && cur.score > 0) return "Daily best " + cur.score;
     return "Daily best —";
+  }
+
+  function loadSectorPBs() {
+    try {
+      return JSON.parse(localStorage.getItem(SECTOR_PB_KEY) || "{}") || {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function saveSectorPB(levelIdx, remainSec) {
+    const key = state.inSecret ? ("sec:" + (state.activeSecret || state.secretKind || "x")) : String(levelIdx);
+    const book = loadSectorPBs();
+    const prev = book[key] | 0;
+    // Higher leftover time = faster clear
+    if (remainSec <= prev) return { best: false, prev: prev, now: remainSec };
+    book[key] = remainSec;
+    try { localStorage.setItem(SECTOR_PB_KEY, JSON.stringify(book)); } catch (e) {}
+    return { best: true, prev: prev, now: remainSec };
+  }
+
+  function sectorPbLine(levelIdx) {
+    const key = state.inSecret ? ("sec:" + (state.activeSecret || state.secretKind || "x")) : String(levelIdx);
+    const book = loadSectorPBs();
+    const best = book[key] | 0;
+    if (!best) return "Sector PB —";
+    return "Sector PB " + best + "s left";
   }
 
   function addScore(n) {
@@ -700,7 +733,7 @@
       formatMedalsLine(state.runMedals),
       (state.daily ? ("Daily " + (state.dailyKey || dailyId()) + " · " + dailyBestLine() + "\n") : "") +
         "DIFF " + currentDiff().label,
-      PAGES_SHARE + "?v=31"
+      PAGES_SHARE + "?v=32"
     ];
     return lines.join("\n");
   }
@@ -2407,6 +2440,11 @@
       "PAUSED",
       "Score " + state.score + " · HI " + state.hiScore +
         "\nCombo ×" + state.combo + " · Max ×" + state.maxCombo +
+        "\nLives ♥×" + state.lives + " · Time " + Math.max(0, Math.ceil(state.levelTime / 1000)) + "s" +
+        "\nGoals: " + (!state.hitThisLevel ? "NO-HIT" : "hit") +
+        " · " + ((state.combo >= 8 || state.maxCombo >= 8) ? "COMBO" : "combo…") +
+        " · " + (state.levelTime > sectorTimeBudget() * 0.45 ? "SPEED" : "speed…") +
+        "\n" + sectorPbLine(state.level) +
         "\nP / ESC resume · R retry sector",
       "RESUME",
       { keepPlaying: true }
@@ -2783,12 +2821,18 @@
     state._bossClear = false;
     saveHiScore(state.score);
     saveDailyBest(state.score);
+    const remainSec = Math.max(0, Math.ceil(state.levelTime / 1000));
+    const pb = saveSectorPB(state.level, remainSec);
     const breakdown = formatClearBreakdown(state.lastClear);
     const perfect = !state.hitThisLevel && state.levelTime > sectorTimeBudget() * 0.45 && state.maxCombo >= 8;
     if (perfect) {
       addScore(1500);
       state.bonusScore += 1500;
       addJuice({ shake: 10, hitStop: 4, flash: 14, flashColor: "rgba(57,255,20,0.4)" });
+    }
+    if (pb.best) {
+      addScore(250);
+      state.bonusScore += 250;
     }
     if (state.level >= LEVELS.length - 1) {
       startCredits();
@@ -2799,6 +2843,7 @@
         perfect ? "PERFECT CLEAR!" : "SECTOR CLEAR",
         LEVELS[state.level].name + " complete!" +
           (perfect ? "\n★ TRIPLE GOAL +1500 ★" : "") +
+          (pb.best ? "\n★ NEW SECTOR PB " + remainSec + "s left (+250) ★" : ("\nTime left " + remainSec + "s · " + sectorPbLine(state.level))) +
           (breakdown ? "\n" + breakdown : "") +
           "\nScore " + String(state.score).padStart(6, "0") +
           " · HI " + String(state.hiScore).padStart(6, "0") +
@@ -3161,6 +3206,9 @@
     hud.level.textContent = state.inSecret ? "SEC" : ("LV " + (state.level + 1));
     if (state.godMode && hud.level) hud.level.textContent = (state.inSecret ? "SEC" : ("LV " + (state.level + 1))) + " · GOD";
     hud.time.textContent = Math.max(0, Math.ceil(state.levelTime / 1000));
+    if (hud.time) {
+      hud.time.style.color = (state.mode === "play" && state.levelTime > 0 && state.levelTime < 30000) ? "#fb7185" : "";
+    }
     if (hud.hi) hud.hi.textContent = String(state.hiScore).padStart(6, "0");
     if (hud.combo) {
       const c = state.combo;
@@ -3625,6 +3673,12 @@
       if (p.x > (state.checkpointX || 0) + 280) {
         state.checkpointX = p.x;
         sfxCheckpoint();
+        explode(p.x + p.w / 2, GROUND - 8, "#39ff14", 12);
+        pushScorePop(p.x + p.w / 2, p.y - 8, "CHECKPOINT", "#39ff14");
+        if (state.messageTimer < 25) {
+          state.banner = "CHECKPOINT SAVED";
+          state.messageTimer = 40;
+        }
       }
     }
     if (state.comboTimer > 0) {
@@ -3632,7 +3686,9 @@
       if (state.comboTimer <= 0) {
         if (state.combo >= 3) {
           state.banner = "COMBO BREAK ×" + state.combo;
-          state.messageTimer = 35;
+          state.messageTimer = 40;
+          sfxComboBreak();
+          addJuice({ shake: 4, flash: 8, flashColor: "rgba(255,60,60,0.35)" });
         }
         state.combo = 0;
       }
@@ -4636,6 +4692,25 @@
       ctx.fillText(sDef ? sDef.relicLabel : "EXIT", gx + 8, GROUND - 88);
     }
 
+    // Checkpoint flag
+    if (!state.bossMode && state.checkpointX > 100) {
+      const cx = state.checkpointX - state.camX;
+      if (cx > -40 && cx < W + 40) {
+        const wave = Math.sin(performance.now() / 200) * 2;
+        ctx.fillStyle = "#94a3b8";
+        ctx.fillRect(cx, GROUND - 52, 3, 52);
+        ctx.fillStyle = "#39ff14";
+        ctx.beginPath();
+        ctx.moveTo(cx + 3, GROUND - 50 + wave);
+        ctx.lineTo(cx + 22, GROUND - 42 + wave);
+        ctx.lineTo(cx + 3, GROUND - 34 + wave);
+        ctx.fill();
+        ctx.fillStyle = "#bbf7d0";
+        ctx.font = "bold 8px monospace";
+        ctx.fillText("CK", cx - 4, GROUND - 56);
+      }
+    }
+
     if (state.secretPortal && !state.inSecret) {
       const gate = state.secretPortal;
       const px = gate.x - state.camX;
@@ -4818,6 +4893,25 @@
         ctx.globalAlpha = 1;
       } else {
         ctx.fillRect(0, 0, W, H);
+      }
+    }
+
+    // Urgency vignette: low time or last life
+    if (state.mode === "play") {
+      const lowTime = state.levelTime > 0 && state.levelTime < 30000;
+      const lastLife = state.lives <= 1 && !state.bossMode;
+      if (lowTime || lastLife) {
+        const pulse = 0.12 + Math.sin(performance.now() / 180) * 0.06;
+        const grad = ctx.createRadialGradient(W / 2, H / 2, H * 0.25, W / 2, H / 2, H * 0.85);
+        grad.addColorStop(0, "rgba(0,0,0,0)");
+        grad.addColorStop(1, lowTime ? ("rgba(180,20,40," + (pulse + 0.18) + ")") : ("rgba(255,43,214," + (pulse + 0.1) + ")"));
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+        if (lowTime) {
+          ctx.fillStyle = "#fb7185";
+          ctx.font = "bold 12px monospace";
+          ctx.fillText("TIME " + Math.ceil(state.levelTime / 1000), W / 2 - 28, 36);
+        }
       }
     }
 
