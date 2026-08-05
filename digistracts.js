@@ -2712,7 +2712,6 @@
           return;
         }
       }
-      }
     }
     updateMovers();
     updateArena(calm);
