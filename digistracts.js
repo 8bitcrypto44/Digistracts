@@ -888,18 +888,26 @@
     sfxOverclock();
   }
 
+  // Easy = sparse walkers, rare drones. Medium = balanced robots + drones.
+  // Hard = frequent robots AND drones, tougher packs.
   const DIFFS = {
     easy: {
-      id: "easy", label: "EASY", lives: 5, timeMult: 1.3, spawnMult: 1.55,
-      hpMult: 0.8, bulletSpd: 0.85, invuln: 170, hitPad: 8
+      id: "easy", label: "EASY", lives: 5, timeMult: 1.35, spawnMult: 1.85,
+      hpMult: 0.72, bulletSpd: 0.78, invuln: 185, hitPad: 9,
+      spdMult: 0.82, droneMult: 2.4, droneMin: 220, eliteMult: 0.35,
+      roleBias: { walker: 1.45, gunner: 0.85, tank: 0.35, dasher: 0.55, flyer: 0.4 }
     },
     normal: {
-      id: "normal", label: "NORMAL", lives: 3, timeMult: 1.05, spawnMult: 1.12,
-      hpMult: 0.92, bulletSpd: 0.92, invuln: 150, hitPad: 6
+      id: "normal", label: "MEDIUM", lives: 3, timeMult: 1.0, spawnMult: 1.0,
+      hpMult: 1.0, bulletSpd: 1.0, invuln: 140, hitPad: 6,
+      spdMult: 1.0, droneMult: 1.0, droneMin: 110, eliteMult: 1.0,
+      roleBias: { walker: 1, gunner: 1, tank: 1, dasher: 1, flyer: 1 }
     },
     hard: {
-      id: "hard", label: "HARD", lives: 2, timeMult: 0.75, spawnMult: 0.65,
-      hpMult: 1.12, bulletSpd: 1.1, invuln: 100, hitPad: 3
+      id: "hard", label: "HARD", lives: 2, timeMult: 0.7, spawnMult: 0.52,
+      hpMult: 1.28, bulletSpd: 1.22, invuln: 85, hitPad: 3,
+      spdMult: 1.22, droneMult: 0.48, droneMin: 55, eliteMult: 1.75,
+      roleBias: { walker: 0.7, gunner: 1.15, tank: 1.45, dasher: 1.25, flyer: 1.55 }
     }
   };
   const DIFF_ORDER = ["easy", "normal", "hard"];
@@ -2253,7 +2261,9 @@
     state.antiCampCD = 0;
     state.levelTime = Math.floor(sectorTimeBudget() * (goingSecret ? 0.85 : 1));
     state.levelTick = performance.now();
-    state.droneTimer = goingSecret ? 120 : 280 + Math.random() * 80;
+    state.droneTimer = goingSecret
+      ? Math.max(currentDiff().droneMin || 90, Math.floor(120 * (currentDiff().droneMult || 1)))
+      : droneInterval();
     state.flash = 0;
     state.flashColor = null;
     state.shake = 0;
@@ -2364,7 +2374,12 @@
       hpMult: base.hpMult * 1.3,
       bulletSpd: base.bulletSpd * 1.12,
       invuln: Math.max(85, Math.floor(base.invuln * 0.88)),
-      hitPad: Math.max(2, (base.hitPad || 4) - 1)
+      hitPad: Math.max(2, (base.hitPad || 4) - 1),
+      spdMult: (base.spdMult || 1) * 1.1,
+      droneMult: (base.droneMult || 1) * 0.75,
+      droneMin: Math.max(40, Math.floor((base.droneMin || 100) * 0.8)),
+      eliteMult: (base.eliteMult || 1) * 1.35,
+      roleBias: base.roleBias
     };
   }
 
@@ -2390,11 +2405,19 @@
     if (forceFlying) return "flyer";
     const wi = state.inSecret ? ROLE_WEIGHTS.length - 1 : Math.min(state.level, ROLE_WEIGHTS.length - 1);
     const w = ROLE_WEIGHTS[wi];
-    let roll = rnd() * (w.walker + w.gunner + w.tank + w.dasher + w.flyer);
-    if ((roll -= w.walker) < 0) return "walker";
-    if ((roll -= w.gunner) < 0) return "gunner";
-    if ((roll -= w.tank) < 0) return "tank";
-    if ((roll -= w.dasher) < 0) return "dasher";
+    const bias = (currentDiff().roleBias) || {};
+    const ww = {
+      walker: w.walker * (bias.walker == null ? 1 : bias.walker),
+      gunner: w.gunner * (bias.gunner == null ? 1 : bias.gunner),
+      tank: w.tank * (bias.tank == null ? 1 : bias.tank),
+      dasher: w.dasher * (bias.dasher == null ? 1 : bias.dasher),
+      flyer: w.flyer * (bias.flyer == null ? 1 : bias.flyer)
+    };
+    let roll = rnd() * (ww.walker + ww.gunner + ww.tank + ww.dasher + ww.flyer);
+    if ((roll -= ww.walker) < 0) return "walker";
+    if ((roll -= ww.gunner) < 0) return "gunner";
+    if ((roll -= ww.tank) < 0) return "tank";
+    if ((roll -= ww.dasher) < 0) return "dasher";
     return "flyer";
   }
 
@@ -2406,6 +2429,7 @@
 
   function spawnEnemy(x, forceFlying) {
     const L = currentLevel();
+    const d = currentDiff();
     const role = pickRole(forceFlying);
     const def = ROLE_DEFS[role];
     const type = pickSprite(role);
@@ -2416,14 +2440,16 @@
       : Math.round(h * 0.55);
     const flying = !!def.flying;
     const baseY = 95 + Math.random() * 160;
-    const eliteChance = (state.inSecret ? 0.16 : (0.07 + state.level * 0.012)) * (state.ngPlus ? 1.55 : 1);
+    const eliteChance = (state.inSecret ? 0.16 : (0.07 + state.level * 0.012))
+      * (state.ngPlus ? 1.55 : 1) * (d.eliteMult || 1);
     const elite = !forceFlying && rnd() < eliteChance;
     const rawHp = def.hp + Math.floor(state.level / 2) + (def.heavy ? Math.floor(state.level / 2) : 0);
-    const hp = Math.max(1, Math.round(rawHp * (currentDiff().hpMult || 1) * (elite ? 2.2 : 1)));
+    const hp = Math.max(1, Math.round(rawHp * (d.hpMult || 1) * (elite ? 2.2 : 1)));
     const scoreValue = Math.floor((def.score + state.level * 25) * (elite ? 2.6 : 1));
+    const spd = L.enemySpeed * def.spd * (d.spdMult || 1) * (elite ? 1.25 : 1);
     state.enemies.push({
       x: x, y: flying ? baseY : GROUND - h, w: w, h: h, type: type, kind: def.kind,
-      role: role, vx: -L.enemySpeed * def.spd * (elite ? 1.25 : 1), baseSpd: L.enemySpeed * def.spd * (elite ? 1.25 : 1),
+      role: role, vx: -spd, baseSpd: spd,
       vy: 0, hp: hp, maxHp: hp, scoreValue: scoreValue,
       shootCD: 36 + Math.random() * 40, flash: 0, charge: 0, dashCD: 40 + Math.random() * 50,
       mode: "patrol", facing: -1, alive: true, bob: Math.random() * 20,
@@ -2440,10 +2466,17 @@
     }
   }
 
+  function droneInterval() {
+    const d = currentDiff();
+    const base = Math.max(d.droneMin || 90, 240 - state.level * 40) + Math.random() * 80;
+    return Math.max(d.droneMin || 90, Math.floor(base * (d.droneMult || 1)));
+  }
+
   function spawnDrone() {
+    const d = currentDiff();
     const fromRight = Math.random() > 0.5;
-    const spd = 1.7 + state.level * 0.25;
-    const hp = Math.max(1, Math.round((2 + Math.floor(state.level / 2)) * (currentDiff().hpMult || 1)));
+    const spd = (1.7 + state.level * 0.25) * (d.spdMult || 1);
+    const hp = Math.max(1, Math.round((2 + Math.floor(state.level / 2)) * (d.hpMult || 1)));
     state.enemies.push({
       x: state.camX + (fromRight ? W + 45 : 30), y: 38, w: 54, h: 30,
       vx: fromRight ? -spd : spd, vy: 0, hp: hp, maxHp: hp,
@@ -2930,8 +2963,8 @@
     state.grace = 0;
     p.x = 55; p.y = GROUND - p.h; p.vx = 0; p.vy = 0; p.safeX = 55;
     p.weapon = 0; p.beamFuel = 0; p.gunBag = []; p.speedT = 0; p.goldT = 0; p.charge = 0;
-    const hp = mid ? Math.floor(58 * (state.diff === "easy" ? 0.85 : state.diff === "hard" ? 1.2 : 1))
-      : Math.floor(120 * (state.diff === "easy" ? 0.85 : state.diff === "hard" ? 1.15 : 1));
+    const hp = mid ? Math.floor(58 * (state.diff === "easy" ? 0.8 : state.diff === "hard" ? 1.35 : 1))
+      : Math.floor(120 * (state.diff === "easy" ? 0.8 : state.diff === "hard" ? 1.3 : 1));
     state.boss = {
       boss: true, midBoss: mid, alive: true, vulnerable: false, x: mid ? 580 : 620, y: GROUND - (mid ? 96 : 112),
       w: mid ? 68 : 78, h: mid ? 96 : 112,
@@ -5227,12 +5260,22 @@
       if (state.spawnTimer <= 0) {
         state.spawnTimer = 62 * L.enemyRate * currentDiff().spawnMult + Math.random() * 36;
         const x = state.camX + W + 40 + Math.random() * 120;
-        if (x < state.endX - 120) spawnEnemy(x);
+        if (x < state.endX - 120) {
+          spawnEnemy(x);
+          // Hard packs the lane: extra robot waves so ground stays crowded
+          // while drones pressure from above.
+          if (state.diff === "hard" && Math.random() < 0.55 && x + 90 < state.endX - 120) {
+            spawnEnemy(x + 70 + Math.random() * 50, Math.random() < 0.35);
+          }
+        }
       }
       state.droneTimer--;
       if (state.droneTimer <= 0) {
         spawnDrone();
-        state.droneTimer = Math.max(90, 240 - state.level * 40) + Math.random() * 80;
+        // Hard: often stack a second drone so the sky stays busy with both
+        // robots on the ground and drones above.
+        if (state.diff === "hard" && Math.random() < 0.45) spawnDrone();
+        state.droneTimer = droneInterval();
       }
     }
 
