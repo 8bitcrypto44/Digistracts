@@ -10,6 +10,13 @@ css = Path("digistracts.css").read_text(encoding="utf-8")
 css = re.sub(r"\s+", " ", css)
 css = re.sub(r"\s*([{}:;,])\s*", r"\1", css).strip()
 
+_brand_logo = Path("assets/brand/8bitcrypto44_logo.png")
+BRAND_LOGO_URI = (
+    "data:image/png;base64," + base64.b64encode(_brand_logo.read_bytes()).decode("ascii")
+    if _brand_logo.exists()
+    else "assets/brand/8bitcrypto44_logo.png"
+)
+
 
 def data_uri(img, fmt="WEBP", **save_kw):
     buf = io.BytesIO()
@@ -229,7 +236,7 @@ markup = (
   </div>
   <div id="dg-overlay">
     <h2 id="dg-title">DIGISTRACTS</h2>
-    <p id="dg-sub">by 8bitcrypto_44</p>
+    <p id="dg-sub"></p>
     <div id="dg-medals" class="dg-medals" aria-live="polite"></div>
     <div class="dg-menu-actions">
       <button type="button" id="dg-diff">DIFF: NORMAL</button>
@@ -242,7 +249,7 @@ markup = (
     </div>
     <div id="dg-levels" class="dg-levels" aria-label="Level select"></div>
     <a class="dg-site-brand" href="https://www.8bitcrypto44.xyz" target="_blank" rel="noopener noreferrer" aria-label="8bitcrypto_44 website">
-      <img src="assets/brand/8bitcrypto44_logo.png" alt="8bitcrypto_44" width="100" height="13" decoding="async">
+      <img src="__BRAND_LOGO_SRC__" alt="" width="100" height="13" decoding="async">
       <span>www.8bitcrypto44.xyz</span>
     </a>
   </div>
@@ -265,10 +272,11 @@ markup = (
     + js
     + "\n</script>\n"
 )
+markup = markup.replace("__BRAND_LOGO_SRC__", BRAND_LOGO_URI)
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "52"
+ASSET_V = "53"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]
@@ -400,7 +408,7 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
           <button type="button" class="dg-gd-enter" id="dg-gd-enter" aria-expanded="false">PLAY DIGISTRACTS</button>
           <p class="dg-gd-promo">Also: Primal Odyssey · Thank You For Your Service kids books</p>
           <a class="dg-gd-site" href="https://www.8bitcrypto44.xyz" target="_blank" rel="noopener noreferrer" aria-label="8bitcrypto_44 website">
-            <img src="{PAGES_URL}assets/brand/8bitcrypto44_logo.png?v={ASSET_V}" alt="8bitcrypto_44" width="96" height="13" decoding="async">
+            <img src="{BRAND_LOGO_URI}" alt="" width="96" height="13" decoding="async">
             <span>www.8bitcrypto44.xyz</span>
           </a>
         </div>

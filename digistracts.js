@@ -3474,15 +3474,15 @@
     if (GOD_QS) {
       if (state.godMode) bootHint += "\nGOD MODE ready · press G anytime";
       return wantsTouchUI()
-        ? "by 8bitcrypto_44 · TEST BUILD\nHI " + state.hiScore + bootHint +
+        ? "TEST BUILD\nHI " + state.hiScore + bootHint +
           "\nGOD + level buttons · stick + JUMP / FIRE"
-        : "by 8bitcrypto_44 · TEST / GOD MODE\nHI " + state.hiScore + bootHint +
+        : "TEST / GOD MODE\nHI " + state.hiScore + bootHint +
           "\nToggle GOD · pick a level · G key in-game";
     }
     return wantsTouchUI()
-      ? "by 8bitcrypto_44\nHI " + state.hiScore + " · " + dailyBestLine() + bootHint +
+      ? "HI " + state.hiScore + " · " + dailyBestLine() + bootHint +
         "\nDAILY · AIM assist · stick + JUMP / FIRE / SWAP"
-      : "by 8bitcrypto_44\nHI " + state.hiScore + " · " + dailyBestLine() + bootHint +
+      : "HI " + state.hiScore + " · " + dailyBestLine() + bootHint +
         "\nPRESS START or DAILY · Q swap guns · idle = demo" +
         (hasClearedOnce() ? " · NG+ ready" : "");
   }
