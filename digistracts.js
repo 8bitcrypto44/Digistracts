@@ -27,6 +27,7 @@
   const ROBOT_SRCS = window.DG_ROBOTS || [];
   const PLATFORM_SRCS = window.DG_PLATFORMS || [];
   const BOSS_SRC = window.DG_BOSS || "";
+  const BOSS_MID_SRC = window.DG_BOSS_MID || "";
   const BACKGROUND_SRCS = window.DG_BACKGROUNDS || (window.DG_BACKGROUND ? [window.DG_BACKGROUND] : []);
 
   const canvas = ROOT.querySelector("#dg-canvas");
@@ -70,7 +71,10 @@
     return im;
   }
 
-  const imgs = { preacher: loadImg(PREACHER_SRC), backgrounds: [], robots: [], platforms: [], boss: loadImg(BOSS_SRC) };
+  const imgs = {
+    preacher: loadImg(PREACHER_SRC), backgrounds: [], robots: [], platforms: [],
+    boss: loadImg(BOSS_SRC), bossMid: loadImg(BOSS_MID_SRC)
+  };
   BACKGROUND_SRCS.forEach(function (src) { imgs.backgrounds.push(loadImg(src)); });
   ROBOT_SRCS.forEach(function (src) { imgs.robots.push(loadImg(src)); });
   PLATFORM_SRCS.forEach(function (src) { imgs.platforms.push(loadImg(src)); });
@@ -2982,8 +2986,8 @@
       facing: -1, laserAimX: 200, laserAimY: 280, slamX: 400, phase: 1, walk: 0, eyeCD: 0,
       title: mid ? "PULSE WARDEN" : "REDCORE SENTINEL",
       aggro: mid ? 1.4 : 1,
-      accent: mid ? "#e879f9" : "#ef4444",
-      accentHot: mid ? "#ff2bd6" : "#ff7a12",
+      accent: mid ? "#38bdf8" : "#ef4444",
+      accentHot: mid ? "#67e8f9" : "#ff7a12",
       phaseFlash: 0,
       pulseR: 0,
       dashDir: -1,
@@ -5979,8 +5983,8 @@
     const charging = b.mode.indexOf("Charge") >= 0 || b.mode === "skyHold" || b.mode === "pulseCharge"
       || b.mode === "dashCharge" || b.mode === "pillarCharge";
     const active = b.mode === "laser" || b.mode === "laserCharge";
-    const img = imgs.boss;
-    const useSprite = !b.midBoss && img && img.complete && img.naturalWidth;
+    const img = b.midBoss ? imgs.bossMid : imgs.boss;
+    const useSprite = img && img.complete && img.naturalWidth;
 
     if (b.phaseFlash > 0) {
       ctx.globalAlpha = 0.25 + (b.phaseFlash % 6) * 0.08;
@@ -6011,13 +6015,15 @@
       ctx.restore();
       if (eyeOn || charging || active) {
         ctx.globalAlpha = eyeOn || active ? 0.55 : pulse * 0.4;
-        ctx.fillStyle = eyeOn || charging ? "#ff7a12" : core;
+        ctx.fillStyle = eyeOn || charging
+          ? (b.midBoss ? (b.accentHot || "#67e8f9") : "#ff7a12")
+          : core;
         ctx.fillRect(sx + b.w * 0.32, sy + b.h * 0.28, b.w * 0.36, b.h * 0.18);
         ctx.globalAlpha = 1;
       }
       if (b.phase === 2) {
         ctx.globalAlpha = 0.22 + pulse * 0.2;
-        ctx.fillStyle = b.accentHot || "#ff7a12";
+        ctx.fillStyle = b.accentHot || (b.midBoss ? "#67e8f9" : "#ff7a12");
         ctx.fillRect(sx + 8, sy + 4, b.w - 16, 4);
         ctx.globalAlpha = 1;
       }
@@ -6025,7 +6031,7 @@
       return;
     }
 
-    // Procedural mid-boss (Pulse Warden)
+    // Procedural fallback if sprite missing
     const f = b.facing < 0 ? -1 : 1;
     const step = Math.sin(b.walk) * 0.3, jump = b.mode === "jump" || b.mode === "skySlam" || b.mode === "dash" ? 0.55 : b.mode === "jumpCharge" || b.mode === "skyHold" || b.mode === "skyRise" ? 0.32 : 0;
     const armor = b.midBoss ? "#4a1760" : "#3f1212";

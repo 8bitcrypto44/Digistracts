@@ -99,6 +99,11 @@ if not boss_path.exists():
     boss_path = Path("assets/sprites/boss_redcore.png")
 boss_uri = compress_boss(boss_path) if boss_path.exists() else ""
 
+boss_mid_path = Path("assets/sprites/boss_pulse_game.png")
+if not boss_mid_path.exists():
+    boss_mid_path = Path("assets/sprites/boss_pulse.png")
+boss_mid_uri = compress_boss(boss_mid_path, height=96) if boss_mid_path.exists() else ""
+
 embed_source = Path("assets/sprites/embed.js").read_text(encoding="utf-8")
 embed_source = re.sub(
     r"window\.DG_ROBOTS\s*=\s*\[(.*?)\];",
@@ -120,11 +125,20 @@ embed_source = re.sub(
     embed_source,
     count=1,
 )
+if "window.DG_BOSS_MID" not in embed_source:
+    embed_source = embed_source.replace("window.DG_BOSS=", "window.DG_BOSS_MID=\"\";\nwindow.DG_BOSS=", 1)
+embed_source = re.sub(
+    r'window\.DG_BOSS_MID\s*=\s*"[^"]*";',
+    'window.DG_BOSS_MID="%s";' % boss_mid_uri,
+    embed_source,
+    count=1,
+)
 embed_source = re.sub(r'window\.DG_QR\s*=\s*"[^"]*";', 'window.DG_QR="";', embed_source)
 embed = jsmin(embed_source)
 print("robots embedded", len(robot_uris), "from", [p.name for p in robot_paths])
 print("platforms embedded", len(platform_uris), "from", [p.name for p in platform_paths if p.exists()])
 print("boss embedded", bool(boss_uri), boss_path.name if boss_path.exists() else "missing")
+print("mid boss embedded", bool(boss_mid_uri), boss_mid_path.name if boss_mid_path.exists() else "missing")
 js = jsmin(mangle(Path("digistracts.js").read_text(encoding="utf-8")))
 
 # Hosted full-res backgrounds (Postimg). 6 slots: levels 1-5 + boss.
@@ -214,7 +228,7 @@ markup = (
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "44"
+ASSET_V = "45"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]
