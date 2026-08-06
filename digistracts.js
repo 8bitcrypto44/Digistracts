@@ -28,6 +28,7 @@
   const PLATFORM_SRCS = window.DG_PLATFORMS || [];
   const BOSS_SRC = window.DG_BOSS || "";
   const BOSS_MID_SRC = window.DG_BOSS_MID || "";
+  const BOSS_PARTS_DATA = window.DG_BOSS_PARTS || null;
   const BACKGROUND_SRCS = window.DG_BACKGROUNDS || (window.DG_BACKGROUND ? [window.DG_BACKGROUND] : []);
 
   const canvas = ROOT.querySelector("#dg-canvas");
@@ -73,11 +74,24 @@
 
   const imgs = {
     preacher: loadImg(PREACHER_SRC), backgrounds: [], robots: [], platforms: [],
-    boss: loadImg(BOSS_SRC), bossMid: loadImg(BOSS_MID_SRC)
+    boss: loadImg(BOSS_SRC), bossMid: loadImg(BOSS_MID_SRC),
+    bossParts: { final: null, mid: null }
   };
   BACKGROUND_SRCS.forEach(function (src) { imgs.backgrounds.push(loadImg(src)); });
   ROBOT_SRCS.forEach(function (src) { imgs.robots.push(loadImg(src)); });
   PLATFORM_SRCS.forEach(function (src) { imgs.platforms.push(loadImg(src)); });
+
+  function loadBossPartPack(key) {
+    if (!BOSS_PARTS_DATA || !BOSS_PARTS_DATA[key] || !BOSS_PARTS_DATA[key].uris) return null;
+    const uris = BOSS_PARTS_DATA[key].uris;
+    const pack = { meta: BOSS_PARTS_DATA[key].meta || {}, imgs: {} };
+    ["head", "torso", "armL", "armR", "legL", "legR", "full"].forEach(function (n) {
+      if (uris[n]) pack.imgs[n] = loadImg(uris[n]);
+    });
+    return pack;
+  }
+  imgs.bossParts.final = loadBossPartPack("final");
+  imgs.bossParts.mid = loadBossPartPack("mid");
 
   const keys = Object.create(null);
   const touch = { left: false, right: false, up: false, down: false, jump: false, shoot: false, jx: 0, jy: 0 };
@@ -4430,7 +4444,7 @@
     if (b.eyeCD > 0) b.eyeCD--;
     if (b.phaseFlash > 0) b.phaseFlash--;
     b.facing = p.x + p.w / 2 < b.x + b.w / 2 ? -1 : 1;
-    b.walk += b.mode === "jump" || b.mode === "skySlam" || b.mode === "dash" ? 0.32 : 0.2;
+    b.walk += b.mode === "jump" || b.mode === "skySlam" || b.mode === "dash" ? 0.38 : 0.26;
 
     if (tickTalk()) return;
 
@@ -5975,6 +5989,117 @@
     ctx.restore();
   }
 
+  function bossAnimPose(b) {
+    const t = b.walk || 0;
+    const mode = b.mode || "idle";
+    const moving = Math.abs(b.vx || 0) > 0.35 || mode === "dash" || mode === "idle" || mode === "recover";
+    const spd = mode === "dash" ? 1.85 : (mode === "jump" || mode === "skySlam" ? 1.35 : 1.15);
+    const amp = mode === "idle" || mode === "recover" ? 0.72 : 1;
+    const gait = Math.sin(t * spd) * amp;
+    const gait2 = Math.sin(t * spd + Math.PI) * amp;
+    const charge = mode.indexOf("Charge") >= 0 || mode === "skyHold" || mode === "pulseCharge";
+    const jump = mode === "jump" || mode === "skySlam" || mode === "skyRise";
+    const dash = mode === "dash";
+    const laser = mode === "laser" || mode === "laserCharge" || mode === "eyeFire" || mode === "eyeCharge";
+    // Radians — opposing limbs for a natural biped walk / weight shift
+    let legL = moving ? gait * 0.48 : Math.sin(t * 0.55) * 0.08;
+    let legR = moving ? gait2 * 0.48 : Math.sin(t * 0.55 + 1.2) * 0.08;
+    let armL = moving ? gait2 * 0.44 : Math.sin(t * 0.7) * 0.1;
+    let armR = moving ? gait * 0.44 : Math.sin(t * 0.7 + 1.1) * 0.1;
+    let head = Math.sin(t * 0.95) * 0.07 + Math.sin(t * 0.31) * 0.03;
+    let lean = Math.sin(t * 0.4) * 0.03;
+    let bob = Math.abs(Math.sin(t * spd)) * (moving ? 3.6 : 1.6);
+    if (dash) {
+      lean = -0.18; legL = 0.55; legR = -0.35; armL = -0.55; armR = 0.65; head = -0.08; bob = 1;
+    } else if (jump) {
+      lean = -0.06; legL = -0.55; legR = -0.4; armL = -0.7; armR = -0.55; head = 0.1; bob = -6;
+    } else if (charge) {
+      lean = 0.12; legL = 0.15; legR = -0.1; armL = -0.85; armR = -0.7; head = 0.18;
+      bob += Math.sin(performance.now() / 45) * 1.5;
+    } else if (laser) {
+      lean = 0.04; armR = -1.15; armL = 0.25; head = -0.12; bob = 1.2;
+    }
+    return { legL: legL, legR: legR, armL: armL, armR: armR, head: head, lean: lean, bob: bob };
+  }
+
+  function drawBossPart(img, ox, oy, pivotX, pivotY, angle, scale, flipX) {
+    if (!img || !img.complete || !img.naturalWidth) return;
+    const w = img.naturalWidth * scale;
+    const h = img.naturalHeight * scale;
+    ctx.save();
+    ctx.translate(ox, oy);
+    ctx.rotate(angle);
+    if (flipX) ctx.scale(-1, 1);
+    ctx.drawImage(img, -pivotX * w, -pivotY * h, w, h);
+    ctx.restore();
+  }
+
+  function drawBossRigged(b, sx, sy, core, pulse, charging, eyeOn, active) {
+    const pack = b.midBoss ? imgs.bossParts.mid : imgs.bossParts.final;
+    const fallback = b.midBoss ? imgs.bossMid : imgs.boss;
+    if (!pack || !pack.imgs || !pack.imgs.torso || !pack.imgs.torso.complete || !pack.imgs.torso.naturalWidth) {
+      return false;
+    }
+    const pose = bossAnimPose(b);
+    const meta = pack.meta || {};
+    const bw = b.w, bh = b.h;
+    const scale = bh / (meta.h || 158);
+    const originX = sx + bw / 2;
+    const originY = sy + pose.bob;
+    const f = b.facing > 0 ? 1 : -1; // art faces left; flip when facing right
+
+    ctx.save();
+    if (b.hitCD > 0) ctx.globalAlpha = 0.5 + (b.hitCD % 2) * 0.35;
+    else if (charging) ctx.globalAlpha = 0.88 + pulse * 0.12;
+    ctx.translate(originX, originY + bh * 0.02);
+    ctx.scale(f, 1);
+    ctx.rotate(pose.lean);
+
+    const hipL = meta.hipL || [0.38, 0.56];
+    const hipR = meta.hipR || [0.62, 0.56];
+    const shL = meta.shoulderL || [0.28, 0.34];
+    const shR = meta.shoulderR || [0.72, 0.34];
+    const neck = meta.neck || [0.5, 0.24];
+
+    // Far limbs first (character's right = art-right when facing left)
+    drawBossPart(pack.imgs.legR, (hipR[0] - 0.5) * bw, hipR[1] * bh, 0.45, 0.08, pose.legR, scale, false);
+    drawBossPart(pack.imgs.armR, (shR[0] - 0.5) * bw, shR[1] * bh, 0.35, 0.12, pose.armR, scale, false);
+
+    // Torso
+    const torso = pack.imgs.torso;
+    if (torso && torso.complete) {
+      const tw = torso.naturalWidth * scale;
+      const th = torso.naturalHeight * scale;
+      ctx.drawImage(torso, -tw * 0.5, bh * 0.20, tw, th);
+    }
+
+    // Near limbs
+    drawBossPart(pack.imgs.legL, (hipL[0] - 0.5) * bw, hipL[1] * bh, 0.55, 0.08, pose.legL, scale, false);
+    drawBossPart(pack.imgs.armL, (shL[0] - 0.5) * bw, shL[1] * bh, 0.65, 0.12, pose.armL, scale, false);
+
+    // Head on neck
+    drawBossPart(pack.imgs.head, (neck[0] - 0.5) * bw, neck[1] * bh, 0.5, 0.92, pose.head, scale * 1.02, false);
+
+    ctx.restore();
+
+    if (eyeOn || charging || active) {
+      ctx.globalAlpha = eyeOn || active ? 0.45 : pulse * 0.35;
+      ctx.fillStyle = eyeOn || charging
+        ? (b.midBoss ? (b.accentHot || "#e879f9") : "#ff7a12")
+        : core;
+      ctx.fillRect(sx + bw * 0.30, sy + bh * 0.22 + pose.bob, bw * 0.40, bh * 0.14);
+      ctx.globalAlpha = 1;
+    }
+    if (b.phase === 2) {
+      ctx.globalAlpha = 0.22 + pulse * 0.2;
+      ctx.fillStyle = b.accentHot || (b.midBoss ? "#e879f9" : "#ff7a12");
+      ctx.fillRect(sx + 8, sy + 4 + pose.bob, bw - 16, 4);
+      ctx.globalAlpha = 1;
+    }
+    if (!b.vulnerable) drawGlobeShield(sx + bw / 2, sy + bh * 0.48 + pose.bob, Math.max(70, bw * 0.95), core);
+    return true;
+  }
+
   function drawBoss(b) {
     const sx = b.x - state.camX, sy = b.y;
     const core = b.phase === 2 ? (b.accentHot || "#ff7a12") : (b.accent || "#ef4444");
@@ -5993,6 +6118,10 @@
       ctx.globalAlpha = 1;
     }
 
+    if (drawBossRigged(b, sx, sy, core, pulse, charging, eyeOn, active)) {
+      return;
+    }
+
     if (useSprite) {
       const bob = Math.sin(b.walk || 0) * 1.6;
       const jumpLift = (b.mode === "jump" || b.mode === "skySlam" || b.mode === "dash") ? -4
@@ -6004,7 +6133,6 @@
       ctx.save();
       if (b.hitCD > 0) ctx.globalAlpha = 0.5 + (b.hitCD % 2) * 0.35;
       else if (charging) ctx.globalAlpha = 0.88 + pulse * 0.12;
-      // Art faces camera-left by default (same as robots)
       if (b.facing > 0) {
         ctx.translate(dx + w, dy);
         ctx.scale(-1, 1);
