@@ -102,7 +102,7 @@ boss_uri = compress_boss(boss_path) if boss_path.exists() else ""
 boss_mid_path = Path("assets/sprites/boss_pulse_game.png")
 if not boss_mid_path.exists():
     boss_mid_path = Path("assets/sprites/boss_pulse.png")
-boss_mid_uri = compress_boss(boss_mid_path, height=140) if boss_mid_path.exists() else ""
+boss_mid_uri = compress_boss(boss_mid_path, height=158) if boss_mid_path.exists() else ""
 
 embed_source = Path("assets/sprites/embed.js").read_text(encoding="utf-8")
 embed_source = re.sub(
@@ -228,7 +228,7 @@ markup = (
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "47"
+ASSET_V = "48"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]

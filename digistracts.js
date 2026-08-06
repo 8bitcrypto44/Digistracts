@@ -2980,8 +2980,8 @@
     const hp = mid ? Math.floor(58 * (state.diff === "easy" ? 0.8 : state.diff === "hard" ? 1.35 : 1))
       : Math.floor(120 * (state.diff === "easy" ? 0.8 : state.diff === "hard" ? 1.3 : 1));
     state.boss = {
-      boss: true, midBoss: mid, alive: true, vulnerable: false, x: mid ? 560 : 600, y: GROUND - (mid ? 140 : 158),
-      w: mid ? 100 : 112, h: mid ? 140 : 158,
+      boss: true, midBoss: mid, alive: true, vulnerable: false, x: mid ? 560 : 600, y: GROUND - 158,
+      w: 112, h: 158,
       hp: hp, maxHp: hp, hitCD: 0, mode: "idle", timer: 9999, vx: 0, vy: 0,
       facing: -1, laserAimX: 200, laserAimY: 280, slamX: 400, phase: 1, walk: 0, eyeCD: 0,
       title: mid ? "PULSE WARDEN" : "REDCORE SENTINEL",
