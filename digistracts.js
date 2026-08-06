@@ -2986,8 +2986,8 @@
       facing: -1, laserAimX: 200, laserAimY: 280, slamX: 400, phase: 1, walk: 0, eyeCD: 0,
       title: mid ? "PULSE WARDEN" : "REDCORE SENTINEL",
       aggro: mid ? 1.4 : 1,
-      accent: mid ? "#38bdf8" : "#ef4444",
-      accentHot: mid ? "#67e8f9" : "#ff7a12",
+      accent: mid ? "#a855f7" : "#ef4444",
+      accentHot: mid ? "#e879f9" : "#ff7a12",
       phaseFlash: 0,
       pulseR: 0,
       dashDir: -1,
@@ -6016,14 +6016,14 @@
       if (eyeOn || charging || active) {
         ctx.globalAlpha = eyeOn || active ? 0.55 : pulse * 0.4;
         ctx.fillStyle = eyeOn || charging
-          ? (b.midBoss ? (b.accentHot || "#67e8f9") : "#ff7a12")
+          ? (b.midBoss ? (b.accentHot || "#e879f9") : "#ff7a12")
           : core;
         ctx.fillRect(sx + b.w * 0.32, sy + b.h * 0.28, b.w * 0.36, b.h * 0.18);
         ctx.globalAlpha = 1;
       }
       if (b.phase === 2) {
         ctx.globalAlpha = 0.22 + pulse * 0.2;
-        ctx.fillStyle = b.accentHot || (b.midBoss ? "#67e8f9" : "#ff7a12");
+        ctx.fillStyle = b.accentHot || (b.midBoss ? "#e879f9" : "#ff7a12");
         ctx.fillRect(sx + 8, sy + 4, b.w - 16, 4);
         ctx.globalAlpha = 1;
       }
