@@ -241,6 +241,10 @@ markup = (
       <button type="button" id="dg-share" style="display:none">COPY SCORE</button>
     </div>
     <div id="dg-levels" class="dg-levels" aria-label="Level select"></div>
+    <a class="dg-site-brand" href="https://www.8bitcrypto44.xyz" target="_blank" rel="noopener noreferrer" aria-label="8bitcrypto_44 website">
+      <img src="assets/brand/8bitcrypto44_logo.png" alt="8bitcrypto_44" width="100" height="13" decoding="async">
+      <span>www.8bitcrypto44.xyz</span>
+    </a>
   </div>
   <div class="dg-help" aria-label="Keyboard controls">
     <span><kbd>&larr;&rarr;</kbd>/<kbd>AD</kbd> Move</span>
@@ -264,7 +268,7 @@ markup = (
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "51"
+ASSET_V = "52"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]
@@ -311,6 +315,9 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
 .dg-gd-tag{{margin:0;font-size:clamp(13px,2.8vw,15px);color:#e2e8f0;letter-spacing:.2px;max-width:28em;line-height:1.45}}
 .dg-gd-tip{{margin:0;font-size:clamp(12px,2.4vw,14px);color:#67e8f9;letter-spacing:.2px;max-width:28em;line-height:1.4}}
 .dg-gd-promo{{margin:0;font-size:12px;color:#94a3b8;max-width:32em;line-height:1.4}}
+.dg-gd-site{{position:absolute;left:10px;bottom:8px;z-index:3;display:inline-flex;flex-direction:column;align-items:flex-start;gap:2px;text-decoration:none;opacity:.9;max-width:40%}}
+.dg-gd-site img{{width:96px;max-width:100%;height:auto;display:block;image-rendering:pixelated;image-rendering:crisp-edges}}
+.dg-gd-site span{{font-size:10px;letter-spacing:.4px;color:#67e8f9;text-shadow:0 0 6px rgba(0,229,255,.35)}}
 .dg-gd.is-fading .dg-gd-cover{{opacity:0}}
 .dg-gd-enter{{appearance:none;border:3px solid #00e5ff;border-radius:10px;padding:12px 28px;font:700 16px "Courier New",Courier,monospace;letter-spacing:.3px;cursor:pointer;color:#05070f;background:linear-gradient(180deg,#00e5ff,#0b8de0);box-shadow:0 0 18px rgba(0,229,255,.35),0 4px 0 #062033;transition:transform .12s,box-shadow .12s}}
 .dg-gd-enter:hover{{transform:translateY(-2px) scale(1.03);box-shadow:0 0 26px rgba(255,43,214,.45),0 6px 0 #062033}}
@@ -368,6 +375,9 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
   .dg-gd-enter{{padding:14px 22px;min-height:48px;width:min(100%,280px);font-size:16px}}
   .dg-gd-title{{font-size:clamp(28px,9vw,44px)}}
   .dg-gd-tip{{font-size:13px}}
+  .dg-gd-site{{left:8px;bottom:6px}}
+  .dg-gd-site img{{width:72px}}
+  .dg-gd-site span{{font-size:9px}}
 }}
 </style>
 <div class="dg-gd" id="dg-gd">
@@ -389,6 +399,10 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
           <p class="dg-gd-tip">Play → PRESS START · Phone: fullscreen + stick / JUMP / FIRE</p>
           <button type="button" class="dg-gd-enter" id="dg-gd-enter" aria-expanded="false">PLAY DIGISTRACTS</button>
           <p class="dg-gd-promo">Also: Primal Odyssey · Thank You For Your Service kids books</p>
+          <a class="dg-gd-site" href="https://www.8bitcrypto44.xyz" target="_blank" rel="noopener noreferrer" aria-label="8bitcrypto_44 website">
+            <img src="{PAGES_URL}assets/brand/8bitcrypto44_logo.png?v={ASSET_V}" alt="8bitcrypto_44" width="96" height="13" decoding="async">
+            <span>www.8bitcrypto44.xyz</span>
+          </a>
         </div>
       </div>
       <div class="dg-gd-play" id="dg-gd-play">
