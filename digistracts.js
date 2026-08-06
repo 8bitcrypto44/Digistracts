@@ -3784,7 +3784,9 @@
     // Extra lives for long sectors so one spike doesn't abort the whole audit,
     // but still no invulnerability / god mode.
     state.lives = Math.max(state.lives, 30);
-    state.diff = "easy";
+    state.diff = (spec.diff === "easy" || spec.diff === "normal" || spec.diff === "hard")
+      ? spec.diff : "easy";
+    syncDiffBtn();
     qaBot.on = true;
     demoAI.x = 1;
     demoAI.shoot = true;
@@ -7488,6 +7490,15 @@
       hud.levels.innerHTML = "";
       hud.levels.style.display = "none";
     }
+  }
+  // Deep-link: ?boss=final or ?boss=mid (works with or without ?god=1)
+  const bossMatch = /(?:\?|&)boss=(final|mid)(?:&|$)/i.exec(location.search || "");
+  if (bossMatch && !QA_QS) {
+    const kind = bossMatch[1].toLowerCase();
+    setTimeout(function () {
+      beginTestRun({ boss: kind, skipTalk: true });
+      if (!GOD_QS) setGodMode(false);
+    }, 350);
   }
   if (QA_QS) {
     state.godMode = false;
