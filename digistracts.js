@@ -7,11 +7,14 @@
   const EMBED = /(?:\?|&)embed=1(?:&|$)/.test(location.search || "");
   // Dev/test chrome (GOD toggle + level select) only with ?god=1 or ?test=1
   const GOD_QS = /(?:\?|&)(?:god|test)=1(?:&|$)/.test(location.search || "");
+  // Headless playthrough / layout audit — never enables god mode
+  const QA_QS = /(?:\?|&)qa=1(?:&|$)/.test(location.search || "");
   if (EMBED) {
     document.documentElement.classList.add("dg-embed");
     document.body && document.body.classList.add("dg-embed");
   }
   if (GOD_QS) ROOT.classList.add("dg-test");
+  if (QA_QS) ROOT.classList.add("dg-qa");
   function postParent(data) {
     try {
       if (window.parent && window.parent !== window) window.parent.postMessage(data, "*");
@@ -99,6 +102,11 @@
   let titleIdleAt = performance.now();
   let musicUrgent = false;
   const demoAI = { x: 1, jump: false, shoot: false, up: false, down: false, think: 0 };
+  const qaBot = {
+    on: false, think: 0, stuck: 0, lastX: 0, deaths: 0, startedAt: 0,
+    maxX: 0, label: "", done: false, result: "", frames: 0, maxFrames: 150000,
+    airCommit: 0, airDir: 1, traversal: false, causes: {}
+  };
   const GUN_BAG_MAX = 2;
   const ATTRACT_IDLE_MS = 9000;
 
@@ -1505,9 +1513,21 @@
     return true;
   }
 
-  function platformsTooClose(a, b, gapX, gapY) {
+  // Movers sweep away from their origin, so spacing has to clear the whole path.
+  function platBounds(p) {
+    const ax = p.mover ? Math.abs(p.ampX || 0) : 0;
+    const ay = p.mover ? Math.abs(p.ampY || 0) : 0;
+    return {
+      x: p.x - ax, y: p.y - ay,
+      w: p.w + ax * 2, h: (p.h || 14) + ay * 2
+    };
+  }
+
+  function platformsTooClose(pa, pb, gapX, gapY) {
     gapX = gapX == null ? PLAT_GAP_X : gapX;
     gapY = gapY == null ? PLAT_GAP_Y : gapY;
+    const a = platBounds(pa);
+    const b = platBounds(pb);
     return !(a.x + a.w + gapX <= b.x || b.x + b.w + gapX <= a.x
       || a.y + a.h + gapY <= b.y || b.y + b.h + gapY <= a.y);
   }
@@ -1545,6 +1565,41 @@
     return addHazard(h);
   }
 
+  function movePlat(p, x, y) {
+    p.x = x;
+    p.y = y;
+    if (p.mover) {
+      p.ox = x;
+      p.oy = y;
+      p.prevX = x;
+      p.prevY = y;
+    }
+  }
+
+  function elevatedPlats() {
+    return state.platforms.filter(function (p) {
+      return p && !p.gone && p.y < GROUND - 8;
+    });
+  }
+
+  // Only static ledges count: a mover may be at the far end of its sweep when
+  // the player reaches the pit.
+  function pitHasBridge(hole) {
+    const mid = hole.x + hole.w / 2;
+    return state.platforms.some(function (p) {
+      if (!p || p.gone || p.mover || p.crumble || p.y >= GROUND - 20) return false;
+      return p.y <= GROUND - 48 && p.x < mid + 40 && p.x + p.w > mid - 40;
+    });
+  }
+
+  function addBridgeOverPit(hole, i) {
+    const mid = hole.x + hole.w / 2;
+    const bw = Math.min(140, Math.max(70, hole.w + 20));
+    const by = GROUND - (70 + (i % 3) * 36);
+    const spot = findClearPlatSpot(Math.round(mid - bw / 2), by, bw, elevatedPlats());
+    if (spot) addPlatform(spot.x, spot.y, bw, { skin: i % 2, bridge: true });
+  }
+
   function sanitizeLayout() {
     // Drop any spikes that still sit on / beside pits
     const kept = [];
@@ -1554,23 +1609,59 @@
       kept.push(h);
     }
     state.hazards = kept;
-    // Push overlapping elevated platforms apart
-    for (let i = 0; i < state.platforms.length; i++) {
-      const a = state.platforms[i];
-      if (!a || a.gone || a.y >= GROUND - 8) continue;
-      for (let j = 0; j < i; j++) {
-        const b = state.platforms[j];
-        if (!b || b.gone || b.y >= GROUND - 8) continue;
-        let guard = 0;
-        while (platformsTooClose(a, b) && guard++ < 10) {
-          a.x += (a.x + a.w / 2 >= b.x + b.w / 2 ? 1 : -1) * 36;
-          if (a.mover) { a.ox = a.x; a.prevX = a.x; }
-        }
-        if (platformsTooClose(a, b)) {
-          a.y = Math.max(64, a.y - 40);
-          if (a.mover) { a.oy = a.y; a.prevY = a.y; }
+
+    // Bridge pits first so the separation solver can account for the new ledges
+    for (let i = 0; i < state.holes.length; i++) {
+      if (!pitHasBridge(state.holes[i])) addBridgeOverPit(state.holes[i], i);
+    }
+
+    // Separate elevated platforms; repeat until stable because moving one can
+    // create a fresh overlap with a pair that was already resolved.
+    const minX = 40;
+    const maxX = Math.max(minX + 120, (state.endX || 4000) - 60);
+    for (let pass = 0; pass < 10; pass++) {
+      const plats = elevatedPlats();
+      let moved = false;
+      for (let i = 0; i < plats.length; i++) {
+        const a = plats[i];
+        for (let j = 0; j < i; j++) {
+          const b = plats[j];
+          if (!platformsTooClose(a, b)) continue;
+          const dir = a.x + a.w / 2 >= b.x + b.w / 2 ? 1 : -1;
+          const nx = dir > 0
+            ? b.x + b.w + PLAT_GAP_X + 2
+            : b.x - a.w - PLAT_GAP_X - 2;
+          const clamped = Math.max(minX, Math.min(maxX - a.w, nx));
+          if (Math.abs(clamped - nx) < 1) {
+            movePlat(a, clamped, a.y);
+          } else {
+            movePlat(a, clamped, Math.max(70, a.y - (b.h + PLAT_GAP_Y + 2)));
+          }
+          moved = true;
         }
       }
+      if (!moved) break;
+    }
+
+    // Anything still overlapping after the solver is dropped, preferring to keep
+    // pit bridges since those are required for traversal.
+    let plats = elevatedPlats();
+    for (let i = plats.length - 1; i >= 0; i--) {
+      const a = plats[i];
+      if (a.gone) continue;
+      for (let j = 0; j < i; j++) {
+        const b = plats[j];
+        if (b.gone || !platformsTooClose(a, b)) continue;
+        const drop = a.bridge && !b.bridge ? b : a;
+        drop.gone = true;
+        if (drop === a) break;
+      }
+    }
+    state.platforms = state.platforms.filter(function (p) { return p && !p.gone; });
+
+    // Re-bridge any pit whose ledge was moved or removed above
+    for (let i = 0; i < state.holes.length; i++) {
+      if (!pitHasBridge(state.holes[i])) addBridgeOverPit(state.holes[i], i);
     }
   }
 
@@ -1822,7 +1913,13 @@
       }
       while (elevated.length < L.platforms) {
         const i = elevated.length;
-        plat(300 + i * ((len - 600) / Math.max(8, L.platforms)), GROUND - (80 + (i % 5) * 44), platLen(i, 78));
+        const filler = plat(
+          300 + i * ((len - 600) / Math.max(8, L.platforms)),
+          GROUND - (80 + (i % 5) * 44),
+          platLen(i, 78)
+        );
+        // plat() returns null when no clear gap remains — do not spin forever
+        if (!filler) break;
       }
       buildArena(Math.floor(len * 0.55));
     } else if (theme === "slums") {
@@ -2920,7 +3017,15 @@
 
   function hurtPlayer(respawnX, cause) {
     if (state.godMode) return;
-    if (state.invuln > 0 || state.mode !== "play") return;
+    if (state.mode !== "play") return;
+    // Traversal audit: combat skill is not what we're measuring, so only
+    // environmental deaths (pits, spikes, lasers, crushers, acid) count.
+    if (qaBot.on && qaBot.traversal) {
+      const c = cause || "default";
+      qaBot.causes[c] = (qaBot.causes[c] || 0) + 1;
+      if (c === "enemy" || c === "bullet" || c === "boss") return;
+    }
+    if (state.invuln > 0) return;
     if (state.player && state.player.goldT > 0) return;
     const p = state.player;
     state.hitThisLevel = true;
@@ -3385,6 +3490,483 @@
     }
     if (p.x > 2200 || performance.now() - state.demoAt > 42000) stopAttract();
   }
+
+  function validateCurrentLayout() {
+    const issues = [];
+    const pads = SPIKE_HOLE_PAD;
+    for (let i = 0; i < state.hazards.length; i++) {
+      const h = state.hazards[i];
+      if (h.kind !== "spike") continue;
+      if (!holeClearance(h.x, h.w || 64, pads)) {
+        issues.push({ type: "spike_near_hole", x: Math.round(h.x), w: h.w });
+      }
+    }
+    const plats = state.platforms.filter(function (p) { return p && !p.gone && p.y < GROUND - 8; });
+    for (let i = 0; i < plats.length; i++) {
+      for (let j = i + 1; j < plats.length; j++) {
+        if (platformsTooClose(plats[i], plats[j])) {
+          issues.push({
+            type: "platform_overlap",
+            a: { x: Math.round(plats[i].x), y: Math.round(plats[i].y), w: plats[i].w },
+            b: { x: Math.round(plats[j].x), y: Math.round(plats[j].y), w: plats[j].w }
+          });
+          if (issues.length > 40) return issues;
+        }
+      }
+    }
+    return issues;
+  }
+
+  function tickQaBot() {
+    if (!qaBot.on || !state.player || state.mode !== "play") return;
+    const p = state.player;
+    qaBot.think++;
+    qaBot.frames++;
+    if (state.talkQ) {
+      state.talkI = state.talkQ.length;
+      endTalk();
+    }
+    if (state.godMode) setGodMode(false);
+    // QA measures real hazard contact — strip iframes each think tick.
+    // Traversal still ignores combat inside hurtPlayer; invuln=24 there only
+    // collapses multi-hit spam within a single updatePlay.
+    state.invuln = Math.min(state.invuln, 0);
+
+    demoAI.x = 1;
+    demoAI.shoot = true;
+    demoAI.up = false;
+    demoAI.down = false;
+    demoAI.jump = false;
+
+    const cx = p.x + p.w / 2;
+    const look = [20, 40, 64, 88, 112, 140, 170];
+    let holeSoon = false;
+    const holeUnder = isHoleAt(cx);
+    for (let li = 0; li < look.length; li++) {
+      if (isHoleAt(cx + look[li])) { holeSoon = true; break; }
+    }
+    const spikeAhead = state.hazards.some(function (h) {
+      if (h.kind !== "spike") return false;
+      const on = h.always || hazardActive(h);
+      if (!on) return false;
+      return h.x < cx + 130 && h.x + h.w > cx - 4 && h.y + h.h >= GROUND - 24;
+    });
+    const laserAhead = state.hazards.some(function (h) {
+      if (h.kind !== "laser" || h.axis !== "v") return false;
+      if (!hazardActive(h)) return false;
+      return h.x > cx && h.x < cx + 100;
+    });
+    if (holeSoon || holeUnder || spikeAhead || laserAhead) {
+      demoAI.jump = true;
+      if ((holeSoon || spikeAhead) && p.onGround && qaBot.think % 10 === 0) superJump();
+      // Back up from active laser instead of eating it
+      if (laserAhead && !holeUnder) demoAI.x = -1;
+    }
+
+    // Prefer elevated path when ground is spiked/pitted — or always approach holes via bridge
+    let upPlat = null;
+    let bestDist = 9999;
+    for (let pi = 0; pi < state.platforms.length; pi++) {
+      const pl = state.platforms[pi];
+      if (!pl || pl.gone || pl.y >= GROUND - 20) continue;
+      if (pl.y >= p.y - 4) continue;
+      if (pl.x > cx + 160 || pl.x + pl.w < cx - 40) continue;
+      const d = Math.abs((pl.x + pl.w / 2) - (cx + 40)) + (p.y - pl.y) * 0.35;
+      if (d < bestDist) { bestDist = d; upPlat = pl; }
+    }
+    const groundSpikes = state.hazards.some(function (h) {
+      if (h.kind !== "spike") return false;
+      if (!(h.always || hazardActive(h))) return false;
+      return h.y + h.h >= GROUND - 24 && h.x < cx + 200 && h.x + h.w > cx - 20;
+    });
+    if (upPlat && (holeSoon || spikeAhead || groundSpikes || qaBot.stuck > 20 || holeUnder || p.y + p.h >= GROUND - 2)) {
+      demoAI.jump = true;
+      demoAI.up = true;
+      const tx = upPlat.x + upPlat.w / 2;
+      if (tx < cx - 6) demoAI.x = -1;
+      else if (tx > cx + 6) demoAI.x = 1;
+      if (p.onGround && (holeSoon || holeUnder || spikeAhead) && qaBot.think % 8 === 0) superJump();
+    }
+
+    // Don't walk onto spikes underfoot — leap forward, don't dither reverse into them
+    const spikeHere = state.hazards.some(function (h) {
+      if (h.kind !== "spike") return false;
+      if (!(h.always || hazardActive(h))) return false;
+      return cx > h.x - 6 && cx < h.x + h.w + 6 && Math.abs(h.y - (p.y + p.h)) < 28;
+    });
+    if (spikeHere) {
+      demoAI.jump = true;
+      demoAI.x = 1;
+      if (p.onGround) superJump();
+      qaBot.airCommit = Math.max(qaBot.airCommit, 28);
+      qaBot.airDir = 1;
+    }
+
+    const foe = nearestEnemy(cx, p.y + 20, 0);
+    if (foe) {
+      const dx = (foe.x + foe.w / 2) - cx;
+      if (Math.abs(dx) < 280) {
+        demoAI.x = dx >= 0 ? 1 : -1;
+        if (foe.y + foe.h < p.y + 8) demoAI.up = true;
+        if (Math.abs(dx) < 70 && foe.y < p.y) demoAI.jump = true;
+      }
+    }
+
+    if (state.bossMode && state.boss && state.boss.alive) {
+      const b = state.boss;
+      const bx = b.x + b.w / 2;
+      demoAI.shoot = true;
+      if (b.vulnerable) {
+        demoAI.x = bx > cx ? 1 : -1;
+        if (Math.abs(bx - cx) < 120) demoAI.x = bx > cx ? -1 : 1;
+      } else {
+        // Keep distance during attacks
+        demoAI.x = bx > cx + 160 ? 1 : (bx < cx - 160 ? -1 : (bx > cx ? -1 : 1));
+        if (b.mode === "dash" || b.mode === "dashCharge" || b.mode === "skySlam" || b.mode === "pulseWave") {
+          demoAI.jump = true;
+          demoAI.x = bx > cx ? -1 : 1;
+        }
+      }
+    }
+
+    if (state.arena && state.arena.active && !state.arena.cleared) {
+      // Clear arena before advancing past lock
+      if (p.x > state.arena.lockR - 40) demoAI.x = -1;
+    }
+
+    // Once airborne over a pit, hold the crossing direction. Enemy tracking and
+    // spike dodging would otherwise reverse the bot mid-jump and drop it in.
+    if (p.onGround) {
+      qaBot.airCommit = 0;
+    } else if (qaBot.airCommit > 0) {
+      qaBot.airCommit--;
+      demoAI.x = qaBot.airDir;
+      demoAI.jump = true;
+    }
+    if (p.onGround && (holeSoon || holeUnder)) {
+      qaBot.airCommit = 45;
+      qaBot.airDir = holeUnder ? 1 : demoAI.x || 1;
+    }
+
+    if (Math.abs(p.x - qaBot.lastX) < 0.4) qaBot.stuck++;
+    else qaBot.stuck = 0;
+    qaBot.lastX = p.x;
+    qaBot.maxX = Math.max(qaBot.maxX, p.x);
+    if (qaBot.stuck > 55) {
+      demoAI.jump = true;
+      demoAI.x = qaBot.think % 40 < 20 ? -1 : 1;
+      if (qaBot.stuck > 90) {
+        demoAI.up = true;
+        if (p.onGround) superJump();
+      }
+    }
+
+    // Outcome checks
+    if (state.mode === "clear" || state.mode === "win" || state.mode === "credits") {
+      qaBot.done = true;
+      qaBot.result = "clear";
+      qaBot.on = false;
+    } else if (state.mode === "failed" || state.mode === "dead") {
+      qaBot.deaths++;
+      qaBot.done = true;
+      qaBot.result = "dead";
+      qaBot.on = false;
+    } else if (!state.bossMode && p.x + p.w >= state.endX - 65) {
+      qaBot.done = true;
+      qaBot.result = "reached_end";
+      qaBot.on = false;
+    } else if (state.bossMode && state.boss && !state.boss.alive) {
+      qaBot.done = true;
+      qaBot.result = "boss_down";
+      qaBot.on = false;
+    } else if (qaBot.frames > (qaBot.maxFrames || (state.bossMode ? 80000 : 150000))) {
+      qaBot.done = true;
+      qaBot.result = "timeout";
+      qaBot.on = false;
+    }
+  }
+
+  function qaFinalizeIfNeeded() {
+    if (!qaBot.on) return;
+    if (state.mode === "failed" || state.mode === "dead") {
+      qaBot.deaths++;
+      qaBot.done = true;
+      qaBot.result = "dead";
+      qaBot.on = false;
+    } else if (state.mode === "clear" || state.mode === "win" || state.mode === "credits") {
+      qaBot.done = true;
+      qaBot.result = "clear";
+      qaBot.on = false;
+    }
+  }
+
+  function qaStartScenario(spec) {
+    muted = true;
+    musicOn = false;
+    try { stopMusic(); } catch (e) {}
+    ensureAudio();
+    state.godMode = false;
+    if (hud.godBtn) {
+      hud.godBtn.textContent = "GOD: OFF";
+      hud.godBtn.setAttribute("aria-pressed", "false");
+      hud.godBtn.classList.remove("is-on");
+    }
+    qaBot.on = false;
+    qaBot.think = 0;
+    qaBot.stuck = 0;
+    qaBot.lastX = 0;
+    qaBot.maxX = 0;
+    qaBot.deaths = 0;
+    qaBot.frames = 0;
+    qaBot.done = false;
+    qaBot.result = "";
+    qaBot.airCommit = 0;
+    qaBot.airDir = 1;
+    qaBot.traversal = !!spec.traversal;
+    qaBot.maxFrames = spec.maxSteps || (spec.boss ? 80000 : 150000);
+    qaBot.causes = {};
+    qaBot.label = spec.label || "scenario";
+    qaBot.startedAt = performance.now();
+    beginTestRun(spec);
+    state.godMode = false;
+    state.invuln = 0;
+    state.talkQ = null;
+    state.grace = 0;
+    if (state.player) {
+      state.player.goldT = 0;
+      grantWeapon("SPREAD", 1);
+      grantWeapon("RIFLE", 1);
+      grantWeapon("WAVE", 0.8);
+    }
+    // Extra lives for long sectors so one spike doesn't abort the whole audit,
+    // but still no invulnerability / god mode.
+    state.lives = Math.max(state.lives, 30);
+    state.diff = "easy";
+    qaBot.on = true;
+    demoAI.x = 1;
+    demoAI.shoot = true;
+    return validateCurrentLayout();
+  }
+
+  function qaSnapshot() {
+    return {
+      label: qaBot.label,
+      mode: state.mode,
+      level: state.level,
+      bossMode: !!state.bossMode,
+      midBoss: !!(state.boss && state.boss.midBoss),
+      inSecret: !!state.inSecret,
+      x: state.player ? Math.round(state.player.x) : 0,
+      maxX: Math.round(qaBot.maxX),
+      endX: state.endX,
+      lives: state.lives,
+      hp: state.playerHP,
+      frames: qaBot.frames,
+      done: qaBot.done,
+      result: qaBot.result,
+      godMode: !!state.godMode,
+      arena: state.arena ? {
+        active: state.arena.active,
+        cleared: state.arena.cleared,
+        left: state.arena.spawnLeft
+      } : null,
+      bossHp: state.boss && state.boss.alive ? state.boss.hp : 0
+    };
+  }
+
+  async function qaSleep(ms) {
+    return new Promise(function (resolve) { setTimeout(resolve, ms); });
+  }
+
+  // Synchronous playthrough with no rendering — a full sector runs in about a
+  // second instead of the minutes the rAF-paced bot needs.
+  function qaBurst(spec, maxSteps) {
+    const layoutIssues = qaStartScenario(spec);
+    const cap = maxSteps || 90000;
+    const wallCap = spec.wallMs || (spec.boss ? 90000 : 120000);
+    const wallStart = performance.now();
+    let steps = 0;
+    while (!qaBot.done && steps < cap) {
+      steps++;
+      if (performance.now() - wallStart > wallCap) {
+        qaBot.done = true;
+        qaBot.result = "timeout";
+        qaBot.on = false;
+        break;
+      }
+      if (state.mode !== "play") {
+        qaFinalizeIfNeeded();
+        if (qaBot.done) break;
+        break;
+      }
+      tickQaBot();
+      if (!qaBot.on) break;
+      if (state.hitStop > 0) state.hitStop--;
+      else updatePlay();
+    }
+    if (!qaBot.done) {
+      qaFinalizeIfNeeded();
+    }
+    if (!qaBot.done) {
+      qaBot.done = true;
+      qaBot.result = "timeout";
+      qaBot.on = false;
+    }
+    qaBot.on = false;
+    const snap = qaSnapshot();
+    const hardLayout = layoutIssues.filter(function (i) { return i.type === "spike_near_hole"; });
+    const platIssues = layoutIssues.filter(function (i) { return i.type === "platform_overlap"; });
+    const okPlay = snap.result === "clear" || snap.result === "reached_end" || snap.result === "boss_down";
+    return {
+      label: spec.label,
+      ok: hardLayout.length === 0 && platIssues.length === 0 && okPlay && !snap.godMode,
+      okPlay: okPlay,
+      result: snap.result,
+      steps: steps,
+      maxX: snap.maxX,
+      endX: snap.endX,
+      progress: snap.endX ? Math.round(100 * snap.maxX / snap.endX) : 0,
+      lives: snap.lives,
+      deaths: qaBot.deaths,
+      causes: qaBot.causes,
+      godMode: snap.godMode,
+      spikeNearHole: hardLayout.length,
+      platformOverlap: platIssues.length
+    };
+  }
+
+  function qaBurstSuite(specs) {
+    muted = true;
+    musicOn = false;
+    try { stopMusic(); } catch (e) {}
+    const out = [];
+    for (let i = 0; i < specs.length; i++) out.push(qaBurst(specs[i], specs[i].maxSteps));
+    state.mode = "title";
+    qaBot.on = false;
+    return out;
+  }
+
+  async function qaPlayScenario(spec, opts) {
+    opts = opts || {};
+    const layoutIssues = qaStartScenario(spec);
+    const hardLayout = layoutIssues.filter(function (i) { return i.type === "spike_near_hole"; });
+    // Soft-cap platform issues for report (still fail if many)
+    const platIssues = layoutIssues.filter(function (i) { return i.type === "platform_overlap"; });
+    const deadline = performance.now() + (opts.timeoutMs || (spec.boss ? 90000 : 120000));
+    while (!qaBot.done && performance.now() < deadline) {
+      await qaSleep(16);
+    }
+    if (!qaBot.done) {
+      qaBot.done = true;
+      qaBot.result = "timeout";
+      qaBot.on = false;
+    }
+    const snap = qaSnapshot();
+    const okPlay = snap.result === "clear" || snap.result === "reached_end" || snap.result === "boss_down";
+    return {
+      label: spec.label,
+      ok: hardLayout.length === 0 && platIssues.length === 0 && okPlay && !snap.godMode,
+      okLayout: hardLayout.length === 0 && platIssues.length === 0,
+      okPlay: okPlay,
+      godMode: snap.godMode,
+      result: snap.result,
+      maxX: snap.maxX,
+      endX: snap.endX,
+      progress: snap.endX ? Math.round(100 * snap.maxX / snap.endX) : 0,
+      lives: snap.lives,
+      frames: snap.frames,
+      spikeNearHole: hardLayout.length,
+      platformOverlap: platIssues.length,
+      layoutIssues: layoutIssues.slice(0, 12),
+      snap: snap
+    };
+  }
+
+  async function qaRunSuite() {
+    muted = true;
+    musicOn = false;
+    try { stopMusic(); } catch (e) {}
+    const scenarios = [];
+    for (let i = 0; i < LEVELS.length; i++) {
+      scenarios.push({ label: "L" + (i + 1) + " " + LEVELS[i].name, level: i, skipTalk: true });
+    }
+    scenarios.push({ label: "SECRET ember", secret: "ember" });
+    scenarios.push({ label: "SECRET storm", secret: "storm" });
+    scenarios.push({ label: "SECRET signal", secret: "signal" });
+    scenarios.push({ label: "BOSS mid", boss: "mid" });
+    scenarios.push({ label: "BOSS final", boss: "final" });
+
+    const report = { startedAt: new Date().toISOString(), v: "qa", results: [], pass: true };
+    for (let s = 0; s < scenarios.length; s++) {
+      const r = await qaPlayScenario(scenarios[s], {
+        speed: scenarios[s].boss ? 8 : 12,
+        timeoutMs: scenarios[s].boss ? 120000 : 180000
+      });
+      report.results.push(r);
+      if (!r.ok) report.pass = false;
+      console.log("[QA]", r.label, r.ok ? "PASS" : "FAIL", r.result, "maxX=" + r.maxX, "spikes@" + r.spikeNearHole, "plats@" + r.platformOverlap);
+    }
+    report.finishedAt = new Date().toISOString();
+    window.__DG_QA_REPORT = report;
+    state.mode = "title";
+    qaBot.on = false;
+    showOverlay("QA DONE", report.pass ? "ALL PASS" : "FAILURES — see __DG_QA_REPORT", "PRESS START");
+    return report;
+  }
+
+  function qaValidateAllLayouts() {
+    const out = [];
+    const scenarios = [];
+    for (let i = 0; i < LEVELS.length; i++) scenarios.push({ label: "L" + (i + 1) + " " + LEVELS[i].name, level: i, skipTalk: true });
+    scenarios.push({ label: "SECRET ember", secret: "ember" });
+    scenarios.push({ label: "SECRET storm", secret: "storm" });
+    scenarios.push({ label: "SECRET signal", secret: "signal" });
+    scenarios.push({ label: "BOSS mid", boss: "mid" });
+    scenarios.push({ label: "BOSS final", boss: "final" });
+    for (let s = 0; s < scenarios.length; s++) {
+      const spec = scenarios[s];
+      state.godMode = false;
+      beginTestRun(spec);
+      state.godMode = false;
+      state.talkQ = null;
+      const issues = validateCurrentLayout();
+      out.push({
+        label: spec.label,
+        ok: issues.length === 0,
+        spikeNearHole: issues.filter(function (i) { return i.type === "spike_near_hole"; }).length,
+        platformOverlap: issues.filter(function (i) { return i.type === "platform_overlap"; }).length,
+        platforms: state.platforms.filter(function (p) { return p && p.y < GROUND - 8; }).length,
+        holes: state.holes.length,
+        spikes: state.hazards.filter(function (h) { return h.kind === "spike"; }).length,
+        issues: issues.slice(0, 8)
+      });
+    }
+    return out;
+  }
+
+  window.__DG_QA = {
+    validate: validateCurrentLayout,
+    validateAll: qaValidateAllLayouts,
+    play: qaPlayScenario,
+    burst: qaBurst,
+    burstSuite: qaBurstSuite,
+    runSuite: qaRunSuite,
+    snapshot: qaSnapshot,
+    world: function () { return state; },
+    step: function (n) {
+      const trace = [];
+      for (let i = 0; i < (n || 1); i++) {
+        if (state.mode !== "play") { qaFinalizeIfNeeded(); break; }
+        tickQaBot();
+        if (state.hitStop > 0) state.hitStop--;
+        else updatePlay();
+        const p = state.player;
+        if (p) trace.push({ x: Math.round(p.x), y: Math.round(p.y), vy: Math.round(p.vy * 10) / 10, g: !!p.onGround, j: !!demoAI.jump, dx: demoAI.x, lv: state.lives, hp: state.playerHP, iv: Math.round(state.invuln || 0) });
+      }
+      return trace;
+    },
+    bot: qaBot
+  };
 
   function beginTestRun(opts) {
     opts = opts || {};
@@ -4061,7 +4643,7 @@
   }
 
   function inputX() {
-    if (state.demo) return demoAI.x;
+    if (state.demo || qaBot.on) return demoAI.x;
     if (Math.abs(touch.jx) > 0.28) return touch.jx > 0 ? 1 : -1;
     let x = 0;
     if (keys.ArrowLeft || keys.a || keys.A || touch.left) x -= 1;
@@ -4069,19 +4651,19 @@
     return x;
   }
   function inputJump() {
-    if (state.demo) return !!demoAI.jump;
+    if (state.demo || qaBot.on) return !!demoAI.jump;
     return !!(keys[" "] || touch.jump);
   }
   function inputUp() {
-    if (state.demo) return !!demoAI.up;
+    if (state.demo || qaBot.on) return !!demoAI.up;
     return !!(keys.ArrowUp || keys.w || keys.W || touch.up || touch.jy < -0.36);
   }
   function inputDown() {
-    if (state.demo) return !!demoAI.down;
+    if (state.demo || qaBot.on) return !!demoAI.down;
     return !!(keys.ArrowDown || keys.s || keys.S || touch.down || touch.jy > 0.42);
   }
   function inputShoot() {
-    if (state.demo) return !!demoAI.shoot;
+    if (state.demo || qaBot.on) return !!demoAI.shoot;
     return !!(keys.z || keys.Z || keys.x || keys.X || keys.Control || keys.Enter || keys.j || keys.J || touch.shoot);
   }
 
@@ -6294,14 +6876,28 @@
 
   function loop() {
     tickJuice();
-    if (state.mode === "title" && !GOD_QS && !state.demo &&
+    if (state.mode === "title" && !GOD_QS && !QA_QS && !state.demo &&
         performance.now() - titleIdleAt > ATTRACT_IDLE_MS) {
       startAttract();
     }
     if (state.mode === "play") {
       if (state.demo) tickDemoAI();
-      if (state.hitStop > 0) state.hitStop--;
-      else updatePlay();
+      if (qaBot.on) {
+        const speed = state.bossMode ? 8 : 14;
+        for (let i = 0; i < speed; i++) {
+          tickQaBot();
+          if (!qaBot.on) break;
+          if (state.hitStop > 0) state.hitStop--;
+          else if (state.mode === "play") updatePlay();
+          else break;
+        }
+      } else if (state.hitStop > 0) {
+        state.hitStop--;
+      } else {
+        updatePlay();
+      }
+    } else {
+      qaFinalizeIfNeeded();
     }
     if (state.mode === "credits") updateCredits();
     if (state.mode === "failed" && state.failAt && performance.now() >= state.failAt) {
@@ -6833,11 +7429,23 @@
       hud.levels.style.display = "none";
     }
   }
+  if (QA_QS) {
+    state.godMode = false;
+    if (hud.godBtn) {
+      hud.godBtn.style.display = "none";
+    }
+    showOverlay("DIGISTRACTS QA", "No god mode · autoplay audit running…", "…");
+    setTimeout(function () {
+      qaRunSuite().then(function (report) {
+        console.log("[QA] suite complete", report.pass, report);
+      });
+    }, 400);
+  }
   syncDiffBtn();
   syncFxBtn();
   syncAssistBtn();
   bumpTitleIdle();
-  showOverlay("DIGISTRACTS", titleBootSub(), "PRESS START");
+  if (!QA_QS) showOverlay("DIGISTRACTS", titleBootSub(), "PRESS START");
   updateHUD();
   fit();
   loop();

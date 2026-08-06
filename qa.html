@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Digistracts QA</title>
+  <link rel="stylesheet" href="digistracts.css">
+  <style>
+    body { margin: 0; background: #020617; color: #e2e8f0; font-family: monospace; }
+    #digistracts-root { max-width: 920px; margin: 0 auto; }
+    #qa-log {
+      max-width: 920px; margin: 8px auto; padding: 8px 12px;
+      white-space: pre-wrap; font-size: 12px; line-height: 1.35;
+      max-height: 220px; overflow: auto; border: 1px solid #1e3a5f;
+    }
+  </style>
+</head>
+<body>
+  <div id="qa-log">QA boot…</div>
+  <div id="digistracts-root">
+    <div class="dg-top">
+      <div class="dg-brand">DIGISTRACTS <span>QA</span></div>
+      <div class="dg-hud">
+        <div>SCORE <b id="dg-score">000000</b></div>
+        <div>LIVES <b id="dg-lives">3</b></div>
+        <div id="dg-level">LV 1</div>
+        <div>TIME <b id="dg-time">--</b></div>
+        <div>SUPER <b id="dg-super">2</b></div>
+        <div>GUN <b id="dg-gun">--</b></div>
+        <div>HI <b id="dg-hi">0</b></div>
+        <div id="dg-combo"></div>
+      </div>
+      <div class="dg-audio">
+        <label for="dg-vol">VOL</label>
+        <input id="dg-vol" type="range" min="0" max="1" step="0.01" value="0.05">
+        <button type="button" id="dg-mute">MUTE</button>
+        <button type="button" id="dg-fx">FX: ON</button>
+        <button type="button" id="dg-pause">PAUSE</button>
+        <button type="button" id="dg-fs">FS</button>
+      </div>
+    </div>
+    <div class="dg-stage">
+      <canvas id="dg-canvas" width="800" height="450"></canvas>
+      <div id="dg-msg"></div>
+      <div class="dg-controls">
+        <div id="dg-stick" class="dg-stick"><div id="dg-knob" class="dg-knob"></div></div>
+        <div class="dg-actions">
+          <button type="button" id="dg-jump">JUMP</button>
+          <button type="button" id="dg-shoot">FIRE</button>
+          <button type="button" id="dg-swap">SWAP</button>
+        </div>
+      </div>
+    </div>
+    <div id="dg-overlay">
+      <h2 id="dg-title">DIGISTRACTS</h2>
+      <p id="dg-sub">QA</p>
+      <div id="dg-medals" class="dg-medals"></div>
+      <div class="dg-menu-actions">
+        <button type="button" id="dg-diff">DIFF: NORMAL</button>
+        <button type="button" id="dg-assist">AIM: ON</button>
+        <button type="button" id="dg-ng" style="display:none">NG+</button>
+        <button type="button" id="dg-daily">DAILY</button>
+        <button type="button" id="dg-god" style="display:none">GOD: OFF</button>
+        <button type="button" id="dg-start">PRESS START</button>
+        <button type="button" id="dg-share" style="display:none">COPY SCORE</button>
+      </div>
+      <div id="dg-levels" class="dg-levels"></div>
+    </div>
+  </div>
+  <script src="assets/sprites/embed.js"></script>
+  <script>
+    window.DG_BACKGROUNDS = [
+      "https://i.postimg.cc/y6mvPnqs/level-1.jpg",
+      "https://i.postimg.cc/446B5wCg/level-2.jpg",
+      "https://i.postimg.cc/tJNk4Rdm/level-3.jpg",
+      "https://i.postimg.cc/BZTMgNWG/level-4.jpg",
+      "https://i.postimg.cc/XNfQ8xM3/level-5.jpg",
+      "https://i.postimg.cc/DfrBg5Vk/boss.jpg"
+    ];
+    const logEl = document.getElementById("qa-log");
+    const _log = console.log.bind(console);
+    console.log = function () {
+      _log.apply(console, arguments);
+      const line = Array.prototype.map.call(arguments, function (a) {
+        return typeof a === "string" ? a : JSON.stringify(a);
+      }).join(" ");
+      if (line.indexOf("[QA]") === 0) {
+        logEl.textContent += line + "\n";
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+    };
+  </script>
+  <script src="digistracts.js"></script>
+</body>
+</html>
