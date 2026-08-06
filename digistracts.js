@@ -1262,9 +1262,19 @@
 
   function dropWeaponPickup(type, ammo, x, y) {
     if (!type || !weaponDef(type)) return;
+    const p = state.player;
+    let dx = x, dy = y;
+    let delay = 18;
+    // Bag overflow is spawned on the player; fling it away + delay so the
+    // pickup loop cannot re-grab it forever (game freeze).
+    if (p && Math.abs(x - p.x) < 56 && Math.abs(y - (p.y - 10)) < 48) {
+      dx = p.x + (p.facing || 1) * -64;
+      dy = p.y - 22;
+      delay = 54;
+    }
     state.staffs.push({
-      x: x, y: y, w: 40, h: 34, type: type, bob: Math.random() * 6,
-      taken: false, ammo: ammo | 0, dropped: true
+      x: dx, y: dy, w: 40, h: 34, type: type, bob: Math.random() * 6,
+      taken: false, ammo: ammo | 0, dropped: true, pickupDelay: delay
     });
   }
 
@@ -5593,9 +5603,16 @@
         explode(q.x + 8, q.y + 8, q.power === "life" ? "#ff2bd6" : q.power === "ember" ? "#fb7185" : q.power === "storm" ? "#67e8f9" : q.power === "signal" ? "#34d399" : q.power === "overclock" ? "#fbbf24" : q.power === "gold" ? "#ffd400" : q.power === "speed" ? "#3b82f6" : "#39ff14", 12);
       }
     }
-    for (let i = 0; i < state.staffs.length; i++) {
+    // Snapshot length so drops spawned mid-loop cannot be re-grabbed same frame
+    // (full bag → drop overflow at feet → infinite grantWeapon loop = freeze).
+    const staffN = state.staffs.length;
+    for (let i = 0; i < staffN; i++) {
       const s = state.staffs[i];
-      if (s.taken) continue;
+      if (!s || s.taken) continue;
+      if (s.pickupDelay > 0) {
+        s.pickupDelay--;
+        continue;
+      }
       s.bob += 0.1;
       const hit = { x: s.x, y: s.y + Math.sin(s.bob) * 3, w: s.w, h: s.h };
       if (rectsOverlap(p, hit)) {
