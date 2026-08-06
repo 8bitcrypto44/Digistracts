@@ -1,0 +1,207 @@
+  // === VIEWPORT — dynamic embed height; page scroll on mobile only ===
+  const EMBED_MIN_H = 680;
+  let embedFsActive = false;
+  let embedBurstGen = 0;
+  let embedMutObs = null;
+
+  function isMobileDevice() {
+    try {
+      if (window.matchMedia("(pointer: fine)").matches && !window.matchMedia("(pointer: coarse)").matches) {
+        return false;
+      }
+    } catch (e) {}
+    var touch = ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
+    var narrow = false;
+    var coarse = false;
+    try {
+      narrow = window.matchMedia("(max-width: 700px)").matches;
+      coarse = window.matchMedia("(pointer: coarse)").matches;
+    } catch (e2) {}
+    return (touch && coarse) || narrow;
+  }
+
+  function isMobileEmbed() {
+    return EMBED && isMobileDevice();
+  }
+
+  function syncMobileClass() {
+    document.documentElement.classList.toggle("dg-mobile", isMobileDevice());
+  }
+
+  function isOverlayScrollTarget(node) {
+    return node && node.closest && node.closest("#dg-overlay, .dg-menu-actions, .dg-levels");
+  }
+
+  function blockEmbedScroll(e) {
+    if (!EMBED || isMobileEmbed()) return;
+    if (isOverlayScrollTarget(e.target)) return;
+    e.preventDefault();
+  }
+
+  function measureEmbedHeight() {
+    if (!EMBED) return EMBED_MIN_H;
+    const doc = document.documentElement;
+    const bod = document.body;
+    const stage = ROOT.querySelector(".dg-stage");
+    const top = ROOT.querySelector(".dg-top");
+    [doc, bod, ROOT, stage, top].forEach(function (el) {
+      if (!el) return;
+      el.style.height = "auto";
+      el.style.minHeight = "0";
+      el.style.maxHeight = "none";
+    });
+    const rootTop = ROOT.getBoundingClientRect().top;
+    let maxBottom = ROOT.getBoundingClientRect().bottom;
+    [top, stage, ROOT.querySelector(".dg-help"), ROOT.querySelector("#dg-overlay")].forEach(function (el) {
+      if (!el || el.hidden) return;
+      if (el.offsetParent === null && !el.classList.contains("show")) return;
+      const r = el.getBoundingClientRect();
+      if (r.height > 0 && r.bottom > maxBottom) maxBottom = r.bottom;
+    });
+    ROOT.querySelectorAll(".dg-menu-actions, .dg-levels, .dg-bar, .dg-touch").forEach(function (el) {
+      if (!el || el.hidden || el.offsetParent === null) return;
+      const r = el.getBoundingClientRect();
+      if (r.bottom > maxBottom) maxBottom = r.bottom;
+    });
+    const bboxH = Math.ceil(Math.max(0, maxBottom - rootTop)) + 8;
+    const tight = !ROOT.classList.contains("dg-menu");
+    if (tight) {
+      return Math.ceil(Math.max(EMBED_MIN_H, bboxH));
+    }
+    return Math.ceil(Math.max(
+      EMBED_MIN_H,
+      bboxH,
+      ROOT.scrollHeight || 0,
+      doc.scrollHeight || 0
+    ));
+  }
+
+  function applyEmbedFrameHeight(h) {
+    if (!EMBED) return h;
+    h = Math.max(EMBED_MIN_H, Math.round(h || measureEmbedHeight()));
+    const mobile = isMobileEmbed();
+    syncMobileClass();
+    [document.documentElement, document.body, ROOT].forEach(function (el) {
+      if (mobile) {
+        el.style.height = "auto";
+        el.style.minHeight = "0";
+        el.style.maxHeight = "none";
+        el.style.overflowX = "hidden";
+        el.style.overflowY = "visible";
+        el.style.touchAction = "pan-y";
+      } else {
+        el.style.height = h + "px";
+        el.style.minHeight = h + "px";
+        el.style.maxHeight = h + "px";
+        el.style.overflow = "hidden";
+      }
+    });
+    return h;
+  }
+
+  function syncEmbedUiMode() {
+    if (!EMBED) return;
+    syncMobileClass();
+    ROOT.classList.toggle("dg-ui-menu", ROOT.classList.contains("dg-menu"));
+    notifyResize();
+    if (isMobileEmbed()) scheduleEmbedResizeBurst();
+  }
+
+  function flushEmbedResize() {
+    if (!EMBED || !window.parent) return;
+    try {
+      const h = applyEmbedFrameHeight(measureEmbedHeight());
+      window.parent.postMessage({
+        type: "dg-resize",
+        height: h,
+        mobile: isMobileEmbed()
+      }, "*");
+      window.parent.postMessage({
+        type: "dg-mobile",
+        active: isMobileEmbed()
+      }, "*");
+    } catch (e) {}
+  }
+
+  function scheduleEmbedResizeBurst() {
+    if (!EMBED || !isMobileEmbed()) return;
+    flushEmbedResize();
+    const gen = ++embedBurstGen;
+    [32, 96].forEach(function (ms) {
+      setTimeout(function () {
+        if (gen !== embedBurstGen) return;
+        flushEmbedResize();
+      }, ms);
+    });
+  }
+
+  function bindEmbedResizeObserver() {
+    if (!EMBED || !isMobileEmbed() || embedMutObs || !window.MutationObserver) return;
+    let debounce = null;
+    embedMutObs = new MutationObserver(function () {
+      clearTimeout(debounce);
+      debounce = setTimeout(flushEmbedResize, 0);
+    });
+    embedMutObs.observe(ROOT, { childList: true, subtree: true, attributes: true, characterData: true });
+  }
+
+  function onFsStateMsg(active) {
+    embedFsActive = !!active;
+    syncEmbedUiMode();
+  }
+
+  var notifyResize = function () {
+    if (!EMBED || !window.parent) return;
+    flushEmbedResize();
+    requestAnimationFrame(flushEmbedResize);
+  };
+
+  if (EMBED) {
+    syncMobileClass();
+    applyEmbedFrameHeight(measureEmbedHeight());
+    bindEmbedResizeObserver();
+    document.addEventListener("wheel", blockEmbedScroll, { passive: false });
+    document.addEventListener("touchmove", blockEmbedScroll, { passive: false });
+    window.addEventListener("resize", syncEmbedUiMode);
+    window.addEventListener("orientationchange", function () {
+      setTimeout(syncEmbedUiMode, 160);
+    });
+  } else {
+    syncMobileClass();
+    window.addEventListener("resize", syncMobileClass);
+    window.addEventListener("orientationchange", function () {
+      setTimeout(syncMobileClass, 160);
+    });
+  }
+
+  var _showOverlayVp = showOverlay;
+  showOverlay = function (title, sub, btn, opts) {
+    _showOverlayVp(title, sub, btn, opts);
+    syncEmbedUiMode();
+  };
+
+  var _hideOverlayVp = hideOverlay;
+  hideOverlay = function () {
+    _hideOverlayVp();
+    syncEmbedUiMode();
+  };
+
+  var _fitVp = fit;
+  fit = function () {
+    _fitVp();
+    if (EMBED) notifyResize();
+  };
+
+  window.addEventListener("message", function (e) {
+    if (!e.data || typeof e.data !== "object") return;
+    if (e.data.type === "dg-fs-state") onFsStateMsg(e.data.active);
+    if (e.data.type === "dg-request-resize") {
+      flushEmbedResize();
+      scheduleEmbedResizeBurst();
+    }
+  });
+
+  if (EMBED) {
+    syncEmbedUiMode();
+    scheduleEmbedResizeBurst();
+  }

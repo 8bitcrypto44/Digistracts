@@ -10,7 +10,7 @@ css = Path("digistracts.css").read_text(encoding="utf-8")
 css = re.sub(r"\s+", " ", css)
 css = re.sub(r"\s*([{}:;,])\s*", r"\1", css).strip()
 
-_brand_logo = Path("assets/brand/8bitcrypto44_logo.png")
+_brand_logo = Path(__file__).resolve().parent / "assets" / "brand" / "8bitcrypto44_logo.png"
 BRAND_LOGO_URI = (
     "data:image/png;base64," + base64.b64encode(_brand_logo.read_bytes()).decode("ascii")
     if _brand_logo.exists()
@@ -182,7 +182,13 @@ print("platforms embedded", len(platform_uris), "from", [p.name for p in platfor
 print("boss embedded", bool(boss_uri), boss_path.name if boss_path.exists() else "missing")
 print("mid boss embedded", bool(boss_mid_uri), boss_mid_path.name if boss_mid_path.exists() else "missing")
 print("boss parts embedded", bool(boss_parts_obj))
-js = jsmin(mangle(Path("digistracts.js").read_text(encoding="utf-8")))
+_dg_js = Path("digistracts.js").read_text(encoding="utf-8")
+_dg_vp = Path("dg_viewport.js")
+if _dg_vp.exists():
+    _vp = _dg_vp.read_text(encoding="utf-8").strip()
+    if _vp and "})();" in _dg_js:
+        _dg_js = _dg_js.replace("})();", _vp + "\n})();", 1)
+js = jsmin(mangle(_dg_js))
 
 # Hosted full-res backgrounds (Postimg). 6 slots: levels 1-5 + boss.
 BG_URLS = [
@@ -276,7 +282,7 @@ markup = markup.replace("__BRAND_LOGO_SRC__", BRAND_LOGO_URI)
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "53"
+ASSET_V = "56"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]
@@ -286,11 +292,14 @@ preview = (
     "<meta charset=\"UTF-8\">\n"
     "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no\">\n"
     "<title>Digistracts by 8bitcrypto_44</title>\n"
+    "<script>(function(){var t=(\"ontouchstart\"in window)||navigator.maxTouchPoints>0;var n=false,c=false;"
+    "try{n=matchMedia(\"(max-width:700px)\").matches;c=matchMedia(\"(pointer:coarse)\").matches;}catch(e){}"
+    "if((t&&c)||n)document.documentElement.classList.add(\"dg-mobile\");})();</script>\n"
     "<style>"
     "html,body{margin:0;background:#020617;height:100%}"
     "body{padding:16px}"
-    "html.dg-embed,body.dg-embed{padding:0!important;height:100%;overflow:hidden}"
-    "body.dg-embed #digistracts-root{max-width:none;width:100%;height:100%;min-height:100vh;min-height:100dvh;margin:0;border-radius:0;border-left:0;border-right:0;display:flex;flex-direction:column;overflow:hidden}"
+    "html.dg-embed:not(.dg-mobile),body.dg-embed:not(.dg-mobile){padding:0!important;height:100%;overflow:hidden}"
+    "body.dg-embed:not(.dg-mobile) #digistracts-root{max-width:none;width:100%;height:100%;min-height:100vh;min-height:100dvh;margin:0;border-radius:0;border-left:0;border-right:0;display:flex;flex-direction:column;overflow:hidden}"
     "@media(max-width:700px){body{padding:0!important}}"
     "</style>\n"
     "</head>\n<body>\n"
@@ -312,21 +321,21 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
 .dg-gd-brand{{font-size:15px;letter-spacing:1px;color:#ffd400;font-weight:700}}
 .dg-gd-brand span{{color:#00e5ff;font-weight:400;font-size:13px}}
 .dg-gd-stage{{position:relative;width:100%;aspect-ratio:16/9;background:#05070f;border:2px solid #1e3a5f;border-radius:8px;overflow:hidden}}
-.dg-gd-cover{{position:absolute;inset:0;transition:opacity .55s ease}}
+.dg-gd-cover{{position:absolute;inset:0;transition:none}}
 .dg-gd-hero{{position:absolute;inset:0;background:#05070f}}
 .dg-gd-hero img{{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity 1.1s ease}}
 .dg-gd-hero img.is-on{{opacity:1}}
 @keyframes dgTrail{{0%,100%{{opacity:.92}}50%{{opacity:1}}}}
 .dg-gd.is-trailer .dg-gd-veil{{animation:dgTrail 2.4s ease-in-out infinite}}
-.dg-gd-veil{{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px;text-align:center;background:linear-gradient(180deg,rgba(5,7,15,.35) 0%,rgba(5,7,15,.78) 45%,rgba(2,6,23,.94) 100%)}}
+.dg-gd-veil{{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:10px;padding:16px;text-align:center;background:linear-gradient(180deg,rgba(5,7,15,.35) 0%,rgba(5,7,15,.78) 45%,rgba(2,6,23,.94) 100%)}}
 .dg-gd-title{{margin:0;font-size:clamp(26px,5vw,40px);font-weight:700;letter-spacing:2px;color:#ffd400;text-shadow:0 0 18px rgba(255,43,214,.45),3px 3px 0 #05070f;line-height:1.1}}
 .dg-gd-tag{{margin:0;font-size:clamp(13px,2.8vw,15px);color:#e2e8f0;letter-spacing:.2px;max-width:28em;line-height:1.45}}
 .dg-gd-tip{{margin:0;font-size:clamp(12px,2.4vw,14px);color:#67e8f9;letter-spacing:.2px;max-width:28em;line-height:1.4}}
 .dg-gd-promo{{margin:0;font-size:12px;color:#94a3b8;max-width:32em;line-height:1.4}}
-.dg-gd-site{{position:absolute;left:10px;bottom:8px;z-index:3;display:inline-flex;flex-direction:column;align-items:flex-start;gap:2px;text-decoration:none;opacity:.9;max-width:40%}}
-.dg-gd-site img{{width:96px;max-width:100%;height:auto;display:block;image-rendering:pixelated;image-rendering:crisp-edges}}
+.dg-gd-site{{position:relative;left:auto;bottom:auto;z-index:3;display:inline-flex;flex-direction:column;align-items:center;gap:2px;text-decoration:none;opacity:.95;margin-top:auto;align-self:center;max-width:none}}
+.dg-gd-site img{{width:100px;height:auto;max-width:100%;display:block;object-fit:contain;image-rendering:pixelated;image-rendering:crisp-edges}}
 .dg-gd-site span{{font-size:10px;letter-spacing:.4px;color:#67e8f9;text-shadow:0 0 6px rgba(0,229,255,.35)}}
-.dg-gd.is-fading .dg-gd-cover{{opacity:0}}
+.dg-gd.is-fading .dg-gd-cover{{opacity:0;transition:none}}
 .dg-gd-enter{{appearance:none;border:3px solid #00e5ff;border-radius:10px;padding:12px 28px;font:700 16px "Courier New",Courier,monospace;letter-spacing:.3px;cursor:pointer;color:#05070f;background:linear-gradient(180deg,#00e5ff,#0b8de0);box-shadow:0 0 18px rgba(0,229,255,.35),0 4px 0 #062033;transition:transform .12s,box-shadow .12s}}
 .dg-gd-enter:hover{{transform:translateY(-2px) scale(1.03);box-shadow:0 0 26px rgba(255,43,214,.45),0 6px 0 #062033}}
 .dg-gd-enter:active{{transform:scale(.98)}}
@@ -339,53 +348,105 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
 }}
 .dg-gd.is-loading .dg-gd-load{{display:flex}}
 .dg-gd.is-open .dg-gd-cover{{display:none}}
-.dg-gd.is-open .dg-gd-play{{display:block}}
-.dg-gd.is-open.is-land,
-.dg-gd.is-fs-mode{{
-  position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:0!important;
-  inset:0!important;width:100vw!important;width:100dvw!important;height:100vh!important;height:100dvh!important;
-  max-width:none!important;margin:0!important;padding:0!important;
-  z-index:2147483646!important;background:#020617!important;
-  transform:none!important;filter:none!important;perspective:none!important
+.dg-gd.is-open{{overflow:visible}}
+.dg-gd.is-open .dg-gd-play{{display:block;overflow:hidden}}
+.dg-gd.is-open .dg-gd-top{{display:none!important}}
+.dg-gd.is-open .dg-gd-card{{padding:0;display:flex;flex-direction:column;overflow:visible}}
+.dg-gd.is-open:not(.is-fs-mode):not(.is-land) .dg-gd-stage{{
+  aspect-ratio:auto!important;border:0!important;border-radius:0!important;overflow:hidden!important
 }}
-.dg-gd.is-open.is-land .dg-gd-card,
-.dg-gd.is-fs-mode .dg-gd-card{{
-  height:100%!important;width:100%!important;max-width:none!important;border:0!important;border-radius:0!important;padding:0!important;box-shadow:none!important;
-  display:flex!important;flex-direction:column!important;background:#020617!important
+.dg-gd.is-open:not(.is-fs-mode):not(.is-land) .dg-gd-play{{
+  position:relative;inset:auto;overflow:hidden
 }}
-.dg-gd.is-open.is-land .dg-gd-top,
-.dg-gd.is-fs-mode .dg-gd-top{{display:none!important}}
-.dg-gd.is-open.is-land .dg-gd-stage,
-.dg-gd.is-fs-mode .dg-gd-stage{{
-  flex:1!important;min-height:0!important;aspect-ratio:auto!important;height:auto!important;border:0!important;border-radius:0!important
+.dg-gd.is-open:not(.is-fs-mode):not(.is-land) .dg-gd-play iframe{{
+  position:relative;inset:auto;display:block;overflow:hidden;border:0;width:100%
 }}
-.dg-gd.is-fs-mode .dg-gd-play iframe{{position:absolute!important;inset:0!important;width:100%!important;height:100%!important}}
-/* Phone portrait open: still expand to a tall play shell (not trapped 16:9 card) */
-.dg-gd.is-open.is-phone:not(.is-fs-mode):not(.is-land){{
-  position:fixed!important;inset:0!important;width:100vw!important;width:100dvw!important;
-  height:100vh!important;height:100dvh!important;max-width:none!important;margin:0!important;z-index:2147483645!important;
-  background:#020617!important;padding:0!important
+.dg-gd.is-open.is-land,.dg-gd.is-fs-mode{{
+  position:fixed!important;inset:0!important;width:100vw!important;width:100dvw!important;height:100vh!important;height:100dvh!important;
+  max-width:none!important;margin:0!important;padding:0!important;z-index:2147483646!important;background:#020617!important;overflow:hidden!important
 }}
-.dg-gd.is-open.is-phone:not(.is-fs-mode):not(.is-land) .dg-gd-card{{
-  height:100%!important;border:0!important;border-radius:0!important;padding:0!important;box-shadow:none!important;
+.dg-gd.is-open.is-land .dg-gd-card,.dg-gd.is-fs-mode .dg-gd-card{{
+  height:100%!important;width:100%!important;border:0!important;border-radius:0!important;padding:0!important;box-shadow:none!important;
+  display:flex!important;flex-direction:column!important;background:#020617!important;overflow:hidden!important
+}}
+.dg-gd.is-open.is-land .dg-gd-top,.dg-gd.is-fs-mode .dg-gd-top{{display:none!important}}
+.dg-gd.is-open.is-land .dg-gd-stage,.dg-gd.is-fs-mode .dg-gd-stage{{
+  flex:1!important;min-height:0!important;aspect-ratio:auto!important;height:auto!important;border:0!important;border-radius:0!important;overflow:hidden!important
+}}
+.dg-gd.is-open.is-land .dg-gd-play,.dg-gd.is-fs-mode .dg-gd-play{{flex:1!important;min-height:0!important;overflow:hidden!important}}
+.dg-gd.is-open.is-land .dg-gd-play iframe,.dg-gd.is-fs-mode .dg-gd-play iframe{{
+  position:absolute!important;inset:0!important;width:100%!important;height:100%!important;min-height:0!important;border:0!important
+}}
+.dg-gd.is-mobile.is-open:not(.is-fs-mode):not(.is-land) .dg-gd-stage,
+.dg-gd.is-mobile.is-open:not(.is-fs-mode):not(.is-land) .dg-gd-play{{
+  min-height:0!important;max-height:none!important
+}}
+.dg-gd.is-mobile.is-open:not(.is-fs-mode):not(.is-land) .dg-gd-play iframe{{
+  min-height:0!important;max-height:none!important;
+  position:relative!important;inset:auto!important;display:block!important;overflow:visible!important;
+  width:100%!important;border:0!important
+}}
+.dg-gd.is-mobile.is-open:not(.is-fs-mode):not(.is-land) .dg-gd-stage{{overflow:visible!important}}
+.dg-gd.is-mobile.is-open:not(.is-fs-mode):not(.is-land) .dg-gd-play{{overflow:visible!important}}
+.dg-gd:not(.is-mobile):not(.is-open) .dg-gd-card{{overflow:hidden}}
+.dg-gd:not(.is-mobile):not(.is-open) .dg-gd-stage{{
+  aspect-ratio:16/9!important;min-height:0!important;height:auto!important;overflow:hidden!important
+}}
+.dg-gd.is-mobile:not(.is-open) .dg-gd-card{{overflow:visible}}
+.dg-gd.is-mobile:not(.is-open) .dg-gd-stage{{
+  aspect-ratio:auto!important;min-height:0!important;height:auto!important;overflow:visible!important;
   display:flex!important;flex-direction:column!important
 }}
-.dg-gd.is-open.is-phone:not(.is-fs-mode):not(.is-land) .dg-gd-top{{display:none!important}}
-.dg-gd.is-open.is-phone:not(.is-fs-mode):not(.is-land) .dg-gd-stage{{
-  flex:1!important;min-height:0!important;aspect-ratio:auto!important;height:auto!important;border:0!important;border-radius:0!important
+.dg-gd.is-mobile:not(.is-open) .dg-gd-cover{{
+  position:relative!important;inset:auto!important;display:flex!important;flex-direction:column!important;min-height:0!important
+}}
+.dg-gd.is-mobile:not(.is-open) .dg-gd-hero{{
+  position:relative!important;flex:0 0 auto!important;aspect-ratio:16/9!important;
+  max-height:38vh!important;min-height:150px!important;width:100%!important;overflow:hidden!important
+}}
+.dg-gd.is-mobile:not(.is-open) .dg-gd-veil{{
+  position:relative!important;inset:auto!important;flex:0 0 auto!important;min-height:0!important;
+  justify-content:flex-start;padding:14px 12px 18px;gap:8px
+}}
+.dg-gd.is-mobile:not(.is-open) .dg-gd-site{{
+  position:relative!important;left:auto!important;bottom:auto!important;margin-top:10px;align-self:center
 }}
 /* GoDaddy traps fixed positioning via parent transforms — JS moves #dg-gd onto document.body.
    Native fullscreen is requested on the iframe element so in-game clicks do not cancel it. */
 @media (max-width:700px){{
   .dg-gd-card{{padding:4px;border-width:2px}}
+  .dg-gd:not(.is-open) .dg-gd-card{{overflow:visible}}
+  .dg-gd:not(.is-open) .dg-gd-stage{{
+    aspect-ratio:auto!important;min-height:0!important;height:auto!important;overflow:visible!important;
+    display:flex!important;flex-direction:column!important
+  }}
+  .dg-gd:not(.is-open) .dg-gd-cover{{
+    position:relative!important;inset:auto!important;display:flex!important;flex-direction:column!important;min-height:0!important
+  }}
+  .dg-gd:not(.is-open) .dg-gd-hero{{
+    position:relative!important;flex:0 0 auto!important;aspect-ratio:16/9!important;
+    max-height:38vh!important;min-height:150px!important;width:100%!important;overflow:hidden!important
+  }}
+  .dg-gd:not(.is-open) .dg-gd-veil{{
+    position:relative!important;inset:auto!important;flex:0 0 auto!important;min-height:0!important;
+    justify-content:flex-start;padding:14px 12px 18px;gap:8px
+  }}
+  .dg-gd:not(.is-open) .dg-gd-site{{
+    position:relative!important;left:auto!important;bottom:auto!important;margin-top:8px;align-self:center
+  }}
   .dg-gd-top{{margin-bottom:4px}}
   .dg-gd-brand{{font-size:13px}}
   .dg-gd-enter{{padding:14px 22px;min-height:48px;width:min(100%,280px);font-size:16px}}
   .dg-gd-title{{font-size:clamp(28px,9vw,44px)}}
   .dg-gd-tip{{font-size:13px}}
-  .dg-gd-site{{left:8px;bottom:6px}}
-  .dg-gd-site img{{width:72px}}
+  .dg-gd-site img{{width:88px}}
   .dg-gd-site span{{font-size:9px}}
+}}
+@media (min-width:701px){{
+  .dg-gd:not(.is-open) .dg-gd-stage{{
+    aspect-ratio:16/9!important;min-height:0!important;height:auto!important;overflow:hidden!important
+  }}
+  .dg-gd:not(.is-open) .dg-gd-card{{overflow:hidden}}
 }}
 </style>
 <div class="dg-gd" id="dg-gd">
@@ -404,11 +465,11 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
         <div class="dg-gd-veil">
           <h2 class="dg-gd-title">DIGISTRACTS</h2>
           <p class="dg-gd-tag">Neon streets · Robot hunters · Staff magic · Boss core</p>
-          <p class="dg-gd-tip">Play → PRESS START · Phone: fullscreen + stick / JUMP / FIRE</p>
+          <p class="dg-gd-tip">Play → PRESS START · Phone: scroll menu · landscape FS · stick / JUMP / FIRE</p>
           <button type="button" class="dg-gd-enter" id="dg-gd-enter" aria-expanded="false">PLAY DIGISTRACTS</button>
           <p class="dg-gd-promo">Also: Primal Odyssey · Thank You For Your Service kids books</p>
           <a class="dg-gd-site" href="https://www.8bitcrypto44.xyz" target="_blank" rel="noopener noreferrer" aria-label="8bitcrypto_44 website">
-            <img src="{BRAND_LOGO_URI}" alt="" width="96" height="13" decoding="async">
+            <img src="{BRAND_LOGO_URI}" alt="8bitcrypto_44" width="100" height="13" decoding="async">
             <span>www.8bitcrypto44.xyz</span>
           </a>
         </div>
@@ -442,24 +503,67 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
     try{{
       if(window.matchMedia("(pointer: fine)").matches && !window.matchMedia("(pointer: coarse)").matches)return false;
     }}catch(e){{}}
-    return (("ontouchstart" in window)||(navigator.maxTouchPoints>0)) && !!(window.matchMedia&&window.matchMedia("(pointer: coarse)").matches);
+    var touch=("ontouchstart" in window)||(navigator.maxTouchPoints>0);
+    var narrow=false,coarse=false;
+    try{{
+      narrow=window.matchMedia("(max-width:700px)").matches;
+      coarse=window.matchMedia("(pointer: coarse)").matches;
+    }}catch(e2){{}}
+    return (touch&&coarse)||narrow;
   }}
   function land(){{
     if(window.matchMedia&&window.matchMedia("(orientation: landscape)").matches)return true;
     return window.innerWidth>window.innerHeight;
   }}
   function isFs(){{
-    return root.classList.contains("is-fs-mode") ||
+    return root.classList.contains("is-fs-mode")||
       !!(document.fullscreenElement||document.webkitFullscreenElement);
   }}
   function syncFsClass(){{
     root.classList.toggle("is-fs", root.classList.contains("is-fs-mode"));
   }}
   function syncLand(){{
-    var onPhone=phone();
-    root.classList.toggle("is-phone", onPhone && root.classList.contains("is-open"));
-    root.classList.toggle("is-land", root.classList.contains("is-open") && playing && onPhone && land());
+    root.classList.toggle("is-land", root.classList.contains("is-open")&&playing&&phone()&&land());
     syncFsClass();
+  }}
+  function mobileMode(){{return root.classList.contains("is-mobile")||phone();}}
+  function clearCoverHeights(){{
+    var st=root.querySelector(".dg-gd-stage"),pl=document.getElementById("dg-gd-play");
+    if(st){{st.style.minHeight="";st.style.height="";st.style.maxHeight="";st.style.aspectRatio="";}}
+    if(pl){{pl.style.minHeight="";pl.style.height="";pl.style.maxHeight="";}}
+  }}
+  function embedDefaultH(){{return 920;}}
+  function mobileBootH(){{
+    var vh=Math.max(320,Math.round(window.innerHeight||document.documentElement.clientHeight||680));
+    return Math.max(680,Math.round(vh*1.05));
+  }}
+  function openBootH(){{
+    var st=root.querySelector(".dg-gd-stage"),cov=root.querySelector(".dg-gd-cover"),h=0;
+    if(st)h=Math.max(h,Math.round(st.scrollHeight||0),Math.round(st.offsetHeight||0),Math.round(st.getBoundingClientRect().height||0));
+    if(cov)h=Math.max(h,Math.round(cov.scrollHeight||0),Math.round(cov.offsetHeight||0));
+    return Math.max(h,mobileBootH());
+  }}
+  function requestChildResize(){{try{{if(frame.contentWindow)frame.contentWindow.postMessage({{type:"dg-request-resize"}},"*");}}catch(e){{}}}}
+  function setFrameHeight(h){{
+    if(isFs()||root.classList.contains("is-land"))return;
+    if(!root.classList.contains("is-open")){{clearCoverHeights();return;}}
+    var contentH=Math.max(680,Math.round(Number(h)||920));
+    if(mobileMode()&&!root.classList.contains("is-land")){{
+      if(root.classList.contains("is-loading"))contentH=Math.max(contentH,openBootH());
+      frame.setAttribute("scrolling","no");
+      root.classList.add("is-mobile");
+      h=contentH;
+    }}else{{
+      h=contentH;
+      if(!phone())frame.setAttribute("scrolling","no");
+    }}
+    frame.style.height=h+"px";
+    frame.style.minHeight=h+"px";
+    frame.style.maxHeight="none";
+    var st=root.querySelector(".dg-gd-stage");
+    var pl=document.getElementById("dg-gd-play");
+    if(st){{st.style.height="auto";st.style.minHeight="0";st.style.maxHeight="none";st.style.aspectRatio="auto";}}
+    if(pl){{pl.style.height="auto";pl.style.minHeight="0";pl.style.maxHeight="none";}}
   }}
   function notifyFrame(){{
     try{{
@@ -562,34 +666,35 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
     frame.setAttribute("src",baseSrc);
     root.classList.add("is-open");
     root.classList.add("is-loading");
-    root.classList.add("is-fading");
     root.classList.remove("is-trailer");
     playing=true;
     btn.setAttribute("aria-expanded","true");
+    if(phone()){{root.classList.add("is-mobile");frame.setAttribute("scrolling","no");if(land())enterFs();}}else{{
+      try{{document.documentElement.style.overflow="hidden";document.body.style.overflow="hidden";}}catch(e){{}}
+    }}
+    setFrameHeight(phone()?openBootH():embedDefaultH());
     syncLand();
-    // Phones: expand to fullscreen shell immediately (portrait or landscape)
-    if(phone())enterFs();
+    requestChildResize();
     try{{frame.focus();}}catch(e){{}}
-    setTimeout(function(){{root.classList.remove("is-fading");}},600);
   }}
   btn.addEventListener("click",openGame);
   frame.addEventListener("load",function(){{
     root.classList.remove("is-loading");
+    requestChildResize();
   }});
   setTimeout(function(){{root.classList.remove("is-loading");}},8000);
-  root.addEventListener("touchstart",function(){{
-    if(!phone()||isFs())return;
-    if(root.classList.contains("is-open"))enterFs();
-  }},{{passive:true}});
   window.addEventListener("message",function(e){{
     if(!e.data||typeof e.data!=="object")return;
     if(e.data.type==="dg-chrome"){{
       if(typeof e.data.inGame==="boolean")playing=!!e.data.inGame;
       syncLand();
-      if(e.data.inGame&&phone()&&!isFs())enterFs();
+      requestChildResize();
+      if(e.data.inGame&&mobileMode()){{setTimeout(requestChildResize,80);setTimeout(requestChildResize,240);setTimeout(requestChildResize,480);}}
     }}
     if(e.data.type==="dg-fs")enterFs();
     if(e.data.type==="dg-fs-exit")exitFs();
+    if(e.data.type==="dg-mobile")root.classList.toggle("is-mobile",!!e.data.active);
+    if(e.data.type==="dg-resize"&&e.data.height&&!isFs()&&!root.classList.contains("is-land"))setFrameHeight(e.data.height);
   }});
   function onFsChange(){{
     var native=!!(document.fullscreenElement||document.webkitFullscreenElement);
@@ -605,8 +710,9 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
   }}
   document.addEventListener("fullscreenchange",onFsChange);
   document.addEventListener("webkitfullscreenchange",onFsChange);
-  window.addEventListener("resize",syncLand);
-  window.addEventListener("orientationchange",function(){{setTimeout(syncLand,120);}});
+  window.addEventListener("resize",function(){{syncLand();if(root.classList.contains("is-open")&&!isFs())requestChildResize();}});
+  window.addEventListener("orientationchange",function(){{setTimeout(function(){{syncLand();if(root.classList.contains("is-open")&&!isFs())requestChildResize();else clearCoverHeights();}},120);}});
+  if(phone())root.classList.add("is-mobile");
 }})();
 </script>
 """

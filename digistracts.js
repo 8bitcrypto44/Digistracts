@@ -2234,7 +2234,7 @@
     const sDef = goingSecret ? secretDef(secretId) : null;
     const L = goingSecret ? sDef.level : LEVELS[idx];
     if (!goingSecret) {
-      state.level = idx;
+    state.level = idx;
       state.inSecret = false;
       state.activeSecret = null;
       const hostSecret = secretForHostTheme(L.theme);
@@ -2692,7 +2692,7 @@
         });
         muzzleSparks(tip, def.color);
         slideBeep(900, 1400, 0.08, "square", 0.05);
-      } else {
+          } else {
         const bounces = def.bounces || 5;
         if (aim) {
           state.bullets.push({
@@ -2899,7 +2899,7 @@
           state._bossClear = true;
           onLevelComplete();
         } else {
-          startCredits();
+        startCredits();
         }
       }
       return;
@@ -3031,10 +3031,10 @@
       ]
       : [
         { who: "YOU", line: "Redcore Sentinel—stand down!" },
-        { who: "BOSS", line: "THE CORE IS OURS." },
-        { who: "YOU", line: "Faith and code will free it." },
-        { who: "BOSS", line: "THEN BE ERASED." }
-      ];
+      { who: "BOSS", line: "THE CORE IS OURS." },
+      { who: "YOU", line: "Faith and code will free it." },
+      { who: "BOSS", line: "THEN BE ERASED." }
+    ];
     state.talkI = 0;
     state.talkT = 0;
     state.banner = mid
@@ -4507,7 +4507,7 @@
       b.laserAimX += (p.x + p.w / 2 - b.laserAimX) * (b.midBoss ? 0.08 : 0.04);
       b.laserAimY += (p.y + p.h / 2 - b.laserAimY) * (b.midBoss ? 0.08 : 0.04);
       if (b.timer <= 0) {
-        b.mode = "laser";
+      b.mode = "laser";
         b.timer = b.phase === 2 ? (b.midBoss ? 28 : 36) : (b.midBoss ? 22 : 28);
         sfxBossLaser();
       }
@@ -4542,8 +4542,8 @@
           beep(640, 0.06, "sawtooth", 0.06);
           b.eyeCD = b.phase === 2 ? 12 : 16;
         } else {
-          bossFireEye(b);
-          b.eyeCD = b.phase === 2 ? 14 : 18;
+        bossFireEye(b);
+        b.eyeCD = b.phase === 2 ? 14 : 18;
         }
       }
       if (b.timer <= 0) {
@@ -4613,9 +4613,9 @@
       b.slamX += ((p.x + p.w / 2 - b.w / 2) - b.slamX) * 0.08;
       b.slamX = Math.max(30, Math.min(W - b.w - 30, b.slamX));
       if (b.timer <= 0) {
-        b.mode = "skySlam";
-        b.timer = 50;
-        beep(140, 0.16, "sawtooth", 0.08);
+      b.mode = "skySlam";
+      b.timer = 50;
+      beep(140, 0.16, "sawtooth", 0.08);
       }
     } else if (b.mode === "skySlam") {
       b.x += (b.slamX - b.x) * 0.42;
@@ -4636,10 +4636,10 @@
           b.pulseR = 40;
           beep(70, 0.22, "square", 0.1);
         } else {
-          beep(70, 0.22, "square", 0.1);
-          b.mode = "recover";
+        beep(70, 0.22, "square", 0.1);
+        b.mode = "recover";
           b.timer = 40;
-          b.vulnerable = true;
+        b.vulnerable = true;
         }
       }
     } else if (b.mode === "jumpCharge" && b.timer <= 0) {
@@ -4795,8 +4795,8 @@
           p.onGround = false;
           sfxBounce();
           explode(p.x + p.w / 2, plat.y, "#c084fc", 8);
-          return true;
-        }
+        return true;
+      }
         if (plat.crumble && !plat.gone) {
           plat.life = (plat.life == null ? plat.maxLife : plat.life) - 1;
           if (plat.life <= 0) {
@@ -5086,12 +5086,12 @@
         if (state.godMode) {
           state.levelTime = sectorTimeBudget();
         } else {
-          state.levelTime = 0;
-          onTimeUp();
-          updateHUD();
-          return;
-        }
+        state.levelTime = 0;
+        onTimeUp();
+        updateHUD();
+        return;
       }
+    }
     }
     updateMovers();
     updateArena(calm);
@@ -5118,8 +5118,8 @@
     else if (p.coyote > 0) p.coyote--;
     if (!state.talkQ) {
       if (jumpDown && p.onGround) {
-        p.vy = -8.6;
-        p.onGround = false;
+      p.vy = -8.6;
+      p.onGround = false;
         p.coyote = 0;
         sfxJump();
       } else if (jumpPressed && p.coyote > 0) {
@@ -5216,16 +5216,16 @@
 
     if (!state.talkQ && def && def.kind === "beam") {
       p.beaming = firing && p.beamFuel > 0;
-      if (p.beaming) {
-        shootGun(p.beamAim);
-        if (p.beamFuel <= 0) {
+    if (p.beaming) {
+      shootGun(p.beamAim);
+      if (p.beamFuel <= 0) {
           clearWeapon();
           state.banner = "SPECIAL GUN EMPTY!";
           state.messageTimer = 55;
         }
       }
     } else if (!state.talkQ && def && def.kind === "charge") {
-      p.beaming = false;
+        p.beaming = false;
       if (firing && p.beamFuel > 0) {
         p.maxiPending = 0;
         p.maxiCharge = Math.min(54, (p.maxiCharge || 0) + 1);
@@ -5242,9 +5242,9 @@
         p.maxiCharge = 0;
         if (p.beamFuel <= 0) {
           clearWeapon();
-          state.banner = "SPECIAL GUN EMPTY!";
-          state.messageTimer = 55;
-        }
+        state.banner = "SPECIAL GUN EMPTY!";
+        state.messageTimer = 55;
+      }
       } else if (!firing && !p.maxiPending) {
         p.maxiCharge = 0;
       }
@@ -5252,7 +5252,7 @@
       p.beaming = false;
       p.maxiCharge = 0;
       if (firing && p.beamFuel > 0) {
-        shootGun(p.beamAim);
+      shootGun(p.beamAim);
         if (p.beamFuel <= 0) {
           clearWeapon();
           state.banner = "SPECIAL GUN EMPTY!";
@@ -5503,7 +5503,7 @@
             });
             if (b.pulse) {
               pulseExplode(b);
-              b.life = 0;
+            b.life = 0;
               continue;
             }
             explode(b.x + b.w / 2, b.y + b.h / 2, b.color || N("gold"), b.charged ? 12 : 5);
@@ -5554,7 +5554,7 @@
           if (b.rico && b.bounces > 0) {
             b.vx *= -1; b.vy *= -1; b.bounces--;
           } else {
-            b.life = 0;
+          b.life = 0;
           }
         }
       } else if (b.from === "enemy") {
@@ -5562,7 +5562,7 @@
         const bcx = b.x + b.w / 2, bcy = b.y + b.h / 2;
         const dist = Math.hypot(pcx - bcx, pcy - bcy);
         if (rectsOverlap(b, p)) {
-          b.life = 0;
+        b.life = 0;
           hurtPlayer(null, "bullet");
         } else if (!b.grazed && state.invuln <= 0 && !(p.goldT > 0) && dist < 28 && dist > 10) {
           b.grazed = true;
@@ -5616,17 +5616,17 @@
           activateOverclock(8);
         } else {
           addScore(q.power === "gold" ? 500 : q.power === "speed" ? 400 : 250);
-          if (q.power === "speed") {
-            p.speedT = 300;
-            state.banner = "SPEED BOOST 5s!";
-            state.messageTimer = 70;
+        if (q.power === "speed") {
+          p.speedT = 300;
+          state.banner = "SPEED BOOST 5s!";
+          state.messageTimer = 70;
             sfxPickup("speed");
-          } else if (q.power === "gold") {
-            p.goldT = 300;
-            state.banner = "INVINCIBLE 5s!";
-            state.messageTimer = 70;
+        } else if (q.power === "gold") {
+          p.goldT = 300;
+          state.banner = "INVINCIBLE 5s!";
+          state.messageTimer = 70;
             sfxPickup("gold");
-          } else {
+        } else {
             sfxPickup();
           }
         }
@@ -6433,9 +6433,9 @@
     const flick = Math.floor(performance.now() / 55) % 2;
 
     if (b.homing || b.shot === "homing") {
-      ctx.save();
+    ctx.save();
       ctx.translate(cx, cy);
-      ctx.rotate(ang);
+    ctx.rotate(ang);
       pxFill(N("ink"), -11, -5, 20, 10);
       pxFill(col, -9, -4, 18, 8);
       pxFill(N("white"), 2, -2, 10, 4);
@@ -6617,7 +6617,7 @@
     if (p.weapon === "SPREAD") {
       ctx.fillStyle = N("ink");
       ctx.fillRect(24, -8, 12, 3); ctx.fillRect(24, -1, 12, 3); ctx.fillRect(24, 6, 12, 3);
-      ctx.fillStyle = glow;
+    ctx.fillStyle = glow;
       ctx.fillRect(26, -7, 10, 1); ctx.fillRect(26, 0, 10, 1); ctx.fillRect(26, 7, 10, 1);
     } else if (p.weapon === "MAXI") {
       const mc = Math.min(1, (p.maxiCharge || 0) / 54);
@@ -6992,7 +6992,7 @@
         if (b.midBoss) {
           ctx.fillStyle = b.mode === "laser" ? "rgba(232,121,249,.4)" : "rgba(232,121,249,.18)";
         } else {
-          ctx.fillStyle = b.mode === "laser" ? "rgba(57,255,20,.35)" : "rgba(57,255,20,.18)";
+        ctx.fillStyle = b.mode === "laser" ? "rgba(57,255,20,.35)" : "rgba(57,255,20,.18)";
         }
         ctx.fillRect(0, b.mode === "laser" ? -8 : -1, len, b.mode === "laser" ? 16 : 2);
         if (b.mode === "laser") {
@@ -7085,7 +7085,7 @@
         ctx.fillRect(0, 0, W, H);
         ctx.globalAlpha = 1;
       } else {
-        ctx.fillRect(0, 0, W, H);
+      ctx.fillRect(0, 0, W, H);
       }
     }
 
@@ -7281,7 +7281,7 @@
         return;
       }
       stopAttract();
-      keys[e.key] = true;
+    keys[e.key] = true;
       return;
     }
     keys[e.key] = true;
@@ -7456,12 +7456,12 @@
       el.addEventListener("pointercancel", up);
       el.addEventListener("lostpointercapture", up);
     } else {
-      el.addEventListener("touchstart", down, { passive: false });
-      el.addEventListener("touchend", up, { passive: false });
-      el.addEventListener("touchcancel", up, { passive: false });
-      el.addEventListener("mousedown", down);
-      el.addEventListener("mouseup", up);
-      el.addEventListener("mouseleave", up);
+    el.addEventListener("touchstart", down, { passive: false });
+    el.addEventListener("touchend", up, { passive: false });
+    el.addEventListener("touchcancel", up, { passive: false });
+    el.addEventListener("mousedown", down);
+    el.addEventListener("mouseup", up);
+    el.addEventListener("mouseleave", up);
     }
   }
 
@@ -7523,7 +7523,7 @@
       if (ev.touches || ev.changedTouches) {
         t = touchById(ev.touches) || touchById(ev.changedTouches);
         if (!t) return;
-        ev.preventDefault();
+      ev.preventDefault();
       } else {
         t = ev;
         ev.preventDefault();
@@ -7659,7 +7659,7 @@
     ROOT.classList.toggle("dg-land", phoneLand);
     ROOT.classList.toggle("dg-fs", fs);
 
-    const top = ROOT.querySelector(".dg-top");
+      const top = ROOT.querySelector(".dg-top");
     const help = ROOT.querySelector(".dg-help");
     const stage = ROOT.querySelector(".dg-stage");
 
