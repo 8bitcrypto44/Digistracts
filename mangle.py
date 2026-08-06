@@ -22,7 +22,7 @@ startBossGame drawPlatforms holes baseY superJump holeCount droneDive crouch
 PREACHER_SRC spin limb endX elbow startBtn respawnX levelNow fireHeld
 forceFlying firePressed campingHigh addPlatform firing updatePlay updateBoss
 superJumps spawnDrone makePlayer inputShoot ROBOT_SRCS swing hitCD targets
-lastTap bossBtn LEVELS phase drawBoss drawPlay GUNP PAL levelBanner
+lastTap bossBtn LEVELS phase drawBoss drawBossRigged drawBossPart drawBossWholeBody bossAnimPose bossPartsReady drawPlay GUNP PAL levelBanner
 bossEye bossFireEye eyeCD eyeFire eyeCharge drawFireball drawBullet drawPickupQR drawPickupGun drawBossHealth drawBossGun
 laserAimX laserAimY slamX skyRise skyHold skySlam bindJoystick
 failTeam continueAfterFail startCredits updateCredits drawCredits

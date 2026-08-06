@@ -104,15 +104,14 @@ if not boss_mid_path.exists():
     boss_mid_path = Path("assets/sprites/boss_pulse.png")
 boss_mid_uri = compress_boss(boss_mid_path, height=158) if boss_mid_path.exists() else ""
 
-# Skeletal parts (from split_boss_parts.py)
+# Skeletal / hybrid parts (from split_boss_parts.py) — always regenerate
 import json as _json
 import subprocess as _subprocess
 _parts_json = Path("assets/sprites/boss_parts.json")
-if not _parts_json.exists():
-    try:
-        _subprocess.check_call(["python", "split_boss_parts.py"], cwd=str(Path(".").resolve()))
-    except Exception:
-        pass
+try:
+    _subprocess.check_call(["python", "split_boss_parts.py"], cwd=str(Path(".").resolve()))
+except Exception as _parts_err:
+    print("boss parts regenerate warning:", _parts_err)
 boss_parts_obj = _json.loads(_parts_json.read_text(encoding="utf-8")) if _parts_json.exists() else None
 boss_parts_js = _json.dumps(boss_parts_obj) if boss_parts_obj else "null"
 
@@ -265,7 +264,7 @@ markup = (
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "50"
+ASSET_V = "51"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]

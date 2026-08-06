@@ -85,13 +85,23 @@
     if (!BOSS_PARTS_DATA || !BOSS_PARTS_DATA[key] || !BOSS_PARTS_DATA[key].uris) return null;
     const uris = BOSS_PARTS_DATA[key].uris;
     const pack = { meta: BOSS_PARTS_DATA[key].meta || {}, imgs: {} };
-    ["head", "torso", "armL", "armR", "legL", "legR", "full"].forEach(function (n) {
+    ["head", "body", "torso", "armL", "armR", "legL", "legR", "full"].forEach(function (n) {
       if (uris[n]) pack.imgs[n] = loadImg(uris[n]);
     });
     return pack;
   }
   imgs.bossParts.final = loadBossPartPack("final");
   imgs.bossParts.mid = loadBossPartPack("mid");
+
+  function bossPartsReady(pack) {
+    if (!pack || !pack.imgs || !pack.meta || !pack.meta.parts) return false;
+    const need = ["body", "armL", "armR", "legL", "legR", "head"];
+    for (let i = 0; i < need.length; i++) {
+      const im = pack.imgs[need[i]];
+      if (!im || !im.complete || !im.naturalWidth) return false;
+    }
+    return true;
+  }
 
   const keys = Object.create(null);
   const touch = { left: false, right: false, up: false, down: false, jump: false, shoot: false, jx: 0, jy: 0 };
@@ -5990,72 +6000,137 @@
   }
 
   function bossAnimPose(b) {
-    // Whole-body puppet only — no independent limb cutouts (avoids chest tearing).
+    // Hybrid puppet: intact chest body + independent limbs / head.
     const t = b.walk || 0;
     const mode = b.mode || "idle";
-    const moving = Math.abs(b.vx || 0) > 0.35 || mode === "dash" || mode === "idle" || mode === "recover";
-    const spd = mode === "dash" ? 1.85 : (mode === "jump" || mode === "skySlam" ? 1.35 : 1.15);
-    const amp = mode === "idle" || mode === "recover" ? 0.72 : 1;
-    const gait = Math.sin(t * spd) * amp;
+    const spd = mode === "dash" ? 2.05 : (mode === "jump" || mode === "skySlam" ? 1.35 : 1.15);
+    const gait = Math.sin(t * spd);
     const charge = mode.indexOf("Charge") >= 0 || mode === "skyHold" || mode === "pulseCharge";
     const jump = mode === "jump" || mode === "skySlam" || mode === "skyRise";
     const dash = mode === "dash";
     const laser = mode === "laser" || mode === "laserCharge" || mode === "eyeFire" || mode === "eyeCharge";
-    let lean = Math.sin(t * 0.4) * 0.03;
-    let bob = Math.abs(Math.sin(t * spd)) * (moving ? 3.6 : 1.6);
+    const idle = mode === "idle" || mode === "recover";
+    let lean = Math.sin(t * 0.4) * 0.025;
+    let bob = 0;
     let stretchX = 1;
     let stretchY = 1;
+    let legL = 0, legR = 0, armL = 0, armR = 0;
+    let headTilt = Math.sin(t * 0.55) * 0.045;
+    let headBob = Math.sin(t * 0.7) * 1.15;
+    let hipBob = 0;
+    let air = false;
+    let plant = true;
     if (dash) {
-      lean = -0.12;
-      bob = 1;
-      stretchX = 1.06;
-      stretchY = 0.94;
+      lean = -0.14;
+      bob = Math.abs(gait) * 1.6;
+      stretchX = 1.05;
+      stretchY = 0.95;
+      legL = gait * 0.58;
+      legR = -gait * 0.58;
+      armL = -gait * 0.48;
+      armR = gait * 0.48;
+      hipBob = Math.abs(gait) * 2.2;
+      headTilt = gait * 0.05;
     } else if (jump) {
-      lean = -0.06;
-      bob = -6;
-      stretchX = 0.92;
-      stretchY = 1.1;
+      lean = -0.07;
+      bob = -7;
+      stretchX = 0.93;
+      stretchY = 1.08;
+      air = true;
+      plant = false;
+      legL = -0.55;
+      legR = -0.38;
+      armL = -0.9;
+      armR = -0.72;
+      headTilt = -0.05;
+      headBob = -1;
     } else if (charge) {
       lean = 0.1;
-      bob += Math.sin(performance.now() / 45) * 1.5;
+      bob = Math.sin(performance.now() / 45) * 1.5;
       stretchX = 1.03;
       stretchY = 0.97;
+      armL = 0.28;
+      armR = -0.62;
+      legL = 0.1;
+      legR = -0.08;
+      headTilt = 0.06;
     } else if (laser) {
-      lean = 0.04;
-      bob = 1.2;
-    } else if (moving) {
-      lean += gait * 0.04;
+      lean = 0.05;
+      bob = 1.0;
+      armL = 0.22;
+      armR = -0.7;
+      legL = 0.06;
+      legR = -0.05;
+      headTilt = 0.04;
+    } else if (idle) {
+      lean += Math.sin(t * 0.35) * 0.02;
+      bob = Math.abs(Math.sin(t * 0.5)) * 1.15;
+      legL = Math.sin(t * 0.35) * 0.035;
+      legR = -Math.sin(t * 0.35) * 0.035;
+      armL = Math.sin(t * 0.4) * 0.07 + 0.04;
+      armR = -Math.sin(t * 0.4) * 0.07 + 0.04;
+      hipBob = Math.abs(Math.sin(t * 0.35)) * 0.9;
+    } else {
+      // walk / chase
+      lean += gait * 0.045;
+      bob = Math.abs(gait) * 2.2;
+      legL = gait * 0.44;
+      legR = -gait * 0.44;
+      armL = -gait * 0.4;
+      armR = gait * 0.4;
+      hipBob = Math.abs(gait) * 2.0;
     }
-    return { lean: lean, bob: bob, stretchX: stretchX, stretchY: stretchY };
+    return {
+      lean: lean, bob: bob, stretchX: stretchX, stretchY: stretchY,
+      legL: legL, legR: legR, armL: armL, armR: armR,
+      headTilt: headTilt, headBob: headBob, hipBob: hipBob,
+      air: air, plant: plant, gait: gait
+    };
   }
 
-  function drawBossRigged(b, sx, sy, core, pulse, charging, eyeOn, active) {
-    // Draw one full sprite with whole-body transforms (no arm/torso cutouts).
-    const pack = b.midBoss ? imgs.bossParts.mid : imgs.bossParts.final;
-    let sprite = b.midBoss ? imgs.bossMid : imgs.boss;
-    if (!sprite || !sprite.complete || !sprite.naturalWidth) {
-      sprite = pack && pack.imgs ? pack.imgs.full : null;
+  function drawBossPart(img, pm, scale, ox, oy, ang, plantY, air) {
+    if (!img || !pm) return;
+    const pw = pm.w * scale;
+    const ph = pm.h * scale;
+    const px = ox + pm.ox * scale;
+    const py = oy + pm.oy * scale;
+    const piv = pm.pivot || [0.5, 0.15];
+    const foot = pm.foot || [0.5, 0.96];
+    const pivX = pw * piv[0];
+    const pivY = ph * piv[1];
+    const footX = pw * foot[0] - pivX;
+    const footY = ph * foot[1] - pivY;
+    ctx.save();
+    ctx.translate(px + pivX, py + pivY);
+    if (plantY != null && !air) {
+      const ry = footX * Math.sin(ang) + footY * Math.cos(ang);
+      let dy = plantY - (py + pivY) - ry;
+      if (dy > 10) dy = 10;
+      if (dy < -8) dy = -8;
+      ctx.translate(0, dy);
+    } else if (air) {
+      ctx.translate(0, -3);
     }
-    if (!sprite || !sprite.complete || !sprite.naturalWidth) return false;
+    ctx.rotate(ang);
+    ctx.drawImage(img, -pivX, -pivY, pw, ph);
+    ctx.restore();
+  }
 
-    const pose = bossAnimPose(b);
+  function drawBossWholeBody(b, sx, sy, core, pulse, charging, eyeOn, active, pose, sprite) {
     const bw = b.w, bh = b.h;
     const h = bh;
     const w = Math.round(sprite.naturalWidth * (h / sprite.naturalHeight));
     const originX = sx + bw / 2;
     const originY = sy + pose.bob + bh / 2;
-
     ctx.save();
     if (b.hitCD > 0) ctx.globalAlpha = 0.5 + (b.hitCD % 2) * 0.35;
     else if (charging) ctx.globalAlpha = 0.88 + pulse * 0.12;
     ctx.translate(originX, originY);
-    // Art faces camera-left; flip when facing right (toward player on the right)
     if (b.facing > 0) ctx.scale(-1, 1);
     ctx.rotate(pose.lean);
     ctx.scale(pose.stretchX || 1, pose.stretchY || 1);
     ctx.drawImage(sprite, -w / 2, -h / 2, w, h);
     ctx.restore();
-
     if (eyeOn || charging || active) {
       ctx.globalAlpha = eyeOn || active ? 0.45 : pulse * 0.35;
       ctx.fillStyle = eyeOn || charging
@@ -6072,6 +6147,86 @@
     }
     if (!b.vulnerable) drawGlobeShield(sx + bw / 2, sy + bh * 0.48 + pose.bob, Math.max(70, bw * 0.95), core);
     return true;
+  }
+
+  function drawBossRigged(b, sx, sy, core, pulse, charging, eyeOn, active) {
+    const pack = b.midBoss ? imgs.bossParts.mid : imgs.bossParts.final;
+    const pose = bossAnimPose(b);
+    const bw = b.w, bh = b.h;
+
+    // Hybrid stack when clean limb packs are ready; else whole-body fallback (v50 path).
+    if (bossPartsReady(pack)) {
+      const meta = pack.meta;
+      const mw = meta.w || 112;
+      const mh = meta.h || 158;
+      const scale = bh / mh;
+      const sw = mw * scale;
+      const sh = mh * scale;
+      const parts = meta.parts;
+      const originX = sx + bw / 2;
+      const originY = sy + pose.bob + bh / 2;
+      const ox = -sw / 2;
+      const oy = -sh / 2;
+      const plantY = pose.plant ? (oy + sh) : null;
+      const bodyLift = pose.hipBob * 0.25;
+
+      ctx.save();
+      if (b.hitCD > 0) ctx.globalAlpha = 0.5 + (b.hitCD % 2) * 0.35;
+      else if (charging) ctx.globalAlpha = 0.88 + pulse * 0.12;
+      ctx.translate(originX, originY);
+      // Art faces camera-left; flip when facing right
+      if (b.facing > 0) ctx.scale(-1, 1);
+      ctx.rotate(pose.lean);
+      ctx.scale(pose.stretchX || 1, pose.stretchY || 1);
+
+      // 1) legs under (grounded IK)
+      drawBossPart(pack.imgs.legL, parts.legL, scale, ox, oy, pose.legL, plantY, pose.air);
+      drawBossPart(pack.imgs.legR, parts.legR, scale, ox, oy, pose.legR, plantY, pose.air);
+      // 2) body — full chest intact, limbs cleared in parts pipeline
+      ctx.drawImage(pack.imgs.body, ox, oy - bodyLift, sw, sh);
+      // 3) arms over chest
+      drawBossPart(pack.imgs.armL, parts.armL, scale, ox, oy - bodyLift, pose.armL, null, false);
+      drawBossPart(pack.imgs.armR, parts.armR, scale, ox, oy - bodyLift, pose.armR, null, false);
+      // 4) head bob / tilt
+      if (parts.head && pack.imgs.head) {
+        const hm = parts.head;
+        const pw = hm.w * scale, ph = hm.h * scale;
+        const px = ox + hm.ox * scale;
+        const py = oy + hm.oy * scale + pose.headBob - bodyLift;
+        const pivX = pw * ((hm.pivot && hm.pivot[0]) || 0.5);
+        const pivY = ph * ((hm.pivot && hm.pivot[1]) || 0.88);
+        ctx.save();
+        ctx.translate(px + pivX, py + pivY);
+        ctx.rotate(pose.headTilt);
+        ctx.drawImage(pack.imgs.head, -pivX, -pivY, pw, ph);
+        ctx.restore();
+      }
+      ctx.restore();
+
+      if (eyeOn || charging || active) {
+        ctx.globalAlpha = eyeOn || active ? 0.45 : pulse * 0.35;
+        ctx.fillStyle = eyeOn || charging
+          ? (b.midBoss ? (b.accentHot || "#e879f9") : "#ff7a12")
+          : core;
+        ctx.fillRect(sx + bw * 0.30, sy + bh * 0.22 + pose.bob, bw * 0.40, bh * 0.14);
+        ctx.globalAlpha = 1;
+      }
+      if (b.phase === 2) {
+        ctx.globalAlpha = 0.22 + pulse * 0.2;
+        ctx.fillStyle = b.accentHot || (b.midBoss ? "#e879f9" : "#ff7a12");
+        ctx.fillRect(sx + 8, sy + 4 + pose.bob, bw - 16, 4);
+        ctx.globalAlpha = 1;
+      }
+      if (!b.vulnerable) drawGlobeShield(sx + bw / 2, sy + bh * 0.48 + pose.bob, Math.max(70, bw * 0.95), core);
+      return true;
+    }
+
+    let sprite = b.midBoss ? imgs.bossMid : imgs.boss;
+    if (!sprite || !sprite.complete || !sprite.naturalWidth) {
+      sprite = pack && pack.imgs ? pack.imgs.full : null;
+    }
+    if (!sprite || !sprite.complete || !sprite.naturalWidth) return false;
+    return drawBossWholeBody(b, sx, sy, core, pulse, charging, eyeOn, active, pose, sprite);
   }
 
   function drawBoss(b) {
