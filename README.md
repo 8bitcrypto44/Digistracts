@@ -36,3 +36,6 @@ Contra-style 8-bit HTML side-scroller. Hosted on GitHub Pages; GoDaddy embeds vi
 python build_game.py
 ```
 Rebuilds `index.html`, iframe stub, and single-file archive.
+
+<!-- pages-redeploy 2026-08-06T10:56:35.4388010-07:00 -->
+
