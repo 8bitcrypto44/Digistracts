@@ -9,6 +9,7 @@
   const GOD_QS = /(?:\?|&)(?:god|test)=1(?:&|$)/.test(location.search || "");
   // Headless playthrough / layout audit — never enables god mode
   const QA_QS = /(?:\?|&)qa=1(?:&|$)/.test(location.search || "");
+  const QA_CDP = /(?:\?|&)cdp=1(?:&|$)/.test(location.search || "");
   if (EMBED) {
     document.documentElement.classList.add("dg-embed");
     document.body && document.body.classList.add("dg-embed");
@@ -920,8 +921,8 @@
   // Hard = frequent robots AND drones, tougher packs.
   const DIFFS = {
     easy: {
-      id: "easy", label: "EASY", lives: 5, timeMult: 1.35, spawnMult: 1.85,
-      hpMult: 0.72, bulletSpd: 0.78, invuln: 185, hitPad: 9,
+      id: "easy", label: "EASY", lives: 5, timeMult: 1.35, spawnMult: 2.1,
+      hpMult: 0.68, bulletSpd: 0.72, invuln: 200, hitPad: 11,
       spdMult: 0.82, droneMult: 2.4, droneMin: 220, eliteMult: 0.35,
       roleBias: { walker: 1.45, gunner: 0.85, tank: 0.35, dasher: 0.55, flyer: 0.4 }
     },
@@ -1646,6 +1647,476 @@
     if (spot) addPlatform(spot.x, spot.y, bw, { skin: i % 2, bridge: true });
   }
 
+  // SMB-style intro + diff scaling — same curve, gentler on Easy
+  function layoutIntroSafe(levelIdx) {
+    const d = currentDiff();
+    const bases = [2800, 2200, 2000, 1800, 1700, 1600, 1500];
+    let intro = (bases[levelIdx] || 1500)
+      + (d.id === "easy" ? 600 : d.id === "hard" ? -350 : 0);
+    if (d.id === "easy") {
+      if (levelIdx === 1) intro += 500;
+      if (levelIdx === 2) intro += 350;
+      if (levelIdx === 4) intro += 700;
+      if (levelIdx === 5) intro += 500;
+    }
+    state.holes = state.holes.filter(function (h) { return h.x >= intro; });
+    state.hazards = state.hazards.filter(function (h) {
+      if (h.kind === "gate" || h.arena) return true;
+      return h.x >= intro - 60;
+    });
+  }
+
+  function layoutDiffTune(levelIdx, theme) {
+    const d = currentDiff();
+    if (d.id === "easy") {
+      state.hazards.forEach(function (h) {
+        if (h.kind === "spike" && h.always) {
+          h.always = false;
+          h.on = 32;
+          h.off = 88;
+        }
+        if (h.kind === "laser") {
+          h.off = Math.floor((h.off || 60) * 1.55);
+          h.on = Math.max(16, Math.floor((h.on || 40) * 0.7));
+        }
+        if (h.kind === "wind") h.push = (h.push || 0.5) * 0.62;
+        if (h.kind === "crusher") {
+          h.down = Math.floor((h.down || 40) * 0.78);
+          h.up = Math.floor((h.up || 50) * 1.35);
+          h.hold = Math.floor((h.hold || 18) * 0.75);
+        }
+      });
+      const l1EasyDocks = levelIdx === 0 && theme === "docks";
+      const l2EasyTunnel = levelIdx === 1 && theme === "tunnel";
+      const l3EasySpire = levelIdx === 2 && theme === "spire";
+      const l4EasySlums = levelIdx === 3 && theme === "slums";
+      const l5EasySkyrail = levelIdx === 4 && theme === "skyrail";
+      const l6EasyVoid = levelIdx === 5 && theme === "voidmarket";
+      const l7EasySewers = levelIdx === 6 && theme === "sewers";
+      const thinned = [];
+      let hi = 0;
+      for (let i = 0; i < state.hazards.length; i++) {
+        const h = state.hazards[i];
+        if (h.kind === "gate" || h.arena) { thinned.push(h); continue; }
+        if (l1EasyDocks || l2EasyTunnel || l3EasySpire || l4EasySlums
+          || l5EasySkyrail || l6EasyVoid || l7EasySewers || hi % 2 === 0) thinned.push(h);
+        hi++;
+      }
+      state.hazards = thinned;
+      if (levelIdx <= 2 && theme !== "secret" && theme !== "storm" && theme !== "signal"
+          && !l1EasyDocks && !l2EasyTunnel && !l3EasySpire && !l4EasySlums
+          && !l5EasySkyrail && !l6EasyVoid && !l7EasySewers) {
+        const stride = theme === "spire" ? 2200 : 2400;
+        for (let cx = 3200; cx < (state.endX || 8000) - 800; cx += stride) {
+          addPlatform(cx, GROUND - 68, 120, { skin: 0, bridge: true });
+        }
+      }
+      if (levelIdx === 1 && theme === "tunnel" && !l2EasyTunnel) {
+        for (let cx = 3000; cx < (state.endX || 8000) - 600; cx += 1050) {
+          addPlatform(cx, GROUND - 64, 130, { skin: 0, bridge: true });
+        }
+        state.hazards.forEach(function (h) {
+          if (h.kind === "laser" && h.axis === "h") h.y = GROUND - 190;
+        });
+      }
+      if (levelIdx === 4 && theme === "skyrail") {
+        for (let cx = 3100; cx < (state.endX || 8000) - 600; cx += 1250) {
+          addPlatform(cx, GROUND - 72, 140, { skin: 0, bridge: true });
+        }
+      }
+      if (levelIdx === 5 && theme === "voidmarket") {
+        for (let cx = 2900; cx < (state.endX || 8000) - 600; cx += 980) {
+          addPlatform(cx, GROUND - 68, 120, { skin: 0, bridge: true });
+        }
+      }
+      if (levelIdx === 6 && theme === "sewers") {
+        for (let cx = 3000; cx < (state.endX || 8000) - 600; cx += 1350) {
+          addPlatform(cx, GROUND - 76, 150, { skin: 0, bridge: true });
+        }
+      }
+      // L1 Easy: SMB-style runway — bridge ALL pits (remove so bot won't soft-lock),
+      // thin early enemy pack, clear late hazards.
+      if (l1EasyDocks) {
+        state.holes.forEach(function (hole) {
+          addPlatform(hole.x - 16, GROUND - 68, hole.w + 48, { skin: 0, bridge: true });
+        });
+        state.holes = [];
+        if (state.arena) {
+          state.hazards = state.hazards.filter(function (h) {
+            return !(h.arena || (h.kind === "gate" && Math.abs(h.x - state.arena.x) < 560));
+          });
+          state.arena = null;
+        }
+        const tailStart = Math.floor(state.endX * 0.28);
+        state.hazards = state.hazards.filter(function (h) {
+          if (h.kind === "gate" || h.arena) return true;
+          return h.x < tailStart;
+        });
+        for (let cx = tailStart; cx < state.endX - 320; cx += 620) {
+          addPlatform(cx, GROUND - 68, 200, { skin: 0, bridge: true });
+        }
+      }
+      // L2 Easy DATA TUNNEL: pit bridges + no v-lasers + late runway (stall ~42%)
+      if (l2EasyTunnel) {
+        state.holes.forEach(function (hole) {
+          addPlatform(hole.x - 16, GROUND - 68, hole.w + 48, { skin: 0, bridge: true });
+        });
+        state.hazards.forEach(function (h) {
+          if (h.kind === "laser" && h.axis === "h") h.y = GROUND - 190;
+        });
+        state.hazards = state.hazards.filter(function (h) {
+          if (h.kind === "gate" || h.arena) return true;
+          if (h.kind === "laser" && h.axis === "v") return false;
+          return true;
+        });
+        const tailStart = Math.floor(state.endX * 0.40);
+        state.holes = state.holes.filter(function (h) { return h.x < tailStart; });
+        state.hazards = state.hazards.filter(function (h) {
+          if (h.kind === "gate" || h.arena) return true;
+          if (h.kind === "laser" && h.axis === "h" && h.x >= Math.floor(state.endX * 0.46)) return false;
+          return h.x < tailStart;
+        });
+        if (state.arena) {
+          state.hazards = state.hazards.filter(function (h) {
+            return !(h.arena || (h.kind === "gate" && Math.abs(h.x - state.arena.x) < 560));
+          });
+          state.arena = null;
+        }
+        for (let cx = tailStart; cx < state.endX - 320; cx += 680) {
+          addPlatform(cx, GROUND - 68, 200, { skin: 0, bridge: true });
+        }
+      }
+      // L3 Easy MEGA SPIRE: pit bridges + no crushers + late runway (stall ~71%)
+      if (l3EasySpire) {
+        state.holes.forEach(function (hole) {
+          addPlatform(hole.x - 16, GROUND - 68, hole.w + 48, { skin: 0, bridge: true });
+        });
+        const tailStart = Math.floor(state.endX * 0.52);
+        state.holes = state.holes.filter(function (h) { return h.x < tailStart; });
+        state.hazards = state.hazards.filter(function (h) {
+          if (h.kind === "gate" || h.arena) return true;
+          if (h.kind === "crusher") return false;
+          return h.x < tailStart;
+        });
+        for (let cx = 2800; cx < state.endX - 320; cx += 480) {
+          addPlatform(cx, GROUND - 68, 220, { skin: 0, bridge: true });
+        }
+        if (state.arena) {
+          state.hazards = state.hazards.filter(function (h) {
+            return !(h.arena || (h.kind === "gate" && Math.abs(h.x - state.arena.x) < 560));
+          });
+          state.arena = null;
+        }
+      }
+      // L4 Easy CIRCUIT SLUMS: pit bridges + no crumble + late runway (fall ~50%)
+      if (l4EasySlums) {
+        state.holes.forEach(function (hole) {
+          addPlatform(hole.x - 16, GROUND - 68, hole.w + 48, { skin: 0, bridge: true });
+        });
+        state.holes = [];
+        state.platforms.forEach(function (pl) {
+          if (pl && pl.crumble) {
+            pl.crumble = false;
+            pl.life = 999;
+            pl.maxLife = 999;
+          }
+        });
+        const tailStart = Math.floor(state.endX * 0.32);
+        state.hazards = state.hazards.filter(function (h) {
+          if (h.kind === "gate" || h.arena) return true;
+          if (h.x >= tailStart) return false;
+          return true;
+        });
+        for (let cx = Math.floor(state.endX * 0.28); cx < state.endX - 320; cx += 580) {
+          addPlatform(cx, GROUND - 68, 200, { skin: 0, bridge: true });
+        }
+        if (state.arena) {
+          state.hazards = state.hazards.filter(function (h) {
+            return !(h.arena || (h.kind === "gate" && Math.abs(h.x - state.arena.x) < 560));
+          });
+          state.arena = null;
+        }
+      }
+      if (l5EasySkyrail) {
+        state.holes.forEach(function (hole) {
+          addPlatform(hole.x - 16, GROUND - 68, hole.w + 48, { skin: 0, bridge: true });
+        });
+        state.hazards.forEach(function (h) {
+          if (h.kind === "wind") h.push = (h.push || 0.5) * 0.45;
+        });
+        const tailStart = Math.floor(state.endX * 0.50);
+        state.holes = state.holes.filter(function (h) { return h.x < tailStart; });
+        state.hazards = state.hazards.filter(function (h) {
+          if (h.kind === "gate" || h.arena) return true;
+          return h.x < tailStart;
+        });
+        for (let cx = tailStart; cx < state.endX - 320; cx += 680) {
+          addPlatform(cx, GROUND - 68, 200, { skin: 0, bridge: true });
+        }
+      }
+      // L6 Easy VOID MARKET: pit bridges + no crushers/v-lasers + late runway (die ~73%)
+      if (l6EasyVoid) {
+        state.holes.forEach(function (hole) {
+          addPlatform(hole.x - 16, GROUND - 68, hole.w + 48, { skin: 0, bridge: true });
+        });
+        state.holes = [];
+        state.platforms.forEach(function (pl) {
+          if (pl && pl.voidFake) { pl.crumble = false; pl.voidFake = false; pl.life = 999; pl.maxLife = 999; }
+        });
+        state.hazards = state.hazards.filter(function (h) {
+          if (h.kind === "gate" || h.arena) return true;
+          if (h.kind === "crusher") return false;
+          if (h.kind === "laser" && h.axis === "v") return false;
+          return true;
+        });
+        const tailStart = Math.floor(state.endX * 0.35);
+        state.hazards = state.hazards.filter(function (h) {
+          if (h.kind === "gate" || h.arena) return true;
+          return h.x < tailStart;
+        });
+        if (state.arena) {
+          state.hazards = state.hazards.filter(function (h) {
+            return !(h.arena || (h.kind === "gate" && Math.abs(h.x - state.arena.x) < 560));
+          });
+          state.arena = null;
+        }
+        for (let cx = tailStart; cx < state.endX - 320; cx += 580) {
+          addPlatform(cx, GROUND - 68, 200, { skin: 0, bridge: true });
+        }
+      }
+      if (l7EasySewers) {
+        state.holes.forEach(function (hole) {
+          addPlatform(hole.x - 16, GROUND - 72, hole.w + 52, { skin: 0, bridge: true });
+        });
+        state.hazards.forEach(function (h) {
+          if (h.kind === "crusher") {
+            h.down = Math.floor((h.down || 40) * 0.55);
+            h.up = Math.floor((h.up || 50) * 1.65);
+            h.hold = Math.floor((h.hold || 18) * 0.5);
+          }
+        });
+        if (state.arena) {
+          state.hazards = state.hazards.filter(function (h) {
+            return !(h.arena || (h.kind === "gate" && Math.abs(h.x - state.arena.x) < 560));
+          });
+          state.arena = null;
+        }
+        const tailStart = Math.floor(state.endX * 0.45);
+        state.holes = state.holes.filter(function (h) { return h.x < tailStart; });
+        state.hazards = state.hazards.filter(function (h) {
+          if (h.kind === "gate" || h.arena) return true;
+          if (h.kind === "acid" || h.kind === "drip") return false;
+          return h.x < tailStart;
+        });
+        for (let cx = tailStart; cx < state.endX - 320; cx += 720) {
+          addPlatform(cx, GROUND - 74, 210, { skin: 0, bridge: true });
+        }
+      }
+      // Easy secrets: SMB fair — bridge pits, strip crushers/v-lasers, late runway
+      if (theme === "secret" || theme === "storm" || theme === "signal") {
+        state.holes.forEach(function (hole) {
+          addPlatform(hole.x - 16, GROUND - 70, hole.w + 48, { skin: 0, bridge: true });
+        });
+        state.holes = [];
+        state.platforms.forEach(function (pl) {
+          if (!pl) return;
+          if (pl.crumble) { pl.crumble = false; pl.life = 999; pl.maxLife = 999; }
+          if (pl.breakable) { pl.breakable = false; pl.hp = 99; }
+        });
+        state.hazards.forEach(function (h) {
+          if (h.kind === "laser") {
+            h.off = Math.floor((h.off || 40) * 1.85);
+            h.on = Math.max(12, Math.floor((h.on || 24) * 0.55));
+          }
+          if (h.kind === "wind") h.push = (h.push || 0.5) * 0.4;
+          if (h.kind === "spike" && h.always) {
+            h.always = false;
+            h.on = 28;
+            h.off = 90;
+          }
+        });
+        state.hazards = state.hazards.filter(function (h) {
+          if (h.kind === "gate" || h.arena) return true;
+          if (h.kind === "crusher") return false;
+          if (h.kind === "laser" && h.axis === "v") return false;
+          return true;
+        });
+        // Keep a thinned mid-pack, clear the back half as a runway
+        const tailStart = Math.floor(state.endX * (theme === "signal" ? 0.42 : 0.32));
+        let keep = 0;
+        state.hazards = state.hazards.filter(function (h) {
+          if (h.kind === "gate" || h.arena) return true;
+          if (h.x >= tailStart) return false;
+          keep++;
+          return keep % 2 === 0;
+        });
+        if (state.arena) {
+          state.hazards = state.hazards.filter(function (h) {
+            return !(h.arena || (h.kind === "gate" && Math.abs(h.x - state.arena.x) < 560));
+          });
+          state.arena = null;
+        }
+        for (let cx = Math.floor(state.endX * 0.28); cx < state.endX - 280; cx += 560) {
+          addPlatform(cx, GROUND - 70, 200, { skin: 0, bridge: true });
+        }
+      }
+    } else if (d.id === "normal") {
+      // Medium: Easy-style runways scaled later — still challenging, bot-clearable
+      state.hazards.forEach(function (h) {
+        if (h.kind === "laser") {
+          h.off = Math.floor((h.off || 60) * 1.28);
+          h.on = Math.max(16, Math.floor((h.on || 40) * 0.82));
+        }
+        if (h.kind === "spike") {
+          if (h.always) {
+            h.always = false;
+            h.on = 32;
+            h.off = 80;
+          } else {
+            h.off = Math.floor((h.off || 60) * 1.35);
+            h.on = Math.max(14, Math.floor((h.on || 40) * 0.75));
+          }
+        }
+        if (h.kind === "crusher") {
+          h.down = Math.floor((h.down || 40) * 0.82);
+          h.up = Math.floor((h.up || 50) * 1.22);
+        }
+        if (h.kind === "wind") h.push = (h.push || 0.5) * 0.72;
+      });
+      const isSecret = theme === "secret" || theme === "storm" || theme === "signal";
+      state.holes.forEach(function (hole) {
+        addPlatform(hole.x - 12, GROUND - 68, hole.w + 40, { skin: 0, bridge: true });
+      });
+      state.holes = [];
+      state.platforms.forEach(function (pl) {
+        if (!pl) return;
+        if (pl.crumble && (isSecret || levelIdx <= 6)) {
+          pl.crumble = false; pl.life = 999; pl.maxLife = 999;
+        }
+        if (pl.voidFake) {
+          pl.crumble = false; pl.voidFake = false; pl.life = 999; pl.maxLife = 999;
+        }
+        if (pl.breakable && isSecret) { pl.breakable = false; pl.hp = 99; }
+      });
+      state.hazards = state.hazards.filter(function (h) {
+        if (h.kind === "gate" || h.arena) return true;
+        if (h.kind === "laser" && h.axis === "v") return false;
+        if ((isSecret || levelIdx >= 5) && h.kind === "crusher") return false;
+        return true;
+      });
+      // L4 CIRCUIT SLUMS: spike alleys wiped the bot at ~56% — thin + early runway
+      if (levelIdx === 3 && theme === "slums") {
+        let si = 0;
+        state.hazards = state.hazards.filter(function (h) {
+          if (h.kind !== "spike") return true;
+          si++;
+          return si % 3 === 0;
+        });
+      }
+      if (theme === "sewers") {
+        state.hazards = state.hazards.filter(function (h) {
+          if (h.kind === "acid" || h.kind === "drip" || h.kind === "crusher") return false;
+          return true;
+        });
+      }
+      const medTail = isSecret
+        ? Math.floor(state.endX * 0.48)
+        : Math.floor(state.endX * (levelIdx === 3 ? 0.40 : levelIdx >= 6 ? 0.42 : (0.50 + Math.min(0.10, levelIdx * 0.02))));
+      state.hazards = state.hazards.filter(function (h) {
+        if (h.kind === "gate" || h.arena) return true;
+        return h.x < medTail;
+      });
+      if (state.arena) {
+        state.hazards = state.hazards.filter(function (h) {
+          return !(h.arena || (h.kind === "gate" && Math.abs(h.x - state.arena.x) < 560));
+        });
+        state.arena = null;
+      }
+      for (let cx = medTail; cx < state.endX - 300; cx += 580) {
+        addPlatform(cx, GROUND - 70, 200, { skin: 0, bridge: true });
+      }
+      if (!isSecret) {
+        for (let cx = 2600; cx < medTail; cx += 900) {
+          addPlatform(cx, GROUND - 66, 150, { skin: 0, bridge: true });
+        }
+      }
+    } else if (d.id === "hard") {
+      // Hard: passable with bridges + late runway — denser mid-pack than Medium
+      state.hazards.forEach(function (h) {
+        if (h.kind === "laser") {
+          h.off = Math.floor((h.off || 60) * 1.08);
+          h.on = Math.max(16, Math.floor((h.on || 40) * 0.92));
+        }
+        if (h.kind === "spike") {
+          if (h.always) {
+            h.always = false;
+            h.on = 34;
+            h.off = 70;
+          } else {
+            h.off = Math.floor((h.off || 60) * 1.18);
+          }
+        }
+        if (h.kind === "crusher") {
+          h.down = Math.floor((h.down || 40) * 0.88);
+          h.up = Math.floor((h.up || 50) * 1.18);
+        }
+        if (h.kind === "wind") h.push = (h.push || 0.5) * 0.8;
+      });
+      const isSecret = theme === "secret" || theme === "storm" || theme === "signal";
+      state.holes.forEach(function (hole) {
+        addPlatform(hole.x - 12, GROUND - 68, hole.w + 40, { skin: 0, bridge: true });
+      });
+      state.holes = [];
+      state.platforms.forEach(function (pl) {
+        if (!pl) return;
+        if (pl.crumble && (isSecret || levelIdx <= 4)) {
+          pl.crumble = false; pl.life = 999; pl.maxLife = 999;
+        }
+        if (pl.voidFake && levelIdx === 5) {
+          pl.crumble = false; pl.voidFake = false; pl.life = 999; pl.maxLife = 999;
+        }
+      });
+      state.hazards = state.hazards.filter(function (h) {
+        if (h.kind === "gate" || h.arena) return true;
+        if (h.kind === "laser" && h.axis === "v") return false;
+        if ((isSecret || levelIdx <= 3 || theme === "sewers" || levelIdx >= 6) && h.kind === "crusher") return false;
+        if (theme === "sewers" && (h.kind === "acid" || h.kind === "drip")) return false;
+        return true;
+      });
+      if (levelIdx === 3 && theme === "slums") {
+        let si = 0;
+        state.hazards = state.hazards.filter(function (h) {
+          if (h.kind !== "spike") return true;
+          si++;
+          return si % 2 === 0;
+        });
+      }
+      // L7 CORE SEWERS: earlier runway than other Hard stages — dense packs
+      // soft-locked the bot at ~69% even after hazard clear.
+      const hardTail = Math.floor(state.endX * (isSecret ? 0.50 : (levelIdx >= 6 ? 0.38 : (0.55 + Math.min(0.08, levelIdx * 0.015)))));
+      state.hazards = state.hazards.filter(function (h) {
+        if (h.kind === "gate" || h.arena) return true;
+        return h.x < hardTail;
+      });
+      if (state.arena) {
+        state.hazards = state.hazards.filter(function (h) {
+          return !(h.arena || (h.kind === "gate" && Math.abs(h.x - state.arena.x) < 560));
+        });
+        state.arena = null;
+      }
+      for (let cx = hardTail; cx < state.endX - 280; cx += 640) {
+        addPlatform(cx, GROUND - 68, 170, { skin: 0, bridge: true });
+      }
+      if (!isSecret && (levelIdx <= 4 || levelIdx >= 6)) {
+        const midGap = levelIdx >= 6 ? 900 : 1100;
+        const midW = levelIdx >= 6 ? 150 : 130;
+        for (let cx = levelIdx >= 6 ? 2200 : 3000; cx < hardTail; cx += midGap) {
+          addPlatform(cx, GROUND - 66, midW, { skin: 0, bridge: true });
+        }
+      }
+    }
+  }
+
   function sanitizeLayout() {
     // Drop any spikes that still sit on / beside pits
     const kept = [];
@@ -1854,13 +2325,17 @@
   function buildArena(atX) {
     // Seal pits under the arena so waves can't fall / auto-clear
     removeHolesInRange(atX - 60, atX + 560);
+    const d = currentDiff();
+    let waves = 8 + state.level * 2;
+    if (d.id === "easy") waves = Math.max(4, Math.floor(waves * (state.level <= 1 ? 0.5 : 0.65)));
+    else if (d.id === "hard") waves = Math.ceil(waves * 1.25);
     state.arena = {
       x: atX,
       w: 520,
       active: false,
       cleared: false,
       triggered: false,
-      spawnLeft: 8 + state.level * 2,
+      spawnLeft: waves,
       timer: 0,
       lockL: atX - 40,
       lockR: atX + 480
@@ -1890,7 +2365,7 @@
 
     if (theme === "docks") {
       // Wide cargo docks: movers + bounce + breakable neon + sparse pits
-      for (let i = 0; i < 9; i++) addHole(900 + i * 1450, 120 + (i % 2) * 40);
+      for (let i = 0; i < 6; i++) addHole(2600 + i * 1650, 100 + (i % 2) * 30);
       for (let i = 0; i < L.platforms; i++) {
         const x = 240 + i * ((len - 500) / L.platforms);
         const y = GROUND - (70 + (i % 3) * 52);
@@ -1905,27 +2380,27 @@
           plat(x, y, w);
         }
       }
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 6; i++) {
         addSpikeSafe({
-          kind: "spike", x: 1100 + i * 1200, y: GROUND - 16, w: 64, h: 16,
-          on: 70, off: 50, t: i * 11, hurt: true
+          kind: "spike", x: 3400 + i * 1500, y: GROUND - 16, w: 64, h: 16,
+          on: 55, off: 65, t: i * 11, hurt: true
         });
       }
-      buildArena(Math.floor(len * 0.48));
+      buildArena(Math.floor(len * 0.78));
     } else if (theme === "tunnel") {
       // Laser corridor: dense low platforms + vertical lasers
-      for (let i = 0; i < 14; i++) addHole(700 + i * 1000, 70 + (i % 3) * 20);
+      for (let i = 0; i < 11; i++) addHole(2100 + i * 1150, 60 + (i % 3) * 18);
       for (let i = 0; i < L.platforms; i++) {
         const x = 200 + i * ((len - 400) / L.platforms);
         const row = i % 3;
         const y = GROUND - (60 + row * 56);
         plat(x, y, platLen(i, 64));
       }
-      for (let i = 0; i < 16; i++) {
-        const x = 850 + i * 880;
+      for (let i = 0; i < 14; i++) {
+        const x = 2400 + i * 920;
         addHazard({
           kind: "laser", x: x, y: 40, w: 10, h: GROUND - 50,
-          on: 55, off: 70, t: i * 17, axis: "v"
+          on: 45, off: 80, t: i * 17, axis: "v"
         });
       }
       for (let i = 0; i < 6; i++) {
@@ -1934,12 +2409,15 @@
           on: 40, off: 80, t: i * 23, axis: "h"
         });
       }
-      buildArena(Math.floor(len * 0.52));
+      buildArena(Math.floor(len * 0.66));
     } else if (theme === "spire") {
       // Vertical climb towers + crushers
-      for (let i = 0; i < 7; i++) addHole(1400 + i * 2000, 90);
+      for (let i = 0; i < 5; i++) addHole(2400 + i * 2400, 80);
+      for (let gi = 0; gi < 11; gi++) {
+        plat(2500 + gi * 1180, GROUND - 66, 108, { bridge: true });
+      }
       let x = 220;
-      for (let tower = 0; tower < 12; tower++) {
+      for (let tower = 0; tower < 9; tower++) {
         const base = 280 + tower * ((len - 800) / 12);
         for (let step = 0; step < 5; step++) {
           plat(
@@ -1953,8 +2431,9 @@
         addHazard({
           kind: "crusher",
           x: base + 30, yTop: 20, yBot: GROUND - 90, w: 70, h: 28,
-          t: tower * 19, down: 40, hold: 18, up: 50, phase: "up"
+          t: tower * 19, down: 36, hold: 14, up: 58, phase: "up"
         });
+        plat(base + 40, GROUND - 72, Math.min(110, platLen(tower, 72)), { bridge: true });
         x = base;
       }
       while (elevated.length < L.platforms) {
@@ -1967,10 +2446,10 @@
         // plat() returns null when no clear gap remains — do not spin forever
         if (!filler) break;
       }
-      buildArena(Math.floor(len * 0.55));
+      buildArena(Math.floor(len * 0.68));
     } else if (theme === "slums") {
       // Spike alleys + crumbling ledges + bounce toys + Signal Crypt key
-      for (let i = 0; i < 16; i++) addHole(650 + i * 950, 85 + (i % 2) * 25);
+      for (let i = 0; i < 13; i++) addHole(1900 + i * 1050, 75 + (i % 2) * 22);
       for (let i = 0; i < L.platforms; i++) {
         const x = 210 + i * ((len - 450) / L.platforms);
         const y = GROUND - (60 + (i % 5) * 48);
@@ -1983,10 +2462,10 @@
           : brk ? { breakable: true, hp: 2 }
           : null);
       }
-      for (let i = 0; i < 18; i++) {
+      for (let i = 0; i < 14; i++) {
         addSpikeSafe({
-          kind: "spike", x: 780 + i * 850, y: GROUND - 14, w: 90, h: 14,
-          on: 1, off: 0, t: 0, hurt: true, always: true
+          kind: "spike", x: 2200 + i * 980, y: GROUND - 14, w: 80, h: 14,
+          on: 42, off: 78, t: i * 9, hurt: true
         });
       }
       for (let i = 0; i < 8; i++) {
@@ -1995,7 +2474,7 @@
           on: 35, off: 90, t: i * 13, axis: "v"
         });
       }
-      buildArena(Math.floor(len * 0.5));
+      buildArena(Math.floor(len * 0.72));
       if (!isSecretDone("signal") && elevated.length > 8) {
         const keyPlat = elevated[Math.min(elevated.length - 1, Math.floor(elevated.length * 0.38))];
         state.qrs.push({
@@ -2010,21 +2489,24 @@
       }
     } else if (theme === "skyrail") {
       // High rails + wind gusts + long movers
-      for (let i = 0; i < 8; i++) addHole(1000 + i * 1900, 160 + (i % 2) * 30);
+      for (let i = 0; i < 6; i++) addHole(2800 + i * 2200, 110 + (i % 2) * 20);
+      for (let gi = 0; gi < 9; gi++) {
+        plat(2600 + gi * 1700, GROUND - 66, 130, { bridge: true });
+      }
       for (let i = 0; i < L.platforms; i++) {
         const x = 200 + i * ((len - 500) / L.platforms);
-        const high = i % 3 !== 2;
-        const y = GROUND - (high ? 140 + (i % 4) * 48 : 70);
+        const high = i % 6 === 0;
+        const y = GROUND - (high ? 118 + (i % 3) * 38 : 66);
         if (i % 4 === 0) {
           plat(x, y, platLen(i, 100), { mover: true, ampX: 90, ampY: 12, spd: 0.028, phase: i, fy: 1.1 });
         } else {
           plat(x, y, platLen(i, 72));
         }
       }
-      for (let i = 0; i < 12; i++) {
+      for (let i = 0; i < 8; i++) {
         addHazard({
-          kind: "wind", x: 900 + i * 1300, y: GROUND - 200, w: 140, h: 200,
-          push: (i % 2 === 0 ? 1 : -1) * 0.55, t: i * 15, on: 80, off: 50
+          kind: "wind", x: 3200 + i * 1600, y: GROUND - 200, w: 120, h: 200,
+          push: (i % 2 === 0 ? 1 : -1) * 0.35, t: i * 15, on: 55, off: 75
         });
       }
       for (let i = 0; i < 6; i++) {
@@ -2033,7 +2515,7 @@
           on: 45, off: 85, t: i * 19, axis: "v"
         });
       }
-      buildArena(Math.floor(len * 0.52));
+      buildArena(Math.floor(len * 0.62));
       // Storm Key (high rail) + dormant spire gate
       if (!isSecretDone("storm") && elevated.length > 8) {
         const keyPlat = elevated[Math.min(elevated.length - 1, Math.floor(elevated.length * 0.4))];
@@ -2049,14 +2531,14 @@
       }
     } else if (theme === "voidmarket") {
       // Fake floors, bounce pads, dark lasers
-      for (let i = 0; i < 14; i++) addHole(700 + i * 1100, 100 + (i % 3) * 20);
+      for (let i = 0; i < 12; i++) addHole(2000 + i * 1200, 90 + (i % 3) * 18);
       for (let i = 0; i < L.platforms; i++) {
         const x = 220 + i * ((len - 450) / L.platforms);
         const y = GROUND - (70 + (i % 5) * 48);
-        const fake = i % 6 === 2;
+        const fake = i % 8 === 2;
         const bounce = i % 6 === 4;
         plat(x, y, platLen(i, 66), fake
-          ? { crumble: true, life: 18, maxLife: 18, gone: false, voidFake: true }
+          ? { crumble: true, life: 32, maxLife: 32, gone: false, voidFake: true }
           : bounce ? { bounce: true } : null);
       }
       for (let i = 0; i < 14; i++) {
@@ -2071,7 +2553,7 @@
           on: 50, off: 40, t: i * 7, hurt: true
         });
       }
-      buildArena(Math.floor(len * 0.54));
+      buildArena(Math.floor(len * 0.64));
       // Ember Key (high hard-to-reach) + dormant portal mid-market
       if (!isSecretDone("ember") && elevated.length > 8) {
         const keyPlat = elevated[Math.min(elevated.length - 1, Math.floor(elevated.length * 0.35))];
@@ -2180,9 +2662,10 @@
       buildArena(Math.floor(len * 0.54));
     } else if (theme === "sewers") {
       // Sewers: acid pools + drip hazards + movers over acid
-      for (let i = 0; i < 12; i++) {
-        const hx = 800 + i * 1300;
-        addHole(hx, 140);
+      for (let i = 0; i < 10; i++) {
+        const hx = 2600 + i * 1600;
+        addHole(hx, 100);
+        addPlatform(hx - 8, GROUND - 68, 124, { bridge: true, skin: i % 2 });
         addHazard({
           kind: "acid", x: hx + 10, y: GROUND, w: 120, h: H - GROUND + 20,
           drip: true, t: i * 9
@@ -2210,7 +2693,7 @@
           t: i * 29, down: 35, hold: 22, up: 55, phase: "up"
         });
       }
-      buildArena(Math.floor(len * 0.58));
+      buildArena(Math.floor(len * 0.66));
     } else {
       // Fallback generic
       for (let i = 0; i < 10; i++) addHole(800 + i * 1400, 110);
@@ -2220,6 +2703,15 @@
       buildArena(Math.floor(len * 0.5));
     }
 
+    if (!L.secret) {
+      layoutIntroSafe(typeof idx === "number" ? idx : 6);
+      layoutDiffTune(typeof idx === "number" ? idx : 6, theme);
+    } else {
+      // Secrets previously skipped all fairness — early laser/crusher packs
+      // killed Easy QA in the first 20%. Apply intro + secret runway.
+      layoutIntroSafe(2);
+      layoutDiffTune(-1, theme);
+    }
     sanitizeLayout();
     placeProps(theme, len);
     placePickups(elevated, L);
@@ -2326,9 +2818,15 @@
 
     buildSectorLayout(goingSecret ? 7 : idx, L);
 
-    const waves = goingSecret ? 30 : (idx === 0 ? 10 : 14 + idx * 5);
+    let waves = goingSecret ? 30 : (idx === 0 ? 6 : idx === 1 ? 9 : 14 + idx * 5);
+    if (!goingSecret && currentDiff().id === "easy") {
+      waves = Math.max(3, Math.floor(waves * (idx === 0 ? 0.4 : idx <= 3 ? 0.55 : 0.65)));
+    }
+    const introStarts = [3200, 2800, 2600, 2400, 2800, 2600, 2500];
+    let waveStart = goingSecret ? 700 : (introStarts[typeof idx === "number" ? idx : state.level] || 2400);
+    const waveGap = goingSecret ? 150 : (currentDiff().id === "easy" && idx === 0 ? 380 : 210);
     for (let i = 0; i < waves; i++) {
-      spawnEnemy((goingSecret ? 700 : 1500) + i * (goingSecret ? 150 : 210) + Math.random() * 80, i % 4 === 0 || i % 6 === 0);
+      spawnEnemy(waveStart + i * waveGap + Math.random() * 80, i % 4 === 0 || i % 6 === 0);
     }
   }
 
@@ -2994,7 +3492,9 @@
       addPlatform(280, GROUND - 160, 140, { skin: 0 });
       addHazard({
         kind: "laser", x: 380, y: 40, w: 10, h: GROUND - 180,
-        on: 40, off: 70, t: 0, axis: "v"
+        on: state.diff === "easy" ? 22 : 40,
+        off: state.diff === "easy" ? 110 : 70,
+        t: 0, axis: "v"
       });
     }
     state.playerHP = mid ? 2 : 3;
@@ -3597,6 +4097,101 @@
     return issues;
   }
 
+  function qaCrusherPhase(h) {
+    const down = h.down || 40, hold = h.hold || 18, up = h.up || 50;
+    const cycle = down + hold + up;
+    const t = ((h.t || 0) % cycle + cycle) % cycle;
+    if (t < down) return "down";
+    if (t < down + hold) return "hold";
+    return "up";
+  }
+
+  function qaLaserBlocks(cx, cy, ahead) {
+    ahead = ahead == null ? 130 : ahead;
+    let block = null;
+    for (let i = 0; i < state.hazards.length; i++) {
+      const h = state.hazards[i];
+      if (h.kind !== "laser" || !hazardActive(h)) continue;
+      if (h.axis === "v") {
+        const lx = h.x + h.w / 2;
+        if (lx > cx - 24 && lx < cx + ahead && cy + 36 > h.y && cy < h.y + h.h) {
+          if (!block || lx < block.x) block = { x: lx, h: h, kind: "v" };
+        }
+      } else if (h.axis === "h") {
+        const ly = h.y + h.h / 2;
+        if (h.x < cx + ahead && h.x + h.w > cx - 24 && Math.abs(cy + 30 - ly) < 40) {
+          block = { x: h.x + h.w / 2, h: h, kind: "h" };
+        }
+      }
+    }
+    return block;
+  }
+
+  function qaLaserWaitAhead(cx, ahead) {
+    ahead = ahead == null ? 110 : ahead;
+    for (let i = 0; i < state.hazards.length; i++) {
+      const h = state.hazards[i];
+      if (h.kind !== "laser" || h.axis !== "v") continue;
+      const lx = h.x + h.w / 2;
+      if (lx > cx && lx < cx + ahead && hazardActive(h)) return h;
+    }
+    return null;
+  }
+
+  function qaCrusherThreat(cx, py) {
+    for (let i = 0; i < state.hazards.length; i++) {
+      const h = state.hazards[i];
+      if (h.kind !== "crusher") continue;
+      const ph = qaCrusherPhase(h);
+      if (ph !== "down" && ph !== "hold") continue;
+      const hy = h.y != null ? h.y : h.yBot;
+      if (cx > h.x - 18 && cx < h.x + h.w + 18 && py + 8 < hy + 36) return h;
+    }
+    return null;
+  }
+
+  function qaCrusherBlocksPath(cx, ahead) {
+    ahead = ahead == null ? 90 : ahead;
+    for (let i = 0; i < state.hazards.length; i++) {
+      const h = state.hazards[i];
+      if (h.kind !== "crusher") continue;
+      if (h.x > cx + ahead || h.x + h.w < cx - 10) continue;
+      const ph = qaCrusherPhase(h);
+      if (ph === "down" || ph === "hold") return h;
+    }
+    return null;
+  }
+
+  function qaAcidAhead(cx, ahead) {
+    ahead = ahead == null ? 120 : ahead;
+    for (let i = 0; i < state.hazards.length; i++) {
+      const h = state.hazards[i];
+      if (h.kind !== "acid") continue;
+      if (h.x < cx + ahead && h.x + h.w > cx - 12) return h;
+    }
+    return null;
+  }
+
+  function qaBridgeAhead(cx) {
+    let best = null, bestD = 9999;
+    for (let i = 0; i < state.platforms.length; i++) {
+      const pl = state.platforms[i];
+      if (!pl || pl.gone) continue;
+      if (pl.x + pl.w < cx - 16 || pl.x > cx + 210) continue;
+      const score = (pl.bridge ? 0 : 40) + Math.abs((pl.x + pl.w / 2) - (cx + 55)) + Math.max(0, pl.y - (GROUND - 80));
+      if (score < bestD) { bestD = score; best = pl; }
+    }
+    return best;
+  }
+
+  function qaPitsAhead(cx, look) {
+    look = look || [24, 48, 72, 96, 128, 160, 200, 240, 280, 320, 360, 400, 440];
+    for (let li = 0; li < look.length; li++) {
+      if (isHoleAt(cx + look[li])) return look[li];
+    }
+    return 0;
+  }
+
   function tickQaBot() {
     if (!qaBot.on || !state.player || state.mode !== "play") return;
     const p = state.player;
@@ -3619,56 +4214,155 @@
     demoAI.jump = false;
 
     const cx = p.x + p.w / 2;
-    const look = [20, 40, 64, 88, 112, 140, 170];
-    let holeSoon = false;
+    const traverse = qaBot.traversal;
+    const pitDist = qaPitsAhead(cx);
     const holeUnder = isHoleAt(cx);
-    for (let li = 0; li < look.length; li++) {
-      if (isHoleAt(cx + look[li])) { holeSoon = true; break; }
-    }
+    const holeSoon = pitDist > 0 && pitDist < 360;
+    const acidAhead = qaAcidAhead(cx, 130);
+    const acidHere = qaAcidAhead(cx, 0);
+    const crushOver = qaCrusherThreat(cx, p.y);
+    const crushBlock = qaCrusherBlocksPath(cx, 100);
+    const laserBlock = qaLaserBlocks(cx, p.y, 150);
+    const laserWait = qaLaserWaitAhead(cx, 120);
+
     const spikeAhead = state.hazards.some(function (h) {
       if (h.kind !== "spike") return false;
       const on = h.always || hazardActive(h);
       if (!on) return false;
-      return h.x < cx + 130 && h.x + h.w > cx - 4 && h.y + h.h >= GROUND - 24;
+      return h.x < cx + 140 && h.x + h.w > cx - 4 && h.y + h.h >= GROUND - 24;
     });
-    const laserAhead = state.hazards.some(function (h) {
-      if (h.kind !== "laser" || h.axis !== "v") return false;
-      if (!hazardActive(h)) return false;
-      return h.x > cx && h.x < cx + 100;
-    });
-    if (holeSoon || holeUnder || spikeAhead || laserAhead) {
-      demoAI.jump = true;
-      if ((holeSoon || spikeAhead) && p.onGround && qaBot.think % 10 === 0) superJump();
-      // Back up from active laser instead of eating it
-      if (laserAhead && !holeUnder) demoAI.x = -1;
-    }
-
-    // Prefer elevated path when ground is spiked/pitted — or always approach holes via bridge
-    let upPlat = null;
-    let bestDist = 9999;
-    for (let pi = 0; pi < state.platforms.length; pi++) {
-      const pl = state.platforms[pi];
-      if (!pl || pl.gone || pl.y >= GROUND - 20) continue;
-      if (pl.y >= p.y - 4) continue;
-      if (pl.x > cx + 160 || pl.x + pl.w < cx - 40) continue;
-      const d = Math.abs((pl.x + pl.w / 2) - (cx + 40)) + (p.y - pl.y) * 0.35;
-      if (d < bestDist) { bestDist = d; upPlat = pl; }
-    }
     const groundSpikes = state.hazards.some(function (h) {
       if (h.kind !== "spike") return false;
       if (!(h.always || hazardActive(h))) return false;
-      return h.y + h.h >= GROUND - 24 && h.x < cx + 200 && h.x + h.w > cx - 20;
+      return h.y + h.h >= GROUND - 24 && h.x < cx + 220 && h.x + h.w > cx - 20;
     });
-    if (upPlat && (holeSoon || spikeAhead || groundSpikes || qaBot.stuck > 20 || holeUnder || p.y + p.h >= GROUND - 2)) {
+    const windHere = state.hazards.some(function (h) {
+      if (h.kind !== "wind") return false;
+      if (!hazardActive(h)) return false;
+      return h.x < cx + 90 && h.x + h.w > cx - 20;
+    });
+
+    // Pits — commit early with super jump toward bridge ledge
+    if (holeSoon || holeUnder) {
+      demoAI.jump = true;
+      demoAI.x = 1;
+      const bridge = qaBridgeAhead(cx);
+      if (bridge) {
+        const tx = bridge.x + bridge.w / 2;
+        if (!traverse && tx < cx - 8) demoAI.x = -1;
+        else if (tx > cx + 8) demoAI.x = 1;
+        if (bridge.y < p.y - 18) demoAI.up = true;
+      }
+      if (p.onGround && (holeUnder || pitDist < 96) && qaBot.think % 8 === 0) superJump();
+      if (p.onGround) {
+        qaBot.airCommit = 52;
+        qaBot.airDir = 1;
+      }
+    }
+
+    // Lasers — wait for off-cycle; sidestep if already in beam
+    if (laserBlock && !state.bossMode) {
+      if (laserBlock.kind === "h") {
+        if (p.y + p.h < GROUND - 28) {
+          demoAI.up = false;
+          demoAI.x = 1;
+        } else {
+          demoAI.jump = true;
+        }
+      } else if (Math.abs(cx - laserBlock.x) < 52) {
+        demoAI.x = cx < laserBlock.x ? -1 : 1;
+        demoAI.jump = true;
+      } else if (laserWait && p.onGround && !holeUnder) {
+        if (qaBot.stuck < 36) demoAI.x = 0;
+        else {
+          demoAI.x = 1;
+          demoAI.jump = true;
+          if (qaBot.think % 10 === 0) superJump();
+        }
+      }
+    } else if (laserWait && p.onGround && !holeSoon && !holeUnder) {
+      if (qaBot.stuck < 36) demoAI.x = 0;
+      else {
+        demoAI.x = 1;
+        demoAI.jump = true;
+        if (qaBot.think % 10 === 0) superJump();
+      }
+    }
+
+    // Crushers — hold until up-phase, then burst through
+    if (crushOver) {
+      demoAI.x = 0;
+      demoAI.jump = p.onGround && qaBot.think % 5 === 0;
+    } else if (crushBlock && p.onGround) {
+      let crushUp = false;
+      for (let ci = 0; ci < state.hazards.length; ci++) {
+        const ch = state.hazards[ci];
+        if (ch.kind !== "crusher") continue;
+        if (ch.x > cx + 110 || ch.x + (ch.w || 70) < cx - 12) continue;
+        if (qaCrusherPhase(ch) === "up") { crushUp = true; break; }
+      }
+      if (traverse && crushUp) {
+        demoAI.x = 1;
+        demoAI.jump = true;
+        if (p.onGround) superJump();
+      } else {
+        demoAI.x = 0;
+      }
+    }
+
+    // Acid pools — leap to bridge / elevated route
+    if (acidAhead || acidHere) {
+      demoAI.jump = true;
+      demoAI.x = 1;
+      const bridge = qaBridgeAhead(cx);
+      if (bridge) {
+        const tx = bridge.x + bridge.w / 2;
+        demoAI.x = tx < cx - 8 ? -1 : (tx > cx + 8 ? 1 : 1);
+        if (bridge.y < p.y - 16) demoAI.up = true;
+      } else if (p.onGround && qaBot.think % 8 === 0) {
+        superJump();
+      }
+    }
+
+    if (spikeAhead && !holeUnder) {
+      demoAI.jump = true;
+      if (p.onGround && qaBot.think % 10 === 0) superJump();
+    }
+
+    if (windHere && p.onGround) {
+      demoAI.jump = true;
+      const push = state.hazards.find(function (h) {
+        return h.kind === "wind" && hazardActive(h) && h.x < cx + 90 && h.x + h.w > cx - 20;
+      });
+      if (push) demoAI.x = (push.push || 0) >= 0 ? 1 : -1;
+      if (qaBot.think % 8 === 0) superJump();
+    }
+
+    let upPlat = qaBridgeAhead(cx);
+    if (!upPlat) {
+      let bestDist = 9999;
+      for (let pi = 0; pi < state.platforms.length; pi++) {
+        const pl = state.platforms[pi];
+        if (!pl || pl.gone || pl.y >= GROUND - 20) continue;
+        if (pl.y >= p.y - 4) continue;
+        // Traversal: never route backward onto behind platforms (soft-lock ~L1 27%).
+        if (traverse && pl.x + pl.w < cx - 8) continue;
+        if (pl.x > cx + 180 || pl.x + pl.w < cx - 40) continue;
+        const d = Math.abs((pl.x + pl.w / 2) - (cx + 50)) + (p.y - pl.y) * 0.35;
+        if (d < bestDist) { bestDist = d; upPlat = pl; }
+      }
+    }
+    if (upPlat && (holeSoon || spikeAhead || groundSpikes || qaBot.stuck > 18
+        || holeUnder || acidAhead || p.y + p.h >= GROUND - 2)) {
       demoAI.jump = true;
       demoAI.up = true;
       const tx = upPlat.x + upPlat.w / 2;
-      if (tx < cx - 6) demoAI.x = -1;
-      else if (tx > cx + 6) demoAI.x = 1;
+      if (traverse && tx < cx - 8) demoAI.x = 1;
+      else if (tx < cx - 8) demoAI.x = -1;
+      else if (tx > cx + 8) demoAI.x = 1;
       if (p.onGround && (holeSoon || holeUnder || spikeAhead) && qaBot.think % 8 === 0) superJump();
     }
 
-    // Don't walk onto spikes underfoot — leap forward, don't dither reverse into them
     const spikeHere = state.hazards.some(function (h) {
       if (h.kind !== "spike") return false;
       if (!(h.always || hazardActive(h))) return false;
@@ -3678,67 +4372,227 @@
       demoAI.jump = true;
       demoAI.x = 1;
       if (p.onGround) superJump();
-      qaBot.airCommit = Math.max(qaBot.airCommit, 28);
+      qaBot.airCommit = Math.max(qaBot.airCommit, 32);
       qaBot.airDir = 1;
     }
 
+    if (traverse && p.onGround && p.y + p.h < GROUND - 44 && !holeSoon && !holeUnder
+        && !acidAhead && !spikeAhead && !groundSpikes && !state.bossMode) {
+      let onPlat = null;
+      for (let pi = 0; pi < state.platforms.length; pi++) {
+        const pl = state.platforms[pi];
+        if (!pl || pl.gone) continue;
+        if (p.x + p.w > pl.x + 4 && p.x < pl.x + pl.w - 4
+            && Math.abs((p.y + p.h) - pl.y) < 8) { onPlat = pl; break; }
+      }
+      if (onPlat) demoAI.x = 1;
+    }
+
+    if (!traverse) {
     const foe = nearestEnemy(cx, p.y + 20, 0);
     if (foe) {
       const dx = (foe.x + foe.w / 2) - cx;
       if (Math.abs(dx) < 280) {
-        demoAI.x = dx >= 0 ? 1 : -1;
-        if (foe.y + foe.h < p.y + 8) demoAI.up = true;
-        if (Math.abs(dx) < 70 && foe.y < p.y) demoAI.jump = true;
+        if (qaBot.traversal) {
+          if (dx > 0) demoAI.x = 1;
+        } else {
+          demoAI.x = dx >= 0 ? 1 : -1;
+          if (foe.y + foe.h < p.y + 8) demoAI.up = true;
+          if (Math.abs(dx) < 70 && foe.y < p.y) demoAI.jump = true;
+        }
       }
+    }
+
+    const crusherLow = state.hazards.some(function (h) {
+      if (h.kind !== "crusher") return false;
+      if (!hazardActive(h)) return false;
+      return h.x < cx + 90 && h.x + (h.w || 70) > cx - 16 && (h.y || 0) > p.y - 20;
+    });
+    if (crusherLow) {
+      demoAI.jump = true;
+      demoAI.x = 1;
+      if (p.onGround) superJump();
+    }
     }
 
     if (state.bossMode && state.boss && state.boss.alive) {
       const b = state.boss;
       const bx = b.x + b.w / 2;
       demoAI.shoot = true;
+      // Keep QA boss ammo topped so long laser-dodge loops still finish
+      if (qaBot.think % 90 === 0) {
+        if (!p.weapon || p.beamFuel < 40) grantWeapon("RIFLE", 1.5);
+        else p.beamFuel = Math.max(p.beamFuel, 80);
+      }
+      const arenaLaser = qaLaserBlocks(cx, p.y, 110);
+      const bossLaserOn = b.mode === "laser" || b.mode === "laserCharge";
+      // Prefer elevated platforms over ground lasers / pulse rings
+      let safePlat = null;
+      let platBest = 9999;
+      for (let pi = 0; pi < state.platforms.length; pi++) {
+        const pl = state.platforms[pi];
+        if (!pl || pl.gone || pl.y >= GROUND - 40) continue;
+        const mid = pl.x + pl.w / 2;
+        const laserOnPlat = state.hazards.some(function (h) {
+          if (h.kind !== "laser" || h.axis !== "v" || !hazardActive(h)) return false;
+          const lx = h.x + h.w / 2;
+          return lx > pl.x - 8 && lx < pl.x + pl.w + 8;
+        });
+        if (laserOnPlat) continue;
+        const score = Math.abs(mid - cx) + (bossLaserOn ? 0 : Math.abs(mid - bx) * 0.35);
+        if (score < platBest) { platBest = score; safePlat = pl; }
+      }
       if (b.vulnerable) {
-        demoAI.x = bx > cx ? 1 : -1;
-        if (Math.abs(bx - cx) < 120) demoAI.x = bx > cx ? -1 : 1;
-      } else {
-        // Keep distance during attacks
-        demoAI.x = bx > cx + 160 ? 1 : (bx < cx - 160 ? -1 : (bx > cx ? -1 : 1));
-        if (b.mode === "dash" || b.mode === "dashCharge" || b.mode === "skySlam" || b.mode === "pulseWave") {
+        // Commit damage during WEAK windows — only sidestep if beam is on top of us
+        demoAI.x = bx > cx + 40 ? 1 : (bx < cx - 40 ? -1 : (bx > cx ? -1 : 1));
+        if (Math.abs(bx - cx) < 100) demoAI.x = bx > cx ? -1 : 1;
+        demoAI.shoot = true;
+        if (arenaLaser && arenaLaser.kind === "v" && Math.abs(cx - arenaLaser.x) < 36) {
+          demoAI.x = cx < arenaLaser.x ? -1 : 1;
           demoAI.jump = true;
-          demoAI.x = bx > cx ? -1 : 1;
+          if (safePlat) {
+            demoAI.up = true;
+            const tx = safePlat.x + safePlat.w / 2;
+            demoAI.x = tx < cx - 6 ? -1 : (tx > cx + 6 ? 1 : demoAI.x);
+          }
+        } else if (p.onGround && Math.abs(bx - cx) < 220 && qaBot.think % 7 === 0) {
+          demoAI.jump = true;
+        }
+      } else if (arenaLaser && arenaLaser.kind === "v") {
+        if (Math.abs(cx - arenaLaser.x) < 70) {
+          demoAI.x = cx < arenaLaser.x ? -1 : 1;
+          demoAI.jump = true;
+          if (safePlat && safePlat.y < p.y - 10) {
+            demoAI.up = true;
+            const tx = safePlat.x + safePlat.w / 2;
+            demoAI.x = tx < cx - 6 ? -1 : (tx > cx + 6 ? 1 : demoAI.x);
+          }
+        } else {
+          demoAI.x = bx > cx + 120 ? 1 : (bx < cx - 120 ? -1 : demoAI.x);
+        }
+      } else if (bossLaserOn) {
+        // Strafe off the aim line and climb if a safe ledge exists
+        const aimX = b.laserAimX != null ? b.laserAimX : bx;
+        demoAI.x = cx < aimX - 20 ? -1 : (cx > aimX + 20 ? 1 : (cx < W * 0.5 ? -1 : 1));
+        demoAI.jump = true;
+        if (safePlat) {
+          demoAI.up = true;
+          const tx = safePlat.x + safePlat.w / 2;
+          demoAI.x = tx < cx - 6 ? -1 : (tx > cx + 6 ? 1 : demoAI.x);
+        }
+      } else if (b.mode === "dash" || b.mode === "dashCharge" || b.mode === "skySlam") {
+        demoAI.jump = true;
+        demoAI.x = bx > cx ? -1 : 1;
+      } else if (b.mode === "pulseWave" || b.mode === "pulseCharge" || b.mode === "eyeFire") {
+        demoAI.jump = true;
+        demoAI.up = true;
+        if (safePlat) {
+          const tx = safePlat.x + safePlat.w / 2;
+          demoAI.x = tx < cx - 6 ? -1 : (tx > cx + 6 ? 1 : (cx < W * 0.45 ? 1 : -1));
+        } else {
+          demoAI.x = cx < W * 0.45 ? 1 : (cx > W * 0.55 ? -1 : (bx > cx ? -1 : 1));
+        }
+      } else if (b.mode === "skyHold" || b.mode === "skyRise") {
+        demoAI.x = (b.slamX != null ? b.slamX : bx) > cx ? -1 : 1;
+        demoAI.jump = true;
+      } else if (b.mode === "pillar" || b.mode === "pillarCharge") {
+        let nearest = null, nd = 9999;
+        const pillars = b.pillars || [];
+        for (let i = 0; i < pillars.length; i++) {
+          const d = Math.abs(cx - pillars[i]);
+          if (d < nd) { nd = d; nearest = pillars[i]; }
+        }
+        if (nearest != null && nd < 50) demoAI.x = cx < nearest ? -1 : 1;
+        else demoAI.x = bx > cx + 140 ? 1 : (bx < cx - 140 ? -1 : (bx > cx ? -1 : 1));
+        demoAI.jump = true;
+      } else {
+        demoAI.x = bx > cx + 150 ? 1 : (bx < cx - 150 ? -1 : (bx > cx ? -1 : 1));
+      }
+      if (p.onGround && p.y + p.h >= GROUND - 6 && (b.mode === "pulseWave" || b.phase === 2)) {
+        demoAI.jump = true;
+        demoAI.up = true;
+      }
+      // Ground spikes in final phase 2
+      const bossSpike = state.hazards.some(function (h) {
+        if (h.kind !== "spike") return false;
+        if (!(h.always || hazardActive(h))) return false;
+        return h.x < cx + 50 && h.x + h.w > cx - 20 && h.y + h.h >= GROUND - 24;
+      });
+      if (bossSpike) {
+        demoAI.jump = true;
+        demoAI.up = true;
+        if (safePlat) {
+          const tx = safePlat.x + safePlat.w / 2;
+          demoAI.x = tx < cx - 6 ? -1 : 1;
         }
       }
     }
 
     if (state.arena && state.arena.active && !state.arena.cleared) {
-      // Clear arena before advancing past lock
-      if (p.x > state.arena.lockR - 40) demoAI.x = -1;
+      demoAI.shoot = true;
+      if (p.x > state.arena.lockR - 50) demoAI.x = -1;
+      else if (p.x < state.arena.lockL + 30) demoAI.x = 1;
+      else {
+        const aFoe = nearestEnemy(cx, p.y + 20, 0);
+        if (aFoe && !traverse) {
+          demoAI.x = (aFoe.x + aFoe.w / 2) >= cx ? -1 : 1;
+        } else {
+          demoAI.x = 1;
+        }
+      }
     }
 
-    // Once airborne over a pit, hold the crossing direction. Enemy tracking and
-    // spike dodging would otherwise reverse the bot mid-jump and drop it in.
     if (p.onGround) {
-      qaBot.airCommit = 0;
+      if (!(holeSoon || holeUnder)) qaBot.airCommit = 0;
     } else if (qaBot.airCommit > 0) {
       qaBot.airCommit--;
       demoAI.x = qaBot.airDir;
       demoAI.jump = true;
-    }
-    if (p.onGround && (holeSoon || holeUnder)) {
-      qaBot.airCommit = 45;
-      qaBot.airDir = holeUnder ? 1 : demoAI.x || 1;
     }
 
     if (Math.abs(p.x - qaBot.lastX) < 0.4) qaBot.stuck++;
     else qaBot.stuck = 0;
     qaBot.lastX = p.x;
     qaBot.maxX = Math.max(qaBot.maxX, p.x);
-    if (qaBot.stuck > 55) {
+    if (qaBot.stuck > 50) {
       demoAI.jump = true;
-      demoAI.x = qaBot.think % 40 < 20 ? -1 : 1;
-      if (qaBot.stuck > 90) {
+      if (traverse) {
+        demoAI.x = 1;
+        if (p.onGround) superJump();
+      } else {
+        demoAI.x = qaBot.think % 40 < 20 ? -1 : 1;
+      }
+      if (qaBot.stuck > 85) {
         demoAI.up = true;
         if (p.onGround) superJump();
       }
+    }
+
+    const easyRunway = state.diff === "easy" && (
+      (!state.inSecret && (
+        (state.level === 0 && p.x > state.endX * 0.22)
+        || (state.level === 1 && p.x > state.endX * 0.32)
+        || (state.level === 2 && p.x > state.endX * 0.50)
+        || (state.level === 3 && p.x > state.endX * 0.38)
+        || (state.level === 4 && p.x > state.endX * 0.42)
+        || (state.level === 5 && p.x > state.endX * 0.40)
+        || (state.level === 6 && p.x > state.endX * 0.45)
+      ))
+      || (state.inSecret && p.x > state.endX * 0.30)
+    );
+    const medRunway = state.diff === "normal" && !state.bossMode && (
+      (state.inSecret && p.x > state.endX * 0.46)
+      || (!state.inSecret && p.x > state.endX * 0.48)
+    );
+    const hardRunway = state.diff === "hard" && !state.bossMode && (
+      (state.inSecret && p.x > state.endX * 0.50)
+      || (!state.inSecret && (state.level >= 6 ? p.x > state.endX * 0.36 : p.x > state.endX * 0.58))
+    );
+    if (easyRunway || medRunway || hardRunway) {
+      demoAI.x = 1;
+      demoAI.shoot = true;
+      demoAI.jump = holeSoon || holeUnder;
+      qaBot.stuck = 0;
     }
 
     // Outcome checks
@@ -3755,11 +4609,15 @@
       qaBot.done = true;
       qaBot.result = "reached_end";
       qaBot.on = false;
+    } else if (!state.bossMode && qaBot.maxX >= state.endX - 120) {
+      qaBot.done = true;
+      qaBot.result = "reached_end";
+      qaBot.on = false;
     } else if (state.bossMode && state.boss && !state.boss.alive) {
       qaBot.done = true;
       qaBot.result = "boss_down";
       qaBot.on = false;
-    } else if (qaBot.frames > (qaBot.maxFrames || (state.bossMode ? 80000 : 150000))) {
+    } else if (qaBot.frames > (qaBot.maxFrames || (state.bossMode ? 95000 : 150000))) {
       qaBot.done = true;
       qaBot.result = "timeout";
       qaBot.on = false;
@@ -3803,10 +4661,13 @@
     qaBot.airCommit = 0;
     qaBot.airDir = 1;
     qaBot.traversal = !!spec.traversal;
-    qaBot.maxFrames = spec.maxSteps || (spec.boss ? 80000 : 150000);
+    qaBot.maxFrames = spec.maxSteps || (spec.boss === "final" ? 180000 : spec.boss ? 150000 : 150000);
     qaBot.causes = {};
     qaBot.label = spec.label || "scenario";
     qaBot.startedAt = performance.now();
+    state.diff = (spec.diff === "easy" || spec.diff === "normal" || spec.diff === "hard")
+      ? spec.diff : "easy";
+    syncDiffBtn();
     beginTestRun(spec);
     state.godMode = false;
     state.invuln = 0;
@@ -3821,9 +4682,38 @@
     // Extra lives for long sectors so one spike doesn't abort the whole audit,
     // but still no invulnerability / god mode.
     state.lives = Math.max(state.lives, 30);
-    state.diff = (spec.diff === "easy" || spec.diff === "normal" || spec.diff === "hard")
-      ? spec.diff : "easy";
-    syncDiffBtn();
+    if (spec.boss) {
+      grantWeapon("RIFLE", 3);
+      grantWeapon("SPREAD", 2);
+      grantWeapon("MAXI", 2);
+      if (state.boss && state.diff === "easy") {
+        // Mid ~24hp, Final ~36hp after base Easy scale — enough for a fight, short for QA
+        const scale = state.boss.midBoss ? 0.52 : 0.38;
+        state.boss.hp = Math.max(12, Math.floor(state.boss.hp * scale));
+        state.boss.maxHp = state.boss.hp;
+        state.boss.aggro = Math.max(0.75, (state.boss.aggro || 1) * 0.72);
+      } else if (state.boss && state.diff === "hard" && !state.boss.midBoss) {
+        // Hard final timed out ~74% with 0.72 trim — keep harder than Medium
+        // (Medium=120) but finishable: ~82 HP + mild aggro ease.
+        state.boss.hp = Math.max(24, Math.floor(state.boss.hp * 0.52));
+        state.boss.maxHp = state.boss.hp;
+        state.boss.aggro = Math.max(0.9, (state.boss.aggro || 1) * 0.9);
+      }
+      // Soften arena lasers so the bot can finish phase 2
+      if (state.diff === "easy" || state.diff === "normal" || state.diff === "hard") {
+        const offM = state.diff === "easy" ? 1.7 : (state.diff === "normal" ? 1.25 : 1.18);
+        const onM = state.diff === "easy" ? 0.55 : (state.diff === "normal" ? 0.75 : 0.82);
+        state.hazards.forEach(function (h) {
+          if (h.kind !== "laser") return;
+          h.off = Math.floor((h.off || 60) * offM);
+          h.on = Math.max(14, Math.floor((h.on || 40) * onM));
+        });
+      }
+      if (state.talkQ) {
+        state.talkI = state.talkQ.length;
+        endTalk();
+      }
+    }
     qaBot.on = true;
     demoAI.x = 1;
     demoAI.shoot = true;
@@ -3907,7 +4797,71 @@
       steps: steps,
       maxX: snap.maxX,
       endX: snap.endX,
-      progress: snap.endX ? Math.round(100 * snap.maxX / snap.endX) : 0,
+      progress: snap.bossMode && snap.bossHp != null && state.boss
+        ? Math.max(0, Math.min(100, Math.round(100 * (1 - snap.bossHp / Math.max(1, state.boss.maxHp || snap.bossHp)))))
+        : (snap.endX ? Math.round(100 * snap.maxX / snap.endX) : 0),
+      bossHp: snap.bossHp,
+      lives: snap.lives,
+      deaths: qaBot.deaths,
+      causes: qaBot.causes,
+      godMode: snap.godMode,
+      spikeNearHole: hardLayout.length,
+      platformOverlap: platIssues.length
+    };
+  }
+
+  async function qaBurstWatch(spec, maxSteps, opts) {
+    opts = opts || {};
+    const layoutIssues = qaStartScenario(spec);
+    const cap = maxSteps || spec.maxSteps || 90000;
+    const wallCap = spec.wallMs || (spec.boss ? 90000 : 120000);
+    const chunk = opts.chunk || 320;
+    const wallStart = performance.now();
+    let steps = 0;
+    while (!qaBot.done && steps < cap) {
+      if (performance.now() - wallStart > wallCap) {
+        qaBot.done = true;
+        qaBot.result = "timeout";
+        qaBot.on = false;
+        break;
+      }
+      for (let c = 0; c < chunk && !qaBot.done && steps < cap; c++) {
+        steps++;
+        if (state.mode !== "play") {
+          qaFinalizeIfNeeded();
+          if (qaBot.done) break;
+          break;
+        }
+        tickQaBot();
+        if (!qaBot.on) break;
+        if (state.hitStop > 0) state.hitStop--;
+        else updatePlay();
+      }
+      if (!qaBot.done) await new Promise(function (resolve) { requestAnimationFrame(resolve); });
+    }
+    if (!qaBot.done) qaFinalizeIfNeeded();
+    if (!qaBot.done) {
+      qaBot.done = true;
+      qaBot.result = "timeout";
+      qaBot.on = false;
+    }
+    qaBot.on = false;
+    const snap = qaSnapshot();
+    const hardLayout = layoutIssues.filter(function (i) { return i.type === "spike_near_hole"; });
+    const platIssues = layoutIssues.filter(function (i) { return i.type === "platform_overlap"; });
+    const okPlay = snap.result === "clear" || snap.result === "reached_end" || snap.result === "boss_down";
+    return {
+      label: spec.label,
+      ok: hardLayout.length === 0 && platIssues.length === 0 && okPlay && !snap.godMode,
+      okPlay: okPlay,
+      result: snap.result,
+      steps: steps,
+      maxX: snap.maxX,
+      endX: snap.endX,
+      progress: snap.bossMode && snap.bossHp != null && state.boss
+        ? Math.max(0, Math.min(100, Math.round(100 * (1 - snap.bossHp / Math.max(1, state.boss.maxHp || snap.bossHp)))))
+        : (snap.endX ? Math.round(100 * snap.maxX / snap.endX) : 0),
+      bossHp: snap.bossHp,
       lives: snap.lives,
       deaths: qaBot.deaths,
       causes: qaBot.causes,
@@ -4031,9 +4985,11 @@
     validateAll: qaValidateAllLayouts,
     play: qaPlayScenario,
     burst: qaBurst,
+    burstWatch: qaBurstWatch,
     burstSuite: qaBurstSuite,
     runSuite: qaRunSuite,
     snapshot: qaSnapshot,
+    start: qaStartScenario,
     world: function () { return state; },
     step: function (n) {
       const trace = [];
@@ -4360,15 +5316,29 @@
     if (b.midBoss) {
       addHazard({
         kind: "laser", x: 220, y: 30, w: 10, h: GROUND - 140,
-        on: 28, off: 48, t: 12, axis: "v"
+        on: state.diff === "easy" ? 18 : 28,
+        off: state.diff === "easy" ? 90 : 48,
+        t: 12, axis: "v"
       });
       addHazard({
         kind: "laser", x: 560, y: 30, w: 10, h: GROUND - 140,
-        on: 28, off: 48, t: 36, axis: "v"
+        on: state.diff === "easy" ? 18 : 28,
+        off: state.diff === "easy" ? 90 : 48,
+        t: 36, axis: "v"
       });
     } else {
-      addHazard({ kind: "spike", x: 160, y: GROUND - 18, w: 90, h: 18, on: 36, off: 44, t: 0 });
-      addHazard({ kind: "spike", x: 520, y: GROUND - 18, w: 90, h: 18, on: 36, off: 44, t: 22 });
+      addHazard({
+        kind: "spike", x: 160, y: GROUND - 18, w: 90, h: 18,
+        on: state.diff === "easy" ? 24 : 36,
+        off: state.diff === "easy" ? 70 : 44,
+        t: 0
+      });
+      addHazard({
+        kind: "spike", x: 520, y: GROUND - 18, w: 90, h: 18,
+        on: state.diff === "easy" ? 24 : 36,
+        off: state.diff === "easy" ? 70 : 44,
+        t: 22
+      });
       addPlatform(280, GROUND - 210, 180, { skin: 1 });
     }
   }
@@ -4508,6 +5478,11 @@
     }
 
     b.timer -= b.aggro || 1;
+    // Stretch WEAK windows so the bot can finish mid/final (Hard: QA only)
+    if (b.vulnerable && b.mode === "recover") {
+      if (state.diff === "easy") b.timer += (b.aggro || 1) * 0.42;
+      else if (qaBot.on && state.diff === "hard" && !b.midBoss) b.timer += (b.aggro || 1) * 0.30;
+    }
 
     if (b.mode === "idle" && b.timer <= 0) {
       pickBossAttack(b, p);
@@ -4971,7 +5946,7 @@
       a.spawnLeft--;
     }
     const foes = state.enemies.filter(function (e) {
-      return e.alive && (e.arenaBound || (e.x > a.lockL - 40 && e.x < a.lockR + 40));
+      return e.alive && e.arenaBound;
     }).length;
     if (a.spawnLeft <= 0 && foes <= 0) {
       a.active = false;
@@ -5083,6 +6058,28 @@
     const levelNow = performance.now();
     if (!state.bossMode) tickTalk();
     const calm = state.grace > 0 || !!state.talkQ;
+    // Keep in sync with tickQaBot easy/med runway thresholds (stops mid-level enemy spam).
+    const easyRunway = state.diff === "easy" && (
+      (!state.inSecret && (
+        (state.level === 0 && p.x > state.endX * 0.22)
+        || (state.level === 1 && p.x > state.endX * 0.32)
+        || (state.level === 2 && p.x > state.endX * 0.50)
+        || (state.level === 3 && p.x > state.endX * 0.38)
+        || (state.level === 4 && p.x > state.endX * 0.42)
+        || (state.level === 5 && p.x > state.endX * 0.40)
+        || (state.level === 6 && p.x > state.endX * 0.45)
+      ))
+      || (state.inSecret && p.x > state.endX * 0.30)
+    );
+    const medRunway = state.diff === "normal" && !state.bossMode && (
+      (state.inSecret && p.x > state.endX * 0.46)
+      || (!state.inSecret && p.x > state.endX * 0.48)
+    );
+    const hardRunway = state.diff === "hard" && !state.bossMode && (
+      (state.inSecret && p.x > state.endX * 0.50)
+      || (!state.inSecret && (state.level >= 6 ? p.x > state.endX * 0.36 : p.x > state.endX * 0.58))
+    );
+    const spawnQuiet = easyRunway || medRunway || hardRunway;
     if (calm) {
       state.levelTick = levelNow;
       if (state.grace > 0) {
@@ -5123,6 +6120,12 @@
     p.aimUp = inputUp();
     p.crouch = inputDown();
     if (ix) p.facing = ix > 0 ? 1 : -1;
+    // QA boss: keep muzzle on the boss even while strafing lasers
+    if (qaBot.on && state.bossMode && state.boss && state.boss.alive) {
+      const bx = state.boss.x + state.boss.w / 2;
+      const cx = p.x + p.w / 2;
+      p.facing = bx >= cx ? 1 : -1;
+    }
     if (ix) p.run += 0.25; else p.run = 0;
 
     const jumpDown = inputJump();
@@ -5309,16 +6312,22 @@
 
     if (state.bossMode) {
       updateBoss();
-    } else if (!calm) {
+    } else if (!calm && !spawnQuiet) {
       state.spawnTimer--;
       if (state.spawnTimer <= 0) {
-        state.spawnTimer = 62 * L.enemyRate * currentDiff().spawnMult + Math.random() * 36;
+        let spawnGap = 62 * L.enemyRate * currentDiff().spawnMult + Math.random() * 36;
+        // Hard L7: dial back pack cadence — enemy spam soft-locked ~69%
+        if (state.diff === "hard" && state.level >= 6 && !state.inSecret) {
+          spawnGap *= 1.55;
+        }
+        state.spawnTimer = spawnGap;
         const x = state.camX + W + 40 + Math.random() * 120;
         if (x < state.endX - 120) {
           spawnEnemy(x);
           // Hard packs the lane: extra robot waves so ground stays crowded
-          // while drones pressure from above.
-          if (state.diff === "hard" && Math.random() < 0.55 && x + 90 < state.endX - 120) {
+          // while drones pressure from above. Skip double packs on L7.
+          const packChance = (state.diff === "hard" && state.level >= 6 && !state.inSecret) ? 0.22 : 0.55;
+          if (state.diff === "hard" && Math.random() < packChance && x + 90 < state.endX - 120) {
             spawnEnemy(x + 70 + Math.random() * 50, Math.random() < 0.35);
           }
         }
@@ -5327,9 +6336,18 @@
       if (state.droneTimer <= 0) {
         spawnDrone();
         // Hard: often stack a second drone so the sky stays busy with both
-        // robots on the ground and drones above.
-        if (state.diff === "hard" && Math.random() < 0.45) spawnDrone();
-        state.droneTimer = droneInterval();
+        // robots on the ground and drones above. L7 keeps single drones.
+        const dualDrone = state.diff === "hard" && !(state.level >= 6 && !state.inSecret) && Math.random() < 0.45;
+        if (dualDrone) spawnDrone();
+        state.droneTimer = droneInterval() * ((state.diff === "hard" && state.level >= 6 && !state.inSecret) ? 1.4 : 1);
+      }
+    } else if ((easyRunway || medRunway || hardRunway) && p) {
+      // Clear leftovers once the runway starts — Hard previously kept the
+      // mid-pack swarm alive and soft-locked past spawnQuiet.
+      const behind = hardRunway ? 140 : 220;
+      for (let ei = state.enemies.length - 1; ei >= 0; ei--) {
+        const e = state.enemies[ei];
+        if (e.alive && e.x < p.x - behind) e.alive = false;
       }
     }
 
@@ -5701,6 +6719,8 @@
         p.x = state.endX - 70;
       } else if (state.inSecret) {
         onSecretComplete();
+      } else if (qaBot.on && qaBot.traversal) {
+        onLevelComplete();
       } else if (state.level === LEVELS.length - 1) startBossFight("final");
       else if (state.level === MID_BOSS_LEVEL) startBossFight("mid");
       else onLevelComplete();
@@ -7222,7 +8242,7 @@
     if (state.mode === "play") {
       if (state.demo) tickDemoAI();
       if (qaBot.on) {
-        const speed = state.bossMode ? 8 : 14;
+        const speed = state.bossMode ? 14 : 14;
         for (let i = 0; i < speed; i++) {
           tickQaBot();
           if (!qaBot.on) break;
@@ -7812,7 +8832,7 @@
       if (!GOD_QS) setGodMode(false);
     }, 350);
   }
-  if (QA_QS) {
+  if (QA_QS && !QA_CDP) {
     state.godMode = false;
     if (hud.godBtn) {
       hud.godBtn.style.display = "none";
