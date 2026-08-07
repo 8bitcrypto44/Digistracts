@@ -1,5 +1,7 @@
   // === VIEWPORT — dynamic embed height; page scroll on mobile only ===
   const EMBED_MIN_H = 680;
+  const EMBED_MENU_MIN_H = 320;
+  const EMBED_PLAY_MIN_H = 360;
   let embedFsActive = false;
   let embedBurstGen = 0;
   let embedMutObs = null;
@@ -38,19 +40,55 @@
     e.preventDefault();
   }
 
+  function embedFloorH() {
+    if (!isMobileEmbed()) return EMBED_MIN_H;
+    if (ROOT.classList.contains("dg-menu")) return EMBED_MENU_MIN_H;
+    return EMBED_PLAY_MIN_H;
+  }
+
   function measureEmbedHeight() {
     if (!EMBED) return EMBED_MIN_H;
     const doc = document.documentElement;
     const bod = document.body;
     const stage = ROOT.querySelector(".dg-stage");
     const top = ROOT.querySelector(".dg-top");
-    [doc, bod, ROOT, stage, top].forEach(function (el) {
+    const controls = ROOT.querySelector(".dg-controls");
+    const menuOpen = ROOT.classList.contains("dg-menu");
+    const mobile = isMobileEmbed();
+    [doc, bod, ROOT, stage, top, controls].forEach(function (el) {
       if (!el) return;
       el.style.height = "auto";
       el.style.minHeight = "0";
       el.style.maxHeight = "none";
     });
     const rootTop = ROOT.getBoundingClientRect().top;
+
+    if (mobile && menuOpen) {
+      let maxBottom = ROOT.getBoundingClientRect().bottom;
+      [top, stage, ROOT.querySelector(".dg-help"), ROOT.querySelector("#dg-overlay")].forEach(function (el) {
+        if (!el || el.hidden) return;
+        if (el.offsetParent === null && !el.classList.contains("show")) return;
+        const r = el.getBoundingClientRect();
+        if (r.height > 0 && r.bottom > maxBottom) maxBottom = r.bottom;
+      });
+      ROOT.querySelectorAll(".dg-menu-actions, .dg-levels").forEach(function (el) {
+        if (!el || el.hidden || el.offsetParent === null) return;
+        const r = el.getBoundingClientRect();
+        if (r.bottom > maxBottom) maxBottom = r.bottom;
+      });
+      return Math.ceil(Math.max(EMBED_MENU_MIN_H, maxBottom - rootTop + 4));
+    }
+
+    if (mobile && !menuOpen) {
+      let maxBottom = rootTop;
+      [top, stage, controls].forEach(function (el) {
+        if (!el || el.hidden || el.offsetParent === null) return;
+        const r = el.getBoundingClientRect();
+        if (r.bottom > maxBottom) maxBottom = r.bottom;
+      });
+      return Math.ceil(Math.max(EMBED_PLAY_MIN_H, maxBottom - rootTop + 4));
+    }
+
     let maxBottom = ROOT.getBoundingClientRect().bottom;
     [top, stage, ROOT.querySelector(".dg-help"), ROOT.querySelector("#dg-overlay")].forEach(function (el) {
       if (!el || el.hidden) return;
@@ -58,27 +96,22 @@
       const r = el.getBoundingClientRect();
       if (r.height > 0 && r.bottom > maxBottom) maxBottom = r.bottom;
     });
-    ROOT.querySelectorAll(".dg-menu-actions, .dg-levels, .dg-bar, .dg-touch").forEach(function (el) {
+    ROOT.querySelectorAll(".dg-menu-actions, .dg-levels, .dg-controls").forEach(function (el) {
       if (!el || el.hidden || el.offsetParent === null) return;
       const r = el.getBoundingClientRect();
       if (r.bottom > maxBottom) maxBottom = r.bottom;
     });
-    const bboxH = Math.ceil(Math.max(0, maxBottom - rootTop)) + 8;
-    const tight = !ROOT.classList.contains("dg-menu");
-    if (tight) {
-      return Math.ceil(Math.max(EMBED_MIN_H, bboxH));
+    const bboxH = Math.ceil(Math.max(0, maxBottom - rootTop)) + 4;
+    const tight = !menuOpen;
+    if (tight || mobile) {
+      return Math.ceil(Math.max(embedFloorH(), bboxH));
     }
-    return Math.ceil(Math.max(
-      EMBED_MIN_H,
-      bboxH,
-      ROOT.scrollHeight || 0,
-      doc.scrollHeight || 0
-    ));
+    return Math.ceil(Math.max(EMBED_MIN_H, bboxH));
   }
 
   function applyEmbedFrameHeight(h) {
     if (!EMBED) return h;
-    h = Math.max(EMBED_MIN_H, Math.round(h || measureEmbedHeight()));
+    h = Math.max(embedFloorH(), Math.round(h || measureEmbedHeight()));
     const mobile = isMobileEmbed();
     syncMobileClass();
     [document.documentElement, document.body, ROOT].forEach(function (el) {

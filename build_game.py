@@ -282,7 +282,7 @@ markup = markup.replace("__BRAND_LOGO_SRC__", BRAND_LOGO_URI)
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "56"
+ASSET_V = "57"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]
@@ -547,13 +547,16 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
   function setFrameHeight(h){{
     if(isFs()||root.classList.contains("is-land"))return;
     if(!root.classList.contains("is-open")){{clearCoverHeights();return;}}
-    var contentH=Math.max(680,Math.round(Number(h)||920));
+    var contentH;
     if(mobileMode()&&!root.classList.contains("is-land")){{
+      var reported=Math.round(Number(h)||0);
+      contentH=reported>0?Math.max(320,reported):mobileBootH();
       if(root.classList.contains("is-loading"))contentH=Math.max(contentH,openBootH());
       frame.setAttribute("scrolling","no");
       root.classList.add("is-mobile");
       h=contentH;
     }}else{{
+      contentH=Math.max(680,Math.round(Number(h)||920));
       h=contentH;
       if(!phone())frame.setAttribute("scrolling","no");
     }}

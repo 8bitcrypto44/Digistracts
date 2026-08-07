@@ -276,3 +276,53 @@ body.dg-embed #digistracts-root.dg-phone.dg-fs{
   #digistracts-root.dg-phone.dg-land .dg-actions button{min-width:76px;min-height:58px;font-size:14px}
   #digistracts-root.dg-phone.dg-land .dg-hud{font-size:10px;gap:8px}
 }
+
+/* Mobile embed — grow with menu content; parent page scrolls (Game Room) */
+html.dg-embed.dg-mobile,html.dg-embed.dg-mobile body{
+  overflow-x:hidden;overflow-y:visible;height:auto;min-height:0;max-height:none;touch-action:pan-y
+}
+html.dg-embed.dg-mobile #digistracts-root{
+  overflow:visible;height:auto;min-height:0;max-height:none;touch-action:pan-y
+}
+html.dg-embed.dg-mobile #digistracts-root.dg-phone.dg-menu{
+  position:relative;inset:auto;height:auto;min-height:0;overflow:visible;touch-action:pan-y
+}
+html.dg-embed.dg-mobile #digistracts-root.dg-phone:not(.dg-menu):not(.dg-fs){
+  position:relative;inset:auto;display:flex;flex-direction:column;
+  height:auto;min-height:0;max-height:none;overflow:visible;touch-action:none
+}
+html.dg-embed.dg-mobile #digistracts-root.dg-phone:not(.dg-menu):not(.dg-fs) .dg-top{
+  position:relative;top:auto;left:auto;right:auto;flex-shrink:0;
+  flex-wrap:wrap;justify-content:center;align-items:center;gap:4px 8px;
+  padding:max(4px,env(safe-area-inset-top,0px)) 8px 6px;pointer-events:auto;
+  background:linear-gradient(180deg,rgba(2,6,23,.92),rgba(2,6,23,.55))
+}
+html.dg-embed.dg-mobile #digistracts-root.dg-phone:not(.dg-menu):not(.dg-fs) .dg-hud{
+  flex:1 1 100%;flex-wrap:wrap;justify-content:center;gap:4px 10px;font-size:11px
+}
+html.dg-embed.dg-mobile #digistracts-root.dg-phone:not(.dg-menu):not(.dg-fs) .dg-audio{
+  flex:1 1 100%;justify-content:center;margin:0
+}
+html.dg-embed.dg-mobile #digistracts-root.dg-phone:not(.dg-menu):not(.dg-fs) #dg-fx{display:none}
+html.dg-embed.dg-mobile #digistracts-root.dg-phone:not(.dg-menu):not(.dg-fs) .dg-stage{
+  position:relative;inset:auto;flex:0 0 auto;width:100%;height:auto;
+  aspect-ratio:800/450;min-height:0;border:0;display:flex;
+  align-items:center;justify-content:center;overflow:hidden;background:#05070f
+}
+html.dg-embed.dg-mobile #digistracts-root.dg-phone:not(.dg-menu):not(.dg-fs) .dg-controls{
+  position:relative;left:auto;right:auto;bottom:auto;flex-shrink:0;
+  display:flex!important;margin-top:0;pointer-events:none
+}
+html.dg-embed.dg-mobile #digistracts-root.dg-phone:not(.dg-menu):not(.dg-fs) canvas{
+  width:100%!important;height:100%!important;max-width:100%!important;max-height:100%!important;
+  object-fit:contain
+}
+html.dg-embed.dg-mobile #digistracts-root #dg-overlay{
+  position:relative;inset:auto;flex:0 0 auto;min-height:min(72vh,640px);
+  overflow-y:auto;-webkit-overflow-scrolling:touch;max-height:none;padding-bottom:24px
+}
+html.dg-embed.dg-mobile #digistracts-root.dg-menu .dg-help{
+  position:relative;left:auto;right:auto;bottom:auto;margin-top:12px
+}
+html.dg-embed.dg-mobile #digistracts-root .dg-menu-actions button,
+html.dg-embed.dg-mobile #digistracts-root #dg-start{min-height:48px;touch-action:manipulation}

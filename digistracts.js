@@ -7666,6 +7666,14 @@
     // Mobile in-game: canvas CSS fills the whole stage (see .dg-phone canvas).
     // Still set explicit px so some WebViews honor the stretch.
     if (phone && !ROOT.classList.contains("dg-menu") && stage) {
+      if (EMBED) {
+        const sw = Math.max(1, stage.clientWidth || ROOT.clientWidth || vw);
+        const sh = Math.max(1, stage.clientHeight || Math.floor(sw * H / W));
+        canvas.style.width = Math.floor(sw) + "px";
+        canvas.style.height = Math.floor(sh) + "px";
+        syncFsBtn();
+        return;
+      }
       const sw = Math.max(1, stage.clientWidth || vw);
       const sh = Math.max(1, stage.clientHeight || vh);
       canvas.style.width = Math.floor(sw) + "px";
