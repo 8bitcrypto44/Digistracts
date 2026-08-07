@@ -1508,7 +1508,9 @@
   }
 
   function muzzleSparks(tip, color) {
-    for (let i = 0; i < 6; i++) {
+    const room = Math.max(0, 120 - state.particles.length);
+    const n = Math.min(6, room);
+    for (let i = 0; i < n; i++) {
       state.particles.push({
         x: tip.x, y: tip.y,
         vx: (Math.random() - 0.5) * 4 + (state.player ? state.player.facing * 2 : 0),
@@ -1706,33 +1708,22 @@
       if (levelIdx <= 2 && theme !== "secret" && theme !== "storm" && theme !== "signal"
           && !l1EasyDocks && !l2EasyTunnel && !l3EasySpire && !l4EasySlums
           && !l5EasySkyrail && !l6EasyVoid && !l7EasySewers) {
-        const stride = theme === "spire" ? 2200 : 2400;
-        for (let cx = 3200; cx < (state.endX || 8000) - 800; cx += stride) {
-          addPlatform(cx, GROUND - 68, 120, { skin: 0, bridge: true });
-        }
+        addRunwayLedges(3200, (state.endX || 8000) - 800, theme === "spire" ? 2200 : 2400, GROUND - 68, 120);
       }
       if (levelIdx === 1 && theme === "tunnel" && !l2EasyTunnel) {
-        for (let cx = 3000; cx < (state.endX || 8000) - 600; cx += 1050) {
-          addPlatform(cx, GROUND - 64, 130, { skin: 0, bridge: true });
-        }
+        addRunwayLedges(3000, (state.endX || 8000) - 600, 1200, GROUND - 64, 130);
         state.hazards.forEach(function (h) {
           if (h.kind === "laser" && h.axis === "h") h.y = GROUND - 190;
         });
       }
       if (levelIdx === 4 && theme === "skyrail") {
-        for (let cx = 3100; cx < (state.endX || 8000) - 600; cx += 1250) {
-          addPlatform(cx, GROUND - 72, 140, { skin: 0, bridge: true });
-        }
+        addRunwayLedges(3100, (state.endX || 8000) - 600, 1400, GROUND - 72, 140);
       }
       if (levelIdx === 5 && theme === "voidmarket") {
-        for (let cx = 2900; cx < (state.endX || 8000) - 600; cx += 980) {
-          addPlatform(cx, GROUND - 68, 120, { skin: 0, bridge: true });
-        }
+        addRunwayLedges(2900, (state.endX || 8000) - 600, 1200, GROUND - 68, 120);
       }
       if (levelIdx === 6 && theme === "sewers") {
-        for (let cx = 3000; cx < (state.endX || 8000) - 600; cx += 1350) {
-          addPlatform(cx, GROUND - 76, 150, { skin: 0, bridge: true });
-        }
+        addRunwayLedges(3000, (state.endX || 8000) - 600, 1400, GROUND - 76, 150);
       }
       // L1 Easy: SMB-style runway — bridge ALL pits (remove so bot won't soft-lock),
       // thin early enemy pack, clear late hazards.
@@ -1752,9 +1743,7 @@
           if (h.kind === "gate" || h.arena) return true;
           return h.x < tailStart;
         });
-        for (let cx = tailStart; cx < state.endX - 320; cx += 620) {
-          addPlatform(cx, GROUND - 68, 200, { skin: 0, bridge: true });
-        }
+        addRunwayLedges(tailStart, state.endX - 320, 980, GROUND - 68, 200);
       }
       // L2 Easy DATA TUNNEL: pit bridges + no v-lasers + late runway (stall ~42%)
       if (l2EasyTunnel) {
@@ -1782,9 +1771,7 @@
           });
           state.arena = null;
         }
-        for (let cx = tailStart; cx < state.endX - 320; cx += 680) {
-          addPlatform(cx, GROUND - 68, 200, { skin: 0, bridge: true });
-        }
+        addRunwayLedges(tailStart, state.endX - 320, 1000, GROUND - 68, 200);
       }
       // L3 Easy MEGA SPIRE: pit bridges + no crushers + late runway (stall ~71%)
       if (l3EasySpire) {
@@ -1798,9 +1785,9 @@
           if (h.kind === "crusher") return false;
           return h.x < tailStart;
         });
-        for (let cx = 2800; cx < state.endX - 320; cx += 480) {
-          addPlatform(cx, GROUND - 68, 220, { skin: 0, bridge: true });
-        }
+        // Mid helpers (sparse) + late runway — was 480px densest lane on Easy.
+        addRunwayLedges(2800, tailStart, 1400, GROUND - 68, 220);
+        addRunwayLedges(tailStart, state.endX - 320, 1000, GROUND - 68, 220);
         if (state.arena) {
           state.hazards = state.hazards.filter(function (h) {
             return !(h.arena || (h.kind === "gate" && Math.abs(h.x - state.arena.x) < 560));
@@ -1827,9 +1814,7 @@
           if (h.x >= tailStart) return false;
           return true;
         });
-        for (let cx = Math.floor(state.endX * 0.28); cx < state.endX - 320; cx += 580) {
-          addPlatform(cx, GROUND - 68, 200, { skin: 0, bridge: true });
-        }
+        addRunwayLedges(Math.floor(state.endX * 0.28), state.endX - 320, 980, GROUND - 68, 200);
         if (state.arena) {
           state.hazards = state.hazards.filter(function (h) {
             return !(h.arena || (h.kind === "gate" && Math.abs(h.x - state.arena.x) < 560));
@@ -1850,9 +1835,7 @@
           if (h.kind === "gate" || h.arena) return true;
           return h.x < tailStart;
         });
-        for (let cx = tailStart; cx < state.endX - 320; cx += 680) {
-          addPlatform(cx, GROUND - 68, 200, { skin: 0, bridge: true });
-        }
+        addRunwayLedges(tailStart, state.endX - 320, 1000, GROUND - 68, 200);
       }
       // L6 Easy VOID MARKET: pit bridges + no crushers/v-lasers + late runway (die ~73%)
       if (l6EasyVoid) {
@@ -1880,9 +1863,7 @@
           });
           state.arena = null;
         }
-        for (let cx = tailStart; cx < state.endX - 320; cx += 580) {
-          addPlatform(cx, GROUND - 68, 200, { skin: 0, bridge: true });
-        }
+        addRunwayLedges(tailStart, state.endX - 320, 980, GROUND - 68, 200);
       }
       if (l7EasySewers) {
         state.holes.forEach(function (hole) {
@@ -1908,9 +1889,7 @@
           if (h.kind === "acid" || h.kind === "drip") return false;
           return h.x < tailStart;
         });
-        for (let cx = tailStart; cx < state.endX - 320; cx += 720) {
-          addPlatform(cx, GROUND - 74, 210, { skin: 0, bridge: true });
-        }
+        addRunwayLedges(tailStart, state.endX - 320, 1000, GROUND - 74, 210);
       }
       // Easy secrets: SMB fair — bridge pits, strip crushers/v-lasers, late runway
       if (theme === "secret" || theme === "storm" || theme === "signal") {
@@ -1956,9 +1935,7 @@
           });
           state.arena = null;
         }
-        for (let cx = Math.floor(state.endX * 0.28); cx < state.endX - 280; cx += 560) {
-          addPlatform(cx, GROUND - 70, 200, { skin: 0, bridge: true });
-        }
+        addRunwayLedges(Math.floor(state.endX * 0.28), state.endX - 280, 980, GROUND - 70, 200);
       }
     } else if (d.id === "normal") {
       // Medium: Easy-style runways scaled later — still challenging, bot-clearable
@@ -2032,13 +2009,9 @@
         });
         state.arena = null;
       }
-      for (let cx = medTail; cx < state.endX - 300; cx += 580) {
-        addPlatform(cx, GROUND - 70, 200, { skin: 0, bridge: true });
-      }
+      addRunwayLedges(medTail, state.endX - 300, 980, GROUND - 70, 200);
       if (!isSecret) {
-        for (let cx = 2600; cx < medTail; cx += 900) {
-          addPlatform(cx, GROUND - 66, 150, { skin: 0, bridge: true });
-        }
+        addRunwayLedges(2600, medTail, 1200, GROUND - 66, 150);
       }
     } else if (d.id === "hard") {
       // Hard: passable with bridges + late runway — denser mid-pack than Medium
@@ -2104,15 +2077,11 @@
         });
         state.arena = null;
       }
-      for (let cx = hardTail; cx < state.endX - 280; cx += 640) {
-        addPlatform(cx, GROUND - 68, 170, { skin: 0, bridge: true });
-      }
+      addRunwayLedges(hardTail, state.endX - 280, 1000, GROUND - 68, 170);
       if (!isSecret && (levelIdx <= 4 || levelIdx >= 6)) {
-        const midGap = levelIdx >= 6 ? 900 : 1100;
+        const midGap = levelIdx >= 6 ? 1200 : 1400;
         const midW = levelIdx >= 6 ? 150 : 130;
-        for (let cx = levelIdx >= 6 ? 2200 : 3000; cx < hardTail; cx += midGap) {
-          addPlatform(cx, GROUND - 66, midW, { skin: 0, bridge: true });
-        }
+        addRunwayLedges(levelIdx >= 6 ? 2200 : 3000, hardTail, midGap, GROUND - 66, midW);
       }
     }
   }
@@ -2179,6 +2148,16 @@
     // Re-bridge any pit whose ledge was moved or removed above
     for (let i = 0; i < state.holes.length; i++) {
       if (!pitHasBridge(state.holes[i])) addBridgeOverPit(state.holes[i], i);
+    }
+  }
+
+  // Sparse SMB runway ledges — keep jump routes without flooding collision/draw lists.
+  // Pit bridges are separate and must stay dense; these are optional mid/late helpers.
+  function addRunwayLedges(fromX, toX, stride, y, w) {
+    const gap = Math.max(900, stride | 0);
+    const end = (toX == null ? state.endX - 320 : toX);
+    for (let cx = fromX; cx < end; cx += gap) {
+      addPlatform(cx, y, w, { skin: 0, bridge: true });
     }
   }
 
@@ -2818,9 +2797,12 @@
 
     buildSectorLayout(goingSecret ? 7 : idx, L);
 
-    let waves = goingSecret ? 30 : (idx === 0 ? 6 : idx === 1 ? 9 : 14 + idx * 5);
+    let waves = goingSecret ? 24 : (idx === 0 ? 6 : idx === 1 ? 9 : 14 + idx * 5);
     if (!goingSecret && currentDiff().id === "easy") {
       waves = Math.max(3, Math.floor(waves * (idx === 0 ? 0.4 : idx <= 3 ? 0.55 : 0.65)));
+    } else if (!goingSecret && currentDiff().id === "hard") {
+      // Hard packs already double-spawn mid-run; keep the pre-seeded wave leaner.
+      waves = Math.max(6, Math.floor(waves * 0.85));
     }
     const introStarts = [3200, 2800, 2600, 2400, 2800, 2600, 2500];
     let waveStart = goingSecret ? 700 : (introStarts[typeof idx === "number" ? idx : state.level] || 2400);
@@ -3317,6 +3299,8 @@
   }
 
   function explode(x, y, color, n) {
+    const room = Math.max(0, 120 - state.particles.length);
+    n = Math.min(n | 0, room);
     for (let i = 0; i < n; i++) {
       state.particles.push({
         x: x, y: y,
@@ -5763,9 +5747,11 @@
 
   function landOnPlatform(p, prevBottom) {
     // One-way platforms: land only when falling onto the top edge.
+    const px0 = p.x - 4, px1 = p.x + p.w + 4;
     for (let i = 0; i < state.platforms.length; i++) {
       const plat = state.platforms[i];
       if (plat.gone) continue;
+      if (plat.x + plat.w < px0 || plat.x > px1) continue;
       const overX = p.x + p.w > plat.x + 2 && p.x < plat.x + plat.w - 2;
       if (!overX) continue;
       const onTop = prevBottom <= plat.y + 2 && p.y + p.h >= plat.y;
@@ -5815,11 +5801,7 @@
   function updateMovers() {
     for (let i = 0; i < state.platforms.length; i++) {
       const plat = state.platforms[i];
-      if (!plat.mover) {
-        plat.dx = 0;
-        plat.dy = 0;
-        continue;
-      }
+      if (!plat.mover) continue;
       plat.phase = (plat.phase || 0) + (plat.spd || 0.03);
       const nx = plat.ox + Math.sin(plat.phase) * (plat.ampX || 0);
       const ny = plat.oy + Math.sin(plat.phase * (plat.fy || 1)) * (plat.ampY || 0);
@@ -5833,9 +5815,14 @@
   function updateHazards(calm) {
     if (calm) return;
     const p = state.player;
+    const nearL = p ? p.x - 120 : state.camX - 40;
+    const nearR = p ? p.x + (p.w || 32) + 280 : state.camX + W + 40;
     for (let i = 0; i < state.hazards.length; i++) {
       const h = state.hazards[i];
       h.t = (h.t || 0) + 1;
+      // Far hazards only advance timers (phase stays in sync when player arrives).
+      const far = h.x + (h.w || 0) < nearL || h.x > nearR;
+      if (far && h.kind !== "gate") continue;
 
       if (h.kind === "crusher") {
         const down = h.down || 40, hold = h.hold || 18, up = h.up || 50;
@@ -6321,33 +6308,53 @@
           spawnGap *= 1.55;
         }
         state.spawnTimer = spawnGap;
-        const x = state.camX + W + 40 + Math.random() * 120;
-        if (x < state.endX - 120) {
-          spawnEnemy(x);
-          // Hard packs the lane: extra robot waves so ground stays crowded
-          // while drones pressure from above. Skip double packs on L7.
-          const packChance = (state.diff === "hard" && state.level >= 6 && !state.inSecret) ? 0.22 : 0.55;
-          if (state.diff === "hard" && Math.random() < packChance && x + 90 < state.endX - 120) {
-            spawnEnemy(x + 70 + Math.random() * 50, Math.random() < 0.35);
+        let nearAlive = 0;
+        const nearL = state.camX - 40, nearR = state.camX + W + 220;
+        for (let ni = 0; ni < state.enemies.length; ni++) {
+          const ne = state.enemies[ni];
+          if (ne.alive && ne.x + ne.w > nearL && ne.x < nearR) nearAlive++;
+        }
+        const nearCap = state.diff === "hard" ? 14 : 11;
+        if (nearAlive < nearCap) {
+          const x = state.camX + W + 40 + Math.random() * 120;
+          if (x < state.endX - 120) {
+            spawnEnemy(x);
+            // Hard packs the lane: extra robot waves so ground stays crowded
+            // while drones pressure from above. Skip double packs on L7.
+            const packChance = (state.diff === "hard" && state.level >= 6 && !state.inSecret) ? 0.22 : 0.55;
+            if (nearAlive < nearCap - 1 && state.diff === "hard" && Math.random() < packChance && x + 90 < state.endX - 120) {
+              spawnEnemy(x + 70 + Math.random() * 50, Math.random() < 0.35);
+            }
           }
         }
       }
       state.droneTimer--;
       if (state.droneTimer <= 0) {
-        spawnDrone();
-        // Hard: often stack a second drone so the sky stays busy with both
-        // robots on the ground and drones above. L7 keeps single drones.
-        const dualDrone = state.diff === "hard" && !(state.level >= 6 && !state.inSecret) && Math.random() < 0.45;
-        if (dualDrone) spawnDrone();
+        let droneNear = 0;
+        for (let di = 0; di < state.enemies.length; di++) {
+          const de = state.enemies[di];
+          if (de.alive && de.drone && de.x + de.w > state.camX - 40 && de.x < state.camX + W + 80) droneNear++;
+        }
+        if (droneNear < 3) {
+          spawnDrone();
+          // Hard: often stack a second drone so the sky stays busy with both
+          // robots on the ground and drones above. L7 keeps single drones.
+          const dualDrone = droneNear < 2 && state.diff === "hard" && !(state.level >= 6 && !state.inSecret) && Math.random() < 0.45;
+          if (dualDrone) spawnDrone();
+        }
         state.droneTimer = droneInterval() * ((state.diff === "hard" && state.level >= 6 && !state.inSecret) ? 1.4 : 1);
       }
     } else if ((easyRunway || medRunway || hardRunway) && p) {
       // Clear leftovers once the runway starts — Hard previously kept the
       // mid-pack swarm alive and soft-locked past spawnQuiet.
-      const behind = hardRunway ? 140 : 220;
-      for (let ei = state.enemies.length - 1; ei >= 0; ei--) {
-        const e = state.enemies[ei];
-        if (e.alive && e.x < p.x - behind) e.alive = false;
+      // Sweep at most every 20 frames; dead foes still get filtered below.
+      if ((state._runwaySweepT = (state._runwaySweepT || 0) + 1) >= 20) {
+        state._runwaySweepT = 0;
+        const behind = hardRunway ? 140 : 220;
+        for (let ei = state.enemies.length - 1; ei >= 0; ei--) {
+          const e = state.enemies[ei];
+          if (e.alive && e.x < p.x - behind) e.alive = false;
+        }
       }
     }
 
@@ -6384,9 +6391,13 @@
       return b.life > 0 && b.x > state.camX - 40 && b.x < state.camX + W + 40;
     });
 
+    const simL = state.camX - 100;
+    const simR = state.camX + W + 420;
     for (let i = 0; i < state.enemies.length; i++) {
       const e = state.enemies[i];
       if (!e.alive) continue;
+      // Pre-spawned waves sit thousands of px ahead — skip full AI until near camera.
+      if (!e.arenaBound && (e.x + e.w < simL || e.x > simR)) continue;
       e.bob += 0.1;
       if (e.flash > 0) e.flash--;
       if (e.elite) {
@@ -6529,6 +6540,7 @@
         for (let j = 0; j < state.enemies.length; j++) {
           const e = state.enemies[j];
           if (!e.alive) continue;
+          if (e.x + e.w < state.camX - 40 || e.x > state.camX + W + 40) continue;
           if (rectsOverlap({ x: b.x - 4, y: b.y - 4, w: b.w + 8, h: b.h + 8 }, e)) {
             damageEnemy(e, b.dmg || 1, Math.sign(b.vx) || state.player.facing, {
               knock: b.knock, antiShield: b.antiShield || (b.pulse ? 3 : (b.charged ? 2 : 0))
@@ -6693,7 +6705,11 @@
       if (!pt.wave && !pt.noGrav) pt.vy += 0.15;
       pt.life--;
     }
-    state.particles = state.particles.filter(function (pt) { return pt.life > 0; });
+    let pWrite = 0;
+    for (let i = 0; i < state.particles.length; i++) {
+      if (state.particles[i].life > 0) state.particles[pWrite++] = state.particles[i];
+    }
+    state.particles.length = pWrite;
 
     if (!state.bossMode || state.hazards.length) updateHazards(calm);
 
@@ -8143,7 +8159,9 @@
     }
 
     ctx.fillStyle = "rgba(0,0,0,0.12)";
-    for (let y = 0; y < H; y += 4) ctx.fillRect(0, y, W, 1);
+    // Embed/mobile: lighter scanline pass (was every 4px = 112 fillRects/frame).
+    const scanStep = EMBED ? 8 : 4;
+    for (let y = 0; y < H; y += scanStep) ctx.fillRect(0, y, W, 1);
 
     drawWeaponHotbar();
     drawScoreAttackUI();
