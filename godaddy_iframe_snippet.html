@@ -78,65 +78,27 @@
 }
 .dg-gd.is-mobile.is-open:not(.is-fs-mode):not(.is-land) .dg-gd-stage{overflow:visible!important}
 .dg-gd.is-mobile.is-open:not(.is-fs-mode):not(.is-land) .dg-gd-play{overflow:visible!important}
-.dg-gd:not(.is-mobile):not(.is-open) .dg-gd-card{overflow:hidden}
-.dg-gd:not(.is-mobile):not(.is-open) .dg-gd-stage{
+.dg-gd:not(.is-open) .dg-gd-card{overflow:hidden}
+.dg-gd:not(.is-open) .dg-gd-stage{
   aspect-ratio:16/9!important;min-height:0!important;height:auto!important;overflow:hidden!important
-}
-.dg-gd.is-mobile:not(.is-open) .dg-gd-card{overflow:visible}
-.dg-gd.is-mobile:not(.is-open) .dg-gd-stage{
-  aspect-ratio:auto!important;min-height:0!important;height:auto!important;overflow:visible!important;
-  display:flex!important;flex-direction:column!important
-}
-.dg-gd.is-mobile:not(.is-open) .dg-gd-cover{
-  position:relative!important;inset:auto!important;display:flex!important;flex-direction:column!important;min-height:0!important
-}
-.dg-gd.is-mobile:not(.is-open) .dg-gd-hero{
-  position:relative!important;flex:0 0 auto!important;aspect-ratio:16/9!important;
-  max-height:38vh!important;min-height:150px!important;width:100%!important;overflow:hidden!important
-}
-.dg-gd.is-mobile:not(.is-open) .dg-gd-veil{
-  position:relative!important;inset:auto!important;flex:0 0 auto!important;min-height:0!important;
-  justify-content:flex-start;padding:14px 12px 18px;gap:8px
-}
-.dg-gd.is-mobile:not(.is-open) .dg-gd-site{
-  position:relative!important;left:auto!important;bottom:auto!important;margin-top:10px;align-self:center
 }
 /* GoDaddy traps fixed positioning via parent transforms — JS moves #dg-gd onto document.body.
    Native fullscreen is requested on the iframe element so in-game clicks do not cancel it. */
 @media (max-width:700px){
   .dg-gd-card{padding:4px;border-width:2px}
-  .dg-gd:not(.is-open) .dg-gd-card{overflow:visible}
-  .dg-gd:not(.is-open) .dg-gd-stage{
-    aspect-ratio:auto!important;min-height:0!important;height:auto!important;overflow:visible!important;
-    display:flex!important;flex-direction:column!important
-  }
-  .dg-gd:not(.is-open) .dg-gd-cover{
-    position:relative!important;inset:auto!important;display:flex!important;flex-direction:column!important;min-height:0!important
-  }
-  .dg-gd:not(.is-open) .dg-gd-hero{
-    position:relative!important;flex:0 0 auto!important;aspect-ratio:16/9!important;
-    max-height:38vh!important;min-height:150px!important;width:100%!important;overflow:hidden!important
-  }
   .dg-gd:not(.is-open) .dg-gd-veil{
-    position:relative!important;inset:auto!important;flex:0 0 auto!important;min-height:0!important;
-    justify-content:flex-start;padding:14px 12px 18px;gap:8px
-  }
-  .dg-gd:not(.is-open) .dg-gd-site{
-    position:relative!important;left:auto!important;bottom:auto!important;margin-top:8px;align-self:center
+    justify-content:flex-start;padding:10px 8px 12px;gap:6px;
+    overflow-y:auto;-webkit-overflow-scrolling:touch
   }
   .dg-gd-top{margin-bottom:4px}
   .dg-gd-brand{font-size:13px}
   .dg-gd-enter{padding:14px 22px;min-height:48px;width:min(100%,280px);font-size:16px}
-  .dg-gd-title{font-size:clamp(28px,9vw,44px)}
-  .dg-gd-tip{font-size:13px}
+  .dg-gd-title{font-size:clamp(22px,7vw,36px)}
+  .dg-gd-tag{font-size:clamp(12px,3.2vw,14px)}
+  .dg-gd-tip{font-size:12px}
+  .dg-gd-promo{font-size:11px}
   .dg-gd-site img{width:88px}
   .dg-gd-site span{font-size:9px}
-}
-@media (min-width:701px){
-  .dg-gd:not(.is-open) .dg-gd-stage{
-    aspect-ratio:16/9!important;min-height:0!important;height:auto!important;overflow:hidden!important
-  }
-  .dg-gd:not(.is-open) .dg-gd-card{overflow:hidden}
 }
 </style>
 <div class="dg-gd" id="dg-gd">
@@ -171,7 +133,7 @@
           title="Digistracts"
           width="100%"
           height="450"
-          data-src="https://8bitcrypto44.github.io/Digistracts/?embed=1&amp;v=57"
+          data-src="https://8bitcrypto44.github.io/Digistracts/?embed=1&amp;v=59"
           allow="autoplay; fullscreen; gamepad"
           allowfullscreen
           scrolling="no"
@@ -188,7 +150,7 @@
   var frame=document.getElementById("dg-gd-frame");
   if(!root||!btn||!frame)return;
   var playing=false;
-  var baseSrc="https://8bitcrypto44.github.io/Digistracts/?embed=1&amp;v=57".replace(/&amp;/g,"&");
+  var baseSrc="https://8bitcrypto44.github.io/Digistracts/?embed=1&amp;v=59".replace(/&amp;/g,"&");
   function phone(){
     try{
       if(window.matchMedia("(pointer: fine)").matches && !window.matchMedia("(pointer: coarse)").matches)return false;
