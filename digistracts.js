@@ -3450,6 +3450,15 @@
     if (!opts.keepPlaying) {
       postParent({ type: "dg-chrome", inGame: false });
     }
+    if (wantsTouchUI() && hud.overlay && (state.mode === "failed" || state.mode === "clear" || shareable)) {
+      hud.overlay.scrollTop = 0;
+      requestAnimationFrame(function () {
+        if (hud.overlay) hud.overlay.scrollTop = 0;
+        lastFitW = 0;
+        lastFitH = 0;
+        fit();
+      });
+    }
   }
 
   function hideOverlay() {

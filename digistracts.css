@@ -270,6 +270,30 @@ body.dg-embed #digistracts-root.dg-phone.dg-fs{
 #digistracts-root.dg-phone.dg-land #dg-start{min-height:48px;padding:12px 28px;font-size:16px}
 #digistracts-root.dg-phone.dg-land #dg-msg{top:max(28px,calc(env(safe-area-inset-top,0px) + 22px))}
 
+/* Fail / clear / pause overlays — landscape + fullscreen need scroll, not collapsed root */
+#digistracts-root.dg-phone.dg-menu.dg-land,
+#digistracts-root.dg-phone.dg-menu.dg-fs{
+  position:fixed!important;inset:0!important;width:100%!important;height:100%!important;height:100dvh!important;
+  max-height:100dvh!important;overflow:hidden!important;z-index:9999
+}
+body.dg-embed #digistracts-root.dg-phone.dg-menu.dg-land,
+body.dg-embed #digistracts-root.dg-phone.dg-menu.dg-fs{
+  position:absolute!important;inset:0!important;height:100%!important;min-height:100%!important;max-height:none!important;z-index:1
+}
+#digistracts-root.dg-phone.dg-menu.dg-land #dg-overlay,
+#digistracts-root.dg-phone.dg-menu.dg-fs #dg-overlay{
+  position:absolute!important;inset:0!important;z-index:50!important;display:flex!important;
+  overflow-y:auto!important;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+  justify-content:flex-start!important;align-items:center!important;align-content:flex-start;
+  max-height:100%!important;min-height:0!important;width:100%!important;
+  padding:max(8px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))!important;
+  background:rgba(2,6,23,.92)!important
+}
+#digistracts-root.dg-phone.dg-menu.dg-land .dg-stage,
+#digistracts-root.dg-phone.dg-menu.dg-fs .dg-stage{
+  visibility:hidden;pointer-events:none
+}
+
 @media (max-height:420px){
   #digistracts-root.dg-phone.dg-land .dg-stick{width:96px;height:96px}
   #digistracts-root.dg-phone.dg-land .dg-knob{width:40px;height:40px}
@@ -284,7 +308,7 @@ html.dg-embed.dg-mobile,html.dg-embed.dg-mobile body{
 html.dg-embed.dg-mobile #digistracts-root{
   overflow:visible;height:auto;min-height:0;max-height:none;touch-action:pan-y
 }
-html.dg-embed.dg-mobile #digistracts-root.dg-phone.dg-menu{
+html.dg-embed.dg-mobile #digistracts-root.dg-phone.dg-menu:not(.dg-fs):not(.dg-land){
   position:relative;inset:auto;height:auto;min-height:0;overflow:visible;touch-action:pan-y
 }
 html.dg-embed.dg-mobile #digistracts-root.dg-phone:not(.dg-menu):not(.dg-fs){
@@ -317,9 +341,14 @@ html.dg-embed.dg-mobile #digistracts-root.dg-phone:not(.dg-menu):not(.dg-fs) can
   width:100%!important;height:100%!important;max-width:100%!important;max-height:100%!important;
   object-fit:contain
 }
-html.dg-embed.dg-mobile #digistracts-root #dg-overlay{
+html.dg-embed.dg-mobile #digistracts-root.dg-phone.dg-menu:not(.dg-fs):not(.dg-land) #dg-overlay{
   position:relative;inset:auto;flex:0 0 auto;min-height:min(72vh,640px);
   overflow-y:auto;-webkit-overflow-scrolling:touch;max-height:none;padding-bottom:24px
+}
+html.dg-embed.dg-mobile #digistracts-root.dg-phone.dg-menu.dg-fs #dg-overlay,
+html.dg-embed.dg-mobile #digistracts-root.dg-phone.dg-menu.dg-land #dg-overlay{
+  position:absolute!important;inset:0!important;flex:none!important;min-height:0!important;max-height:100%!important;
+  overflow-y:auto!important;-webkit-overflow-scrolling:touch;padding-bottom:max(16px,env(safe-area-inset-bottom))!important
 }
 html.dg-embed.dg-mobile #digistracts-root.dg-menu .dg-help{
   position:relative;left:auto;right:auto;bottom:auto;margin-top:12px
