@@ -7,6 +7,7 @@
   let embedMutObs = null;
   let embedPlayH = 0;
   let embedLastReportH = 0;
+  let embedPlayLockGen = 0;
 
   function isEmbedPlayShell() {
     return isMobileEmbed() && !ROOT.classList.contains("dg-menu") && !embedFsActive;
@@ -15,6 +16,40 @@
   function clearEmbedPlayLock() {
     embedPlayH = 0;
     embedLastReportH = 0;
+    embedPlayLockGen++;
+  }
+
+  function embedPlayTargetH() {
+    if (!isMobileEmbed() || ROOT.classList.contains("dg-menu")) return EMBED_PLAY_MIN_H;
+    const rw = Math.max(280, ROOT.clientWidth || window.innerWidth || 360);
+    const stageH = Math.ceil(rw * 450 / 800);
+    return Math.max(EMBED_PLAY_MIN_H, 72 + stageH + 168 + 16);
+  }
+
+  function scheduleEmbedPlaySettle() {
+    if (!isEmbedPlayShell()) return;
+    embedPlayLockGen++;
+    const gen = embedPlayLockGen;
+    embedPlayH = 0;
+    embedLastReportH = 0;
+    function measureOpen() {
+      if (gen !== embedPlayLockGen || !isEmbedPlayShell()) return;
+      if (typeof fit === "function") fit();
+      flushEmbedResize(true);
+    }
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        measureOpen();
+        setTimeout(measureOpen, 80);
+        setTimeout(function () {
+          if (gen !== embedPlayLockGen || !isEmbedPlayShell()) return;
+          const h = Math.max(measureEmbedHeight(), embedPlayTargetH());
+          embedPlayH = h;
+          embedLastReportH = h;
+          flushEmbedResize(true);
+        }, 200);
+      });
+    });
   }
 
   function isMobileDevice() {
@@ -54,7 +89,7 @@
   function embedFloorH() {
     if (!isMobileEmbed()) return EMBED_MIN_H;
     if (ROOT.classList.contains("dg-menu")) return EMBED_MENU_MIN_H;
-    return EMBED_PLAY_MIN_H;
+    return embedPlayTargetH();
   }
 
   function measureEmbedHeight() {
@@ -94,14 +129,15 @@
     if (mobile && !menuOpen) {
       let maxBottom = rootTop;
       [top, stage, controls].forEach(function (el) {
-        if (!el || el.hidden || el.offsetParent === null) return;
+        if (!el || el.hidden) return;
         const r = el.getBoundingClientRect();
-        if (r.bottom > maxBottom) maxBottom = r.bottom;
+        if (r.height > 0 && r.bottom > maxBottom) maxBottom = r.bottom;
       });
-      let h = Math.ceil(Math.max(EMBED_PLAY_MIN_H, maxBottom - rootTop + 4));
+      const bboxH = Math.ceil(Math.max(0, maxBottom - rootTop)) + 4;
+      const scrollH = Math.ceil(Math.max(ROOT.scrollHeight || 0, doc.scrollHeight || 0, bod.scrollHeight || 0));
+      let h = Math.ceil(Math.max(embedPlayTargetH(), bboxH, scrollH));
       const vh = window.innerHeight || document.documentElement.clientHeight || 680;
-      h = Math.min(h, Math.ceil(vh * 1.15));
-      if (isEmbedPlayShell()) embedPlayH = h;
+      h = Math.min(h, Math.ceil(vh * 1.2));
       return h;
     }
 
@@ -125,8 +161,6 @@
     } else {
       h = Math.ceil(Math.max(EMBED_MIN_H, bboxH));
     }
-    if (isEmbedPlayShell()) embedPlayH = h;
-    else embedPlayH = 0;
     return h;
   }
 
@@ -253,6 +287,13 @@
   var _hideOverlayVp = hideOverlay;
   hideOverlay = function () {
     _hideOverlayVp();
+    if (EMBED && isMobileEmbed() && !ROOT.classList.contains("dg-menu")) {
+      syncMobileClass();
+      ROOT.classList.toggle("dg-ui-menu", false);
+      if (typeof fit === "function") fit();
+      scheduleEmbedPlaySettle();
+      return;
+    }
     syncEmbedUiMode();
   };
 

@@ -282,7 +282,7 @@ markup = markup.replace("__BRAND_LOGO_SRC__", BRAND_LOGO_URI)
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "60"
+ASSET_V = "61"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]
@@ -661,6 +661,7 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
       if(typeof e.data.inGame==="boolean")playing=!!e.data.inGame;
       syncLand();
       if(!e.data.inGame||!mobileMode()||isFs()||root.classList.contains("is-land"))requestChildResize();
+      else setTimeout(requestChildResize,120);
     }}
     if(e.data.type==="dg-fs")enterFs();
     if(e.data.type==="dg-fs-exit")exitFs();
