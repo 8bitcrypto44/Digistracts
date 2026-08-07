@@ -282,7 +282,7 @@ markup = markup.replace("__BRAND_LOGO_SRC__", BRAND_LOGO_URI)
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "59"
+ASSET_V = "60"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]
@@ -505,7 +505,13 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
     if(cov)h=Math.max(h,Math.round(cov.scrollHeight||0),Math.round(cov.offsetHeight||0));
     return Math.max(h,mobileBootH());
   }}
-  function requestChildResize(){{try{{if(frame.contentWindow)frame.contentWindow.postMessage({{type:"dg-request-resize"}},"*");}}catch(e){{}}}}
+  function requestChildResize(){{
+    if(playing&&mobileMode()&&!isFs()&&!root.classList.contains("is-land"))return;
+    if(root._dgResizeT)clearTimeout(root._dgResizeT);
+    root._dgResizeT=setTimeout(function(){{
+      try{{if(frame.contentWindow)frame.contentWindow.postMessage({{type:"dg-request-resize"}},"*");}}catch(e){{}}
+    }},64);
+  }}
   function setFrameHeight(h){{
     if(isFs()||root.classList.contains("is-land"))return;
     if(!root.classList.contains("is-open")){{clearCoverHeights();return;}}
@@ -584,6 +590,7 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
     setTimeout(function(){{restoreLayout();notifyFrame();}},200);
   }}
   function enterFs(){{
+    if(root.classList.contains("is-fs-mode")){{notifyFrame();return;}}
     mountFs();
     root.classList.add("is-fs-mode");
     try{{document.documentElement.style.overflow="hidden";document.body.style.overflow="hidden";}}catch(e){{}}
@@ -653,8 +660,7 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
     if(e.data.type==="dg-chrome"){{
       if(typeof e.data.inGame==="boolean")playing=!!e.data.inGame;
       syncLand();
-      requestChildResize();
-      if(e.data.inGame&&mobileMode()){{setTimeout(requestChildResize,80);setTimeout(requestChildResize,240);setTimeout(requestChildResize,480);}}
+      if(!e.data.inGame||!mobileMode()||isFs()||root.classList.contains("is-land"))requestChildResize();
     }}
     if(e.data.type==="dg-fs")enterFs();
     if(e.data.type==="dg-fs-exit")exitFs();

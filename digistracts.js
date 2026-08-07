@@ -4665,27 +4665,32 @@
     if (rectsOverlap({ x: p.x + 5, y: p.y + 5, w: p.w - 10, h: p.h - 5 }, b) && !state.talkQ) hurtPlayer(null, "boss");
   }
 
+  function setHudText(el, val) {
+    if (el && el.textContent !== val) el.textContent = val;
+  }
+
   function updateHUD() {
-    hud.score.textContent = String(state.score).padStart(6, "0");
-    hud.lives.textContent = "♥".repeat(Math.max(0, state.lives)) || "—";
-    hud.level.textContent = state.inSecret ? "SEC" : ("LV " + (state.level + 1));
-    if (state.ngPlus && hud.level) hud.level.textContent = (state.inSecret ? "SEC" : ("LV " + (state.level + 1))) + " · NG+";
-    if (state.godMode && hud.level) hud.level.textContent = (state.inSecret ? "SEC" : ("LV " + (state.level + 1))) + (state.ngPlus ? " · NG+" : "") + " · GOD";
-    hud.time.textContent = Math.max(0, Math.ceil(state.levelTime / 1000));
+    setHudText(hud.score, String(state.score).padStart(6, "0"));
+    setHudText(hud.lives, "♥".repeat(Math.max(0, state.lives)) || "—");
+    let lvTxt = state.inSecret ? "SEC" : ("LV " + (state.level + 1));
+    if (state.ngPlus && hud.level) lvTxt = (state.inSecret ? "SEC" : ("LV " + (state.level + 1))) + " · NG+";
+    if (state.godMode && hud.level) lvTxt = (state.inSecret ? "SEC" : ("LV " + (state.level + 1))) + (state.ngPlus ? " · NG+" : "") + " · GOD";
+    setHudText(hud.level, lvTxt);
+    setHudText(hud.time, String(Math.max(0, Math.ceil(state.levelTime / 1000))));
     if (hud.time) {
       hud.time.style.color = (state.mode === "play" && state.levelTime > 0 && state.levelTime < 30000) ? "#fb7185" : "";
     }
-    if (hud.hi) hud.hi.textContent = String(state.hiScore).padStart(6, "0");
+    if (hud.hi) setHudText(hud.hi, String(state.hiScore).padStart(6, "0"));
     if (hud.combo) {
       const c = state.combo;
-      hud.combo.textContent = "×" + c;
+      setHudText(hud.combo, "×" + c);
       const wrap = hud.combo.parentElement;
       if (wrap) {
         wrap.classList.toggle("is-hot", c >= 3);
         wrap.classList.toggle("is-max", c >= 10);
       }
     }
-    hud.superJumps.textContent = state.player ? Math.max(0, 2 - state.player.airSupers) : 2;
+    setHudText(hud.superJumps, String(state.player ? Math.max(0, 2 - state.player.airSupers) : 2));
     let gun = "PISTOL";
     if (state.player) {
       if (state.player.overclockT > 0) gun = "OVR " + Math.ceil(state.player.overclockT / 60) + "s";
@@ -4702,12 +4707,12 @@
         gun = state.player.charge >= 28 ? "CHARGE!" : "CHG " + Math.floor(state.player.charge / 28 * 100) + "%";
       }
     }
-    hud.staff.textContent = gun;
+    setHudText(hud.staff, gun);
     if (state.messageTimer > 0) {
-      hud.msg.textContent = state.banner || currentLevel().name;
+      setHudText(hud.msg, state.banner || currentLevel().name);
       hud.msg.style.opacity = "1";
     } else if (state.combo >= 3 && state.mode === "play") {
-      hud.msg.textContent = "COMBO ×" + state.combo;
+      setHudText(hud.msg, "COMBO ×" + state.combo);
       hud.msg.style.opacity = "0.9";
     } else {
       hud.msg.style.opacity = "0";
@@ -7596,8 +7601,21 @@
     postParent({ type: exit ? "dg-fs-exit" : "dg-fs" });
   }
 
+  function wantsEmbedFs() {
+    if (!EMBED || !wantsTouchUI()) return false;
+    const vw = (window.visualViewport && window.visualViewport.width) || window.innerWidth;
+    const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+    return vw > vh || window.matchMedia("(orientation: landscape)").matches;
+  }
+
   function enterFullscreen() {
     if (EMBED) {
+      if (!wantsEmbedFs()) {
+        syncFsBtn();
+        fit();
+        return;
+      }
+      if (fsWanted && parentFs) return;
       fsWanted = true;
       parentFs = true;
       askParentFullscreen(false);
@@ -7605,7 +7623,6 @@
       fit();
       setTimeout(fit, 80);
       setTimeout(fit, 220);
-      setTimeout(fit, 500);
       return;
     }
     const req = ROOT.requestFullscreen || ROOT.webkitRequestFullscreen ||
@@ -7648,6 +7665,9 @@
     document.documentElement.classList.toggle("dg-fs", fs);
   }
 
+  let lastFitW = 0;
+  let lastFitH = 0;
+
   function fit() {
     const phone = wantsTouchUI();
     const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
@@ -7669,6 +7689,12 @@
       if (EMBED) {
         const sw = Math.max(1, stage.clientWidth || ROOT.clientWidth || vw);
         const sh = Math.max(1, stage.clientHeight || Math.floor(sw * H / W));
+        if (sw === lastFitW && sh === lastFitH) {
+          syncFsBtn();
+          return;
+        }
+        lastFitW = sw;
+        lastFitH = sh;
         canvas.style.width = Math.floor(sw) + "px";
         canvas.style.height = Math.floor(sh) + "px";
         syncFsBtn();
@@ -7715,15 +7741,21 @@
   window.addEventListener("resize", fit);
   window.addEventListener("orientationchange", function () {
     clearTouchInput();
+    lastFitW = 0;
+    lastFitH = 0;
     setTimeout(fit, 80);
     setTimeout(fit, 220);
     setTimeout(function () {
       fit();
-      if (wantsTouchUI() && state.mode === "play" && !isFullscreen()) enterFullscreen();
+      if (!EMBED && wantsTouchUI() && state.mode === "play" && !isFullscreen()) enterFullscreen();
     }, 400);
   });
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", function () {
+      if (EMBED && state.mode === "play" && !ROOT.classList.contains("dg-menu")) {
+        fit();
+        return;
+      }
       fit();
       if (wantsTouchUI() && state.mode === "play") setTimeout(fit, 60);
     });
@@ -7745,9 +7777,9 @@
       handleStartAction();
       return;
     }
+    if (EMBED) return;
     if (!ROOT.classList.contains("dg-phone")) return;
     if (isFullscreen()) return;
-    // Nudge into fullscreen on first touch while playing
     if (state.mode === "play") enterFullscreen();
   }, { passive: true });
   fit();

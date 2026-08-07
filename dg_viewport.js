@@ -98,7 +98,9 @@
         const r = el.getBoundingClientRect();
         if (r.bottom > maxBottom) maxBottom = r.bottom;
       });
-      const h = Math.ceil(Math.max(EMBED_PLAY_MIN_H, maxBottom - rootTop + 4));
+      let h = Math.ceil(Math.max(EMBED_PLAY_MIN_H, maxBottom - rootTop + 4));
+      const vh = window.innerHeight || document.documentElement.clientHeight || 680;
+      h = Math.min(h, Math.ceil(vh * 1.15));
       if (isEmbedPlayShell()) embedPlayH = h;
       return h;
     }
@@ -157,6 +159,7 @@
     syncMobileClass();
     if (ROOT.classList.contains("dg-menu")) clearEmbedPlayLock();
     ROOT.classList.toggle("dg-ui-menu", ROOT.classList.contains("dg-menu"));
+    if (isEmbedPlayShell() && embedPlayH > 0) return;
     notifyResize();
     if (isMobileEmbed() && !isEmbedPlayShell()) scheduleEmbedResizeBurst();
   }
@@ -207,7 +210,7 @@
 
   function onFsStateMsg(active) {
     embedFsActive = !!active;
-    if (embedFsActive) clearEmbedPlayLock();
+    if (!embedFsActive) clearEmbedPlayLock();
     syncEmbedUiMode();
   }
 
@@ -226,7 +229,7 @@
     document.addEventListener("wheel", blockEmbedScroll, { passive: false });
     document.addEventListener("touchmove", blockEmbedScroll, { passive: false });
     window.addEventListener("resize", function () {
-      if (isEmbedPlayShell()) clearEmbedPlayLock();
+      if (isEmbedPlayShell() && embedPlayH > 0) return;
       syncEmbedUiMode();
     });
     window.addEventListener("orientationchange", function () {
@@ -263,10 +266,7 @@
     if (!e.data || typeof e.data !== "object") return;
     if (e.data.type === "dg-fs-state") onFsStateMsg(e.data.active);
     if (e.data.type === "dg-request-resize") {
-      if (isEmbedPlayShell() && embedPlayH > 0) {
-        flushEmbedResize(true);
-        return;
-      }
+      if (isEmbedPlayShell() && embedPlayH > 0) return;
       flushEmbedResize(true);
       scheduleEmbedResizeBurst();
     }
