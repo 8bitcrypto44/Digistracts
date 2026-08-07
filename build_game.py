@@ -282,7 +282,7 @@ markup = markup.replace("__BRAND_LOGO_SRC__", BRAND_LOGO_URI)
 markup = re.sub(r"<!--.*?-->\s*", "", markup, flags=re.S)
 markup = re.sub(r">\s+<", "><", markup).strip()
 
-ASSET_V = "61"
+ASSET_V = "62"
 PAGES_URL = "https://8bitcrypto44.github.io/Digistracts/"
 iframe_src_attr = PAGES_URL + "?embed=1&amp;v=" + ASSET_V
 cover_imgs = BG_URLS[:4]
@@ -678,7 +678,7 @@ iframe_snippet = f"""<!-- Digistracts / GoDaddy: cover card -> expand on PLAY --
     }}
     syncFsClass();
     syncLand();
-    notifyFrame();
+    if(isFs()||root.classList.contains("is-fs-mode"))notifyFrame();
   }}
   document.addEventListener("fullscreenchange",onFsChange);
   document.addEventListener("webkitfullscreenchange",onFsChange);

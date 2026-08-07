@@ -8,6 +8,7 @@
   let embedPlayH = 0;
   let embedLastReportH = 0;
   let embedPlayLockGen = 0;
+  let embedPlaySettling = false;
 
   function isEmbedPlayShell() {
     return isMobileEmbed() && !ROOT.classList.contains("dg-menu") && !embedFsActive;
@@ -32,6 +33,7 @@
     const gen = embedPlayLockGen;
     embedPlayH = 0;
     embedLastReportH = 0;
+    embedPlaySettling = true;
     function measureOpen() {
       if (gen !== embedPlayLockGen || !isEmbedPlayShell()) return;
       if (typeof fit === "function") fit();
@@ -42,10 +44,14 @@
         measureOpen();
         setTimeout(measureOpen, 80);
         setTimeout(function () {
-          if (gen !== embedPlayLockGen || !isEmbedPlayShell()) return;
+          if (gen !== embedPlayLockGen || !isEmbedPlayShell()) {
+            embedPlaySettling = false;
+            return;
+          }
           const h = Math.max(measureEmbedHeight(), embedPlayTargetH());
           embedPlayH = h;
           embedLastReportH = h;
+          embedPlaySettling = false;
           flushEmbedResize(true);
         }, 200);
       });
@@ -134,8 +140,7 @@
         if (r.height > 0 && r.bottom > maxBottom) maxBottom = r.bottom;
       });
       const bboxH = Math.ceil(Math.max(0, maxBottom - rootTop)) + 4;
-      const scrollH = Math.ceil(Math.max(ROOT.scrollHeight || 0, doc.scrollHeight || 0, bod.scrollHeight || 0));
-      let h = Math.ceil(Math.max(embedPlayTargetH(), bboxH, scrollH));
+      let h = Math.ceil(Math.max(embedPlayTargetH(), bboxH));
       const vh = window.innerHeight || document.documentElement.clientHeight || 680;
       h = Math.min(h, Math.ceil(vh * 1.2));
       return h;
@@ -193,13 +198,14 @@
     syncMobileClass();
     if (ROOT.classList.contains("dg-menu")) clearEmbedPlayLock();
     ROOT.classList.toggle("dg-ui-menu", ROOT.classList.contains("dg-menu"));
-    if (isEmbedPlayShell() && embedPlayH > 0) return;
+    if (isEmbedPlayShell() && embedPlayH > 0 && !embedPlaySettling) return;
     notifyResize();
     if (isMobileEmbed() && !isEmbedPlayShell()) scheduleEmbedResizeBurst();
   }
 
   function flushEmbedResize(force) {
     if (!EMBED || !window.parent) return;
+    if (isEmbedPlayShell() && embedPlayH > 0 && !embedPlaySettling) return;
     try {
       const h = applyEmbedFrameHeight(measureEmbedHeight());
       if (!force && isEmbedPlayShell() && embedLastReportH > 0) {
@@ -243,9 +249,10 @@
   }
 
   function onFsStateMsg(active) {
+    const wasFs = embedFsActive;
     embedFsActive = !!active;
-    if (!embedFsActive) clearEmbedPlayLock();
-    syncEmbedUiMode();
+    if (wasFs && !embedFsActive) clearEmbedPlayLock();
+    if (wasFs !== embedFsActive) syncEmbedUiMode();
   }
 
   var notifyResize = function () {
@@ -307,9 +314,9 @@
     if (!e.data || typeof e.data !== "object") return;
     if (e.data.type === "dg-fs-state") onFsStateMsg(e.data.active);
     if (e.data.type === "dg-request-resize") {
-      if (isEmbedPlayShell() && embedPlayH > 0) return;
+      if (isEmbedPlayShell() && embedPlayH > 0 && !embedPlaySettling) return;
       flushEmbedResize(true);
-      scheduleEmbedResizeBurst();
+      if (!isEmbedPlayShell()) scheduleEmbedResizeBurst();
     }
   });
 
